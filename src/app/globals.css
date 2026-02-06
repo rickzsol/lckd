@@ -1,26 +1,431 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-emerald-accent: #10b981;
+  --color-emerald-accent-dim: #10b98133;
+  --color-dark-bg: #08080c;
+  --color-card-bg: #111318;
+  --color-card-border: #1a1d25;
+  --color-text-primary: #f0f0f0;
+  --color-text-muted: #8b8b8b;
+
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background-color: var(--color-dark-bg);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: rgba(16, 185, 129, 0.3);
+    color: #fff;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #444;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* ─── Wallet button overrides ─────────────────────── */
+  .wallet-adapter-button {
+    height: 32px !important;
+    padding: 0 12px !important;
+    font-size: 11px !important;
+    font-family: var(--font-mono) !important;
+    border-radius: 6px !important;
+  }
+
+  /* ─── Background patterns ─────────────────────────── */
+  .dot-grid {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    opacity: 0.04;
+    background-image: radial-gradient(circle, rgba(16, 185, 129, 1) 1px, transparent 1px);
+    background-size: 20px 20px;
+    pointer-events: none;
+  }
+
+  .page-glow {
+    position: fixed;
+    top: -10%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(800px, 100vw);
+    height: min(400px, 50vw);
+    border-radius: 50%;
+    background: radial-gradient(ellipse, rgba(16, 185, 129, 0.03) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .hero-glow {
+    position: absolute;
+    top: 10%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(500px, 100vw);
+    height: min(500px, 100vw);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(16, 185, 129, 0.07) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* ─── Token card ───────────────────────────────────── */
+  .token-card {
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.015);
+    border-radius: 10px;
+    cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .token-card:hover {
+    border-color: rgba(16, 185, 129, 0.15);
+    background: rgba(255, 255, 255, 0.025);
+  }
+  .token-card:active {
+    border-color: rgba(16, 185, 129, 0.25);
+  }
+  .token-card:focus-visible {
+    border-color: rgba(16, 185, 129, 0.3);
+    outline: none;
+  }
+
+  /* ─── Pulse dot ────────────────────────────────────── */
+  .pulse-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #10b981;
+    flex-shrink: 0;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+    animation: pulse-dot 2s infinite;
+  }
+
+  /* ─── Stats strip ──────────────────────────────────── */
+  .stats-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  @media (max-width: 640px) {
+    .stats-strip {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .stats-strip > *:nth-child(n+3) {
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .stats-strip > *:last-child {
+      grid-column: 1 / -1;
+    }
+  }
+
+  /* ─── Buttons ──────────────────────────────────────── */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: #000;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: box-shadow 0.2s, transform 0.1s;
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.12), inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+  .btn-primary:hover {
+    box-shadow: 0 0 24px rgba(16, 185, 129, 0.25), inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .btn-primary:active {
+    transform: scale(0.98);
+  }
+  .btn-primary:focus-visible {
+    outline: 2px solid #10b981;
+    outline-offset: 2px;
+  }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    color: #aaa;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+  }
+  .btn-secondary:hover {
+    border-color: rgba(16, 185, 129, 0.25);
+    color: #ddd;
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .btn-secondary:active {
+    background: rgba(255, 255, 255, 0.07);
+  }
+  .btn-secondary:focus-visible {
+    outline: 2px solid #10b981;
+    outline-offset: 2px;
+  }
+
+  .btn-launch {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 0;
+    border-radius: 8px;
+    border: 1px solid rgba(16, 185, 129, 0.5);
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #000;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    box-shadow: 0 0 30px rgba(16, 185, 129, 0.15), inset 0 1px 0 rgba(255,255,255,0.12);
+    transition: box-shadow 0.2s, transform 0.1s;
+  }
+  .btn-launch:hover {
+    box-shadow: 0 0 40px rgba(16, 185, 129, 0.3), inset 0 1px 0 rgba(255,255,255,0.18);
+  }
+  .btn-launch:active {
+    transform: scale(0.98);
+  }
+  .btn-launch:focus-visible {
+    outline: 2px solid #10b981;
+    outline-offset: 2px;
+  }
+
+  /* ─── Form input ───────────────────────────────────── */
+  .form-input {
+    width: 100%;
+    padding: 11px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-input:focus {
+    border-color: rgba(16, 185, 129, 0.5);
+    box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.15);
+  }
+
+  /* ─── Upload box ───────────────────────────────────── */
+  .upload-box {
+    width: 90px;
+    height: 90px;
+    border-radius: 14px;
+    border: 2px dashed rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.02);
+    color: #555;
+    transition: border-color 0.15s;
+  }
+  .upload-box:hover {
+    border-color: rgba(16, 185, 129, 0.3);
+  }
+
+  /* ─── Lock preview ─────────────────────────────────── */
+  .lock-preview {
+    padding: 14px;
+    border-radius: 8px;
+    background: rgba(16, 185, 129, 0.04);
+    border: 1px solid rgba(16, 185, 129, 0.1);
+  }
+
+  /* ─── Review number ────────────────────────────────── */
+  .review-num {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: #10b981;
+    flex-shrink: 0;
+  }
+
+  /* ─── Warning box ──────────────────────────────────── */
+  .warning-box {
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: rgba(245, 158, 11, 0.06);
+    border: 1px solid rgba(245, 158, 11, 0.15);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: #f59e0b;
+  }
+
+  /* ─── Wallet adapter overrides ─────────────────────── */
+  .wallet-adapter-button {
+    font-family: var(--font-mono) !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.03em !important;
+    height: 32px !important;
+    padding: 0 14px !important;
+    border-radius: 6px !important;
+    border: 1px solid rgba(16, 185, 129, 0.4) !important;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+    color: #000 !important;
+    transition: box-shadow 0.2s, transform 0.1s !important;
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.1), inset 0 1px 0 rgba(255,255,255,0.08) !important;
+    line-height: 1 !important;
+  }
+  .wallet-adapter-button:hover {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.25), inset 0 1px 0 rgba(255,255,255,0.12) !important;
+  }
+  .wallet-adapter-button:active {
+    transform: scale(0.97) !important;
+  }
+  .wallet-adapter-button-trigger {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  }
+  .wallet-adapter-button[disabled] {
+    opacity: 0.4 !important;
+    cursor: not-allowed !important;
+  }
+  .wallet-adapter-button .wallet-adapter-button-start-icon {
+    display: none !important;
+  }
+  .wallet-adapter-dropdown {
+    z-index: 100 !important;
+  }
+  .wallet-adapter-dropdown-list {
+    background: #111318 !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 8px !important;
+    padding: 4px !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+  }
+  .wallet-adapter-dropdown-list-item {
+    font-family: var(--font-mono) !important;
+    font-size: 11px !important;
+    padding: 8px 12px !important;
+    border-radius: 6px !important;
+    color: #ccc !important;
+    transition: background 0.1s !important;
+  }
+  .wallet-adapter-dropdown-list-item:hover {
+    background: rgba(16, 185, 129, 0.08) !important;
+    color: #fff !important;
+  }
+  .wallet-adapter-modal-wrapper {
+    background: #111318 !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 16px 64px rgba(0,0,0,0.6) !important;
+    font-family: var(--font-mono) !important;
+  }
+  .wallet-adapter-modal-title {
+    font-family: var(--font-sans) !important;
+    color: #fff !important;
+  }
+  .wallet-adapter-modal-list .wallet-adapter-button {
+    background: rgba(255,255,255,0.03) !important;
+    border: 1px solid rgba(255,255,255,0.06) !important;
+    color: #ccc !important;
+    height: 44px !important;
+    font-size: 12px !important;
+    padding: 0 16px !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    transition: border-color 0.15s, background 0.15s !important;
+  }
+  .wallet-adapter-modal-list .wallet-adapter-button:hover {
+    border-color: rgba(16, 185, 129, 0.25) !important;
+    background: rgba(255,255,255,0.05) !important;
+    color: #fff !important;
+    box-shadow: none !important;
+  }
+  .wallet-adapter-modal-list .wallet-adapter-button .wallet-adapter-button-start-icon {
+    display: flex !important;
+  }
+  .wallet-adapter-modal-button-close {
+    background: rgba(255,255,255,0.06) !important;
+    border-radius: 6px !important;
+    transition: background 0.15s !important;
+  }
+  .wallet-adapter-modal-button-close:hover {
+    background: rgba(255,255,255,0.12) !important;
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(80vh) rotate(720deg);
+    opacity: 0;
+  }
 }
