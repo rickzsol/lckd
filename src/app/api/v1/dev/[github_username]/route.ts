@@ -36,7 +36,7 @@ export async function GET(
 
         if (!error && data && data.length > 0) {
           const { tokenToDisplay } = await import("@/lib/queries");
-          const tokens = data.map(tokenToDisplay);
+          const tokens = data.map((t: import("@/types/index").Token) => tokenToDisplay(t));
           return apiResponse({ developer: github_username, tokens });
         }
       } catch {

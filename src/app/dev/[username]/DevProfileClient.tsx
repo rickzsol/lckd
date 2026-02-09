@@ -353,7 +353,7 @@ function WalletLinkSection({ profile }: { profile: GitHubProfile }) {
 
     try {
       const ts = Date.now();
-      const message = `Link wallet to trudev.fun\nUsername: ${profile.github_username}\nTimestamp: ${ts}`;
+      const message = `Link wallet to lockpad.fun\nUsername: ${profile.github_username}\nTimestamp: ${ts}`;
       const msgBytes = new TextEncoder().encode(message);
       const sigBytes = await signMessage(msgBytes);
       const signature = Buffer.from(sigBytes).toString("base64");

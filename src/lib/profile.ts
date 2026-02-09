@@ -7,7 +7,7 @@ const MOCK_PROFILE: GitHubProfile = {
   id: "mock-1",
   wallet_address: "",
   github_id: "0",
-  github_username: "trudev",
+  github_username: "lockpad",
   github_avatar: "/logo.png",
   account_created_at: "2023-01-15T00:00:00Z",
   public_repos: 12,
@@ -31,7 +31,7 @@ export async function getProfileByUsername(
   username: string,
 ): Promise<GitHubProfile | null> {
   if (!hasSupabaseConfig()) {
-    return username === "trudev" ? MOCK_PROFILE : null;
+    return username === "lockpad" ? MOCK_PROFILE : null;
   }
 
   try {
@@ -66,7 +66,7 @@ export async function getTokensByCreator(
       .order("created_at", { ascending: false });
 
     if (error || !data) return [];
-    return (data as Token[]).map(tokenToDisplay);
+    return (data as Token[]).map((t) => tokenToDisplay(t));
   } catch {
     return [];
   }

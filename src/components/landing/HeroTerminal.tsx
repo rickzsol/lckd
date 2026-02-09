@@ -3,11 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 const COMMANDS = [
-  "trudev verify --lock --ship",
-  "trudev launch --vesting 90d",
-  "trudev status --trust-tier",
-  "trudev connect --github --wallet",
-  "trudev lock --amount 10% --stream",
+  "lockpad verify --lock --ship",
+  "lockpad launch --lock 90d",
+  "lockpad status --trust-tier",
+  "lockpad connect --github --wallet",
+  "lockpad lock --amount 10% --stream",
 ];
 
 const TYPE_SPEED = 50;

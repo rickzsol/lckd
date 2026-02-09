@@ -67,32 +67,32 @@ const CONTENT: Record<Tab, LineProps[]> = {
   npx: [
     {
       comment: "# launch a token with locked dev allocation",
-      cmd: "npx trudev launch",
-      copyText: "npx trudev launch",
+      cmd: "npx lockpad launch",
+      copyText: "npx lockpad launch",
     },
   ],
   npm: [
     {
       comment: "# install globally",
-      cmd: "npm i -g trudev",
-      copyText: "npm i -g trudev",
+      cmd: "npm i -g lockpad",
+      copyText: "npm i -g lockpad",
     },
     {
       comment: "# interactive launch wizard",
-      cmd: "trudev launch",
-      copyText: "trudev launch",
+      cmd: "lockpad launch",
+      copyText: "lockpad launch",
     },
   ],
   config: [
     {
       comment: "# launch from config (CI/CD, bots)",
-      cmd: "trudev launch --config trudev.json",
-      copyText: "trudev launch --config trudev.json",
+      cmd: "lockpad launch --config lockpad.json",
+      copyText: "lockpad launch --config lockpad.json",
     },
     {
       comment: "# check lock status",
-      cmd: "trudev status <mint-address>",
-      copyText: "trudev status ",
+      cmd: "lockpad status <mint-address>",
+      copyText: "lockpad status ",
     },
   ],
 };

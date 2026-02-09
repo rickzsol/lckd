@@ -8,10 +8,7 @@ import {
 } from "@solana/web3.js";
 import type { LaunchConfig } from "@/types/index";
 import { uploadToIPFS, type TokenMetadataInput } from "./ipfs";
-import {
-  fetchPumpPortalCreateTx,
-  estimateTokensFromSol,
-} from "./pumpfun";
+import { fetchPumpPortalCreateTx } from "./pumpfun";
 import {
   buildStreamflowLockInstructions,
   calculateLockAmount,
@@ -125,13 +122,13 @@ export function prepareCreateTxForSigning(
 // ─── Step 3: Streamflow Lock Transaction ─────────────────────────────────────
 
 /**
- * Builds the Streamflow vesting lock transaction.
+ * Builds the Streamflow token lock transaction.
  *
  * This must be called AFTER the create+buy transaction confirms,
  * because Streamflow needs to read the token account balance.
  *
  * The lock is a self-lock: sender = recipient = wallet owner.
- * Linear vesting over the specified duration, non-cancelable.
+ * Tokens unlock in full at the end of the lock period, non-cancelable.
  */
 export async function buildLockTransaction(
   config: LaunchConfig,
@@ -140,8 +137,37 @@ export async function buildLockTransaction(
   connection: Connection,
 ): Promise<LockTxBundle> {
   const durationSeconds = lockDaysToSeconds(config.lockDurationDays);
-  const estimatedTokens = estimateTokensFromSol(config.buyAmountSol);
-  const lockAmount = calculateLockAmount(estimatedTokens, config.lockPercentage);
+
+  // Query actual token balance with retry — the RPC may not have indexed
+  // the token account immediately after the create tx confirms.
+  const { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } = await import("@solana/spl-token");
+
+  const BALANCE_MAX_RETRIES = 15;
+  const BALANCE_RETRY_DELAY_MS = 2000;
+
+  let actualBalance = BigInt(0);
+  for (let attempt = 0; attempt < BALANCE_MAX_RETRIES; attempt++) {
+    for (const programId of [TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID]) {
+      try {
+        const ata = await getAssociatedTokenAddress(mintAddress, walletPublicKey, false, programId);
+        const info = await connection.getTokenAccountBalance(ata);
+        actualBalance = BigInt(info.value.amount);
+        if (actualBalance > BigInt(0)) break;
+      } catch {
+        // Account doesn't exist under this program — try next
+      }
+    }
+    if (actualBalance > BigInt(0)) break;
+    if (attempt < BALANCE_MAX_RETRIES - 1) {
+      await new Promise((r) => setTimeout(r, BALANCE_RETRY_DELAY_MS));
+    }
+  }
+
+  if (actualBalance === BigInt(0)) {
+    throw new Error("No tokens found in wallet after multiple attempts. The create transaction may not have landed yet — please retry.");
+  }
+
+  const lockAmount = calculateLockAmount(actualBalance, config.lockPercentage);
 
   const lockResult = await buildStreamflowLockInstructions(
     {
@@ -163,9 +189,9 @@ export async function buildLockTransaction(
     }),
   );
 
-  // Streamflow suggests ~300K CU for stream creation
+  // Streamflow stream creation can use up to ~400K CU on mainnet
   transaction.add(
-    ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
   );
 
   for (const ix of lockResult.instructions) {
@@ -178,11 +204,12 @@ export async function buildLockTransaction(
   transaction.lastValidBlockHeight = lastValidBlockHeight;
   transaction.feePayer = walletPublicKey;
 
+  // Do NOT partialSign here — wallet adapters can re-serialize the transaction
+  // and drop existing partial signatures. The caller must sign with these
+  // keypairs AFTER the wallet signs.
   const additionalSigners: Keypair[] = [];
   if (lockResult.metadataKeypair) {
-    const kp = Keypair.fromSecretKey(lockResult.metadataKeypair.secretKey);
-    additionalSigners.push(kp);
-    transaction.partialSign(kp);
+    additionalSigners.push(Keypair.fromSecretKey(lockResult.metadataKeypair.secretKey));
   }
 
   return { transaction, additionalSigners };

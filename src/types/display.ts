@@ -50,6 +50,7 @@ export interface DisplayToken {
   chg: string;
   holders: number;
   live?: string;
+  liquidity?: string;
   /** Solana mint address — used for routing. Undefined for mock data. */
   mintAddress?: string;
 }

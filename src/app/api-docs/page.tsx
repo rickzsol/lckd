@@ -10,9 +10,9 @@ import {
 } from "@/components/docs/DocsPrimitives";
 
 export const metadata: Metadata = {
-  title: "API Docs — trudev.fun",
+  title: "API Docs — Lockpad",
   description:
-    "REST API documentation for trudev.fun — launch tokens, query lock status, and integrate with your tools.",
+    "REST API documentation for Lockpad — launch tokens, query lock status, and integrate with your tools.",
 };
 
 function ParamRow({ name, type, desc }: { name: string; type: string; desc: string }) {
@@ -71,7 +71,7 @@ export default function ApiDocsPage() {
           <SectionHeading id="overview">API Overview</SectionHeading>
 
           <Prose>
-            The trudev.fun REST API lets you integrate token launches, lock queries, and
+            The lockpad.fun REST API lets you integrate token launches, lock queries, and
             developer profiles into CLIs, bots, CI/CD pipelines, and dashboards. All
             endpoints return JSON and support CORS.
           </Prose>
@@ -79,7 +79,7 @@ export default function ApiDocsPage() {
           <div className="space-y-3">
             <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-4">
               <p className="mb-2 font-mono text-xs font-bold text-white">Base URL</p>
-              <code className="font-mono text-sm text-emerald-accent">https://www.trudev.fun/api/v1</code>
+              <code className="font-mono text-sm text-emerald-accent">https://www.lockpad.fun/api/v1</code>
             </div>
 
             <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-4">
@@ -111,16 +111,16 @@ export default function ApiDocsPage() {
           </Prose>
 
           <SubHeading>Installation</SubHeading>
-          <CodeBlock lang="bash" code="npx trudev launch" />
+          <CodeBlock lang="bash" code="npx lockpad launch" />
 
           <SubHeading>Commands</SubHeading>
           <div className="space-y-2">
             {[
-              { cmd: "trudev launch", desc: "Interactive token launch wizard" },
-              { cmd: "trudev status <mint-address>", desc: "Check lock status for a token" },
-              { cmd: "trudev profile <github-username>", desc: "View all tokens by a developer" },
-              { cmd: "trudev verify-dex <mint-address>", desc: "Check DexScreener data for a token" },
-              { cmd: "trudev tokens", desc: "List recent token launches" },
+              { cmd: "lockpad launch", desc: "Interactive token launch wizard" },
+              { cmd: "lockpad status <mint-address>", desc: "Check lock status for a token" },
+              { cmd: "lockpad profile <github-username>", desc: "View all tokens by a developer" },
+              { cmd: "lockpad verify-dex <mint-address>", desc: "Check DexScreener data for a token" },
+              { cmd: "lockpad tokens", desc: "List recent token launches" },
             ].map((item) => (
               <div key={item.cmd} className="flex items-start gap-3 rounded-lg border border-white/[0.04] bg-white/[0.015] px-4 py-3">
                 <code className="shrink-0 font-mono text-xs text-emerald-accent">{item.cmd}</code>
@@ -130,9 +130,9 @@ export default function ApiDocsPage() {
           </div>
 
           <SubHeading>Launch Wizard Output</SubHeading>
-          <CodeBlock lang="terminal" code={`$ trudev launch
+          <CodeBlock lang="terminal" code={`$ lockpad launch
 
-  trudev.fun — token launcher with locked dev allocations
+  lockpad.fun — builders who ship. tokens that lock.
 
   ? Token name: MyToken
   ? Ticker: $MTK
@@ -156,7 +156,7 @@ export default function ApiDocsPage() {
   ? Sign and submit? Yes
 
   Transaction submitted: 5xYZ...abc
-  Token live at: https://www.trudev.fun/token/7xKX...AsU`} />
+  Token live at: https://www.lockpad.fun/token/7xKX...AsU`} />
         </section>
 
         {/* ─── Config File ───────────────────────────────── */}
@@ -164,7 +164,7 @@ export default function ApiDocsPage() {
           <SectionHeading id="config-file">Config File</SectionHeading>
 
           <Prose>
-            For CI/CD and automated launches, use a <Accent>trudev.json</Accent> config
+            For CI/CD and automated launches, use a <Accent>lockpad.json</Accent> config
             file instead of the interactive wizard.
           </Prose>
 
@@ -185,7 +185,7 @@ export default function ApiDocsPage() {
 }`} />
 
           <Prose>
-            Then run: <code className="font-mono text-xs text-emerald-accent">trudev launch --config trudev.json</code>
+            Then run: <code className="font-mono text-xs text-emerald-accent">lockpad launch --config lockpad.json</code>
           </Prose>
         </section>
 
@@ -223,7 +223,7 @@ Content-Type: application/json
             <ParamRow name="name" type="string" desc="Token name" />
             <ParamRow name="ticker" type="string" desc="Token ticker (max 10 chars)" />
             <ParamRow name="buyAmountSol" type="number" desc="Initial dev buy in SOL (> 0)" />
-            <ParamRow name="lockDurationDays" type="number" desc="Vesting lock duration in days (>= 1)" />
+            <ParamRow name="lockDurationDays" type="number" desc="Lock duration in days (>= 1)" />
             <ParamRow name="lockPercentage" type="number" desc="Percentage of tokens to lock (1-100)" />
           </ParamTable>
 
@@ -256,7 +256,7 @@ Content-Type: application/json
           </Prose>
 
           <SubHeading>Request</SubHeading>
-          <CodeBlock lang="bash" code={`curl -X POST https://www.trudev.fun/api/v1/metadata/upload \\
+          <CodeBlock lang="bash" code={`curl -X POST https://www.lockpad.fun/api/v1/metadata/upload \\
   -F "file=@token-logo.png" \\
   -F "name=MyToken" \\
   -F "symbol=MTK" \\
@@ -330,7 +330,7 @@ Content-Type: application/json
           </SectionHeading>
 
           <Prose>
-            Returns the vesting lock status for a token — useful for monitoring dashboards
+            Returns the lock status for a token — useful for monitoring dashboards
             and automated alerts.
           </Prose>
 
@@ -348,13 +348,13 @@ Content-Type: application/json
     "daysRemaining": 158,
     "start": "Jan 15",
     "end": "Jul 14",
-    "status": "vesting"
+    "status": "locked"
   }
 }`} />
 
           <ParamTable>
-            <ParamRow name="status" type="string" desc="One of: fully_locked, vesting, fully_unlocked" />
-            <ParamRow name="percentUnlocked" type="number" desc="0-100 representing vesting progress" />
+            <ParamRow name="status" type="string" desc="One of: fully_locked, locked, fully_unlocked" />
+            <ParamRow name="percentUnlocked" type="number" desc="0-100 representing lock progress" />
             <ParamRow name="daysRemaining" type="number" desc="Days until fully unlocked" />
           </ParamTable>
         </section>
@@ -472,7 +472,7 @@ jobs:
       - name: Upload metadata
         id: metadata
         run: |
-          RESPONSE=$(curl -s -X POST https://www.trudev.fun/api/v1/metadata/upload \\
+          RESPONSE=$(curl -s -X POST https://www.lockpad.fun/api/v1/metadata/upload \\
             -F "file=@./token-logo.png" \\
             -F "name=\${{ vars.TOKEN_NAME }}" \\
             -F "symbol=\${{ vars.TOKEN_TICKER }}" \\
@@ -481,7 +481,7 @@ jobs:
 
       - name: Build launch transaction
         run: |
-          curl -s -X POST https://www.trudev.fun/api/v1/launch \\
+          curl -s -X POST https://www.lockpad.fun/api/v1/launch \\
             -H "Content-Type: application/json" \\
             -d '{
               "walletPublicKey": "\${{ secrets.WALLET_PUBKEY }}",
@@ -494,7 +494,7 @@ jobs:
             }'`} />
 
           <SubHeading>Bot Integration (TypeScript)</SubHeading>
-          <CodeBlock lang="typescript" code={`const BASE = "https://www.trudev.fun/api/v1";
+          <CodeBlock lang="typescript" code={`const BASE = "https://www.lockpad.fun/api/v1";
 
 async function getTokenLockStatus(mintAddress: string) {
   const res = await fetch(\`\${BASE}/token/\${mintAddress}/lock\`);
@@ -521,7 +521,7 @@ const POLL_INTERVAL = 60_000; // 1 minute
 
 async function pollLockStatus() {
   const res = await fetch(
-    \`https://www.trudev.fun/api/v1/token/\${MINT}/lock\`
+    \`https://www.lockpad.fun/api/v1/token/\${MINT}/lock\`
   );
   const { lock } = await res.json();
 

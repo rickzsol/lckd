@@ -43,16 +43,15 @@ export default function Navbar() {
       <div className="flex w-full items-center justify-between px-6 py-3">
         <Link href="/" className="flex items-center gap-[7px]">
           <Image
-            src="/icon-transparent.png"
-            alt="trudev logo"
+            src="/icon.png"
+            alt="Lockpad logo"
             width={26}
             height={26}
             className="rounded-md"
             priority
           />
           <span className="font-sans text-[15px] font-bold">
-            tru<span className="text-emerald-accent">dev</span>
-            <span className="text-[#555]">.fun</span>
+            LOCK<span className="text-emerald-accent">PAD</span>
           </span>
         </Link>
 
@@ -74,7 +73,7 @@ export default function Navbar() {
           <span className="h-3.5 w-px bg-white/[0.08]" />
           <div className="flex items-center gap-3">
             <a
-              href="https://x.com/trudevfun"
+              href="https://x.com/lockpadfun"
               target="_blank"
               rel="noopener noreferrer"
               className="text-[#555] transition-colors hover:text-emerald-accent"
@@ -160,7 +159,7 @@ export default function Navbar() {
             })}
             <div className="flex items-center gap-4 border-t border-white/[0.06] pt-3">
               <a
-                href="https://x.com/trudevfun"
+                href="https://x.com/lockpadfun"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[#555] transition-colors hover:text-emerald-accent"

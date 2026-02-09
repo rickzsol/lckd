@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import Badge from "@/components/ui/Badge";
@@ -8,11 +9,32 @@ import DexScreenerChart from "@/components/token/DexScreenerChart";
 import JupiterSwap from "@/components/token/JupiterSwap";
 import type { DisplayToken } from "@/types/display";
 
-export default function TokenDetailClient({ t }: { t: DisplayToken }) {
-  const isImageUrl =
-    typeof t.image === "string" &&
-    (t.image.startsWith("http") || t.image.startsWith("/"));
+function TokenImage({ src, alt }: { src: string; alt: string }) {
+  const [hasError, setHasError] = useState(false);
+  const isUrl = src.startsWith("http") || src.startsWith("/");
 
+  if (!isUrl || hasError) {
+    return (
+      <span className="font-mono text-sm font-bold text-emerald-accent">
+        {hasError ? alt.slice(0, 2).toUpperCase() : src}
+      </span>
+    );
+  }
+
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={96}
+      height={96}
+      className="h-full w-full object-cover"
+      unoptimized
+      onError={() => setHasError(true)}
+    />
+  );
+}
+
+export default function TokenDetailClient({ t }: { t: DisplayToken }) {
   return (
     <div className="mx-auto max-w-[1100px] p-4">
       <Link
@@ -26,20 +48,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-emerald-accent/20 bg-emerald-accent/[0.06]">
-            {isImageUrl ? (
-              <Image
-                src={t.image}
-                alt={t.name}
-                width={96}
-                height={96}
-                className="h-full w-full object-cover"
-                unoptimized
-              />
-            ) : (
-              <span className="font-mono text-sm font-bold text-emerald-accent">
-                {t.image}
-              </span>
-            )}
+            <TokenImage src={t.image} alt={t.name} />
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -118,8 +127,8 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
       <div className="stats-strip">
         {[
           { l: "MCap", v: t.mcap },
-          { l: "Volume", v: t.vol },
-          { l: "Holders", v: t.holders > 0 ? t.holders.toLocaleString() : "--" },
+          { l: "24h Vol", v: t.vol },
+          { l: "Liquidity", v: t.liquidity ?? "--" },
           { l: "Locked", v: t.lock.amount },
           { l: "Duration", v: t.lock.duration },
         ].map((s) => (
@@ -139,7 +148,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
         {/* Lock card */}
         <div className="rounded-xl border border-emerald-accent/15 bg-emerald-accent/[0.03] p-5">
           <div className="mb-3.5 flex items-center justify-between font-mono text-[11px] font-bold uppercase tracking-wider text-[#888]">
-            <span>Vesting Lock &mdash; Streamflow</span>
+            <span>Token Lock &mdash; Streamflow</span>
             <span className="text-[10px] font-normal normal-case tracking-normal text-[#555]">
               verify &rarr;
             </span>

@@ -7,6 +7,31 @@ import Badge from "@/components/ui/Badge";
 import Bar from "@/components/ui/Bar";
 import type { DisplayToken, DisplayCommit } from "@/types/display";
 
+function FeedImage({ src, alt }: { src: string; alt: string }) {
+  const [hasError, setHasError] = useState(false);
+  const isUrl = src.startsWith("http") || src.startsWith("/");
+
+  if (!isUrl || hasError) {
+    return (
+      <span className="font-mono text-xs font-bold text-emerald-accent">
+        {hasError ? alt.slice(0, 2).toUpperCase() : src}
+      </span>
+    );
+  }
+
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={96}
+      height={96}
+      className="h-full w-full object-cover"
+      unoptimized
+      onError={() => setHasError(true)}
+    />
+  );
+}
+
 type Filter = "all" | "builders" | "shipped";
 
 export default function FeedClient({
@@ -114,29 +139,13 @@ export default function FeedClient({
           const href = t.mintAddress
             ? `/token/${t.mintAddress}`
             : `/token/${t.id}`;
-          const isImageUrl =
-            typeof t.image === "string" &&
-            (t.image.startsWith("http") || t.image.startsWith("/"));
 
           return (
             <Link key={t.id} href={href} className="token-card block">
               {/* Row 1 */}
               <div className="mb-2 flex items-center gap-2.5">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-emerald-accent/20 bg-emerald-accent/[0.06]">
-                  {isImageUrl ? (
-                    <Image
-                      src={t.image}
-                      alt={t.name}
-                      width={96}
-                      height={96}
-                      className="h-full w-full object-cover"
-                      unoptimized
-                    />
-                  ) : (
-                    <span className="font-mono text-xs font-bold text-emerald-accent">
-                      {t.image}
-                    </span>
-                  )}
+                  <FeedImage src={t.image} alt={t.name} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-[5px]">

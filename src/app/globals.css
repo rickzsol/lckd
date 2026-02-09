@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+@property --shiny-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
 @theme inline {
   --color-emerald-accent: #10b981;
   --color-emerald-accent-dim: #10b98133;
@@ -60,42 +66,6 @@
     font-size: 11px !important;
     font-family: var(--font-mono) !important;
     border-radius: 6px !important;
-  }
-
-  /* ─── Background patterns ─────────────────────────── */
-  .dot-grid {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    opacity: 0.04;
-    background-image: radial-gradient(circle, rgba(16, 185, 129, 1) 1px, transparent 1px);
-    background-size: 20px 20px;
-    pointer-events: none;
-  }
-
-  .page-glow {
-    position: fixed;
-    top: -10%;
-    left: 50%;
-    transform: translateX(-50%);
-    width: min(800px, 100vw);
-    height: min(400px, 50vw);
-    border-radius: 50%;
-    background: radial-gradient(ellipse, rgba(16, 185, 129, 0.03) 0%, transparent 70%);
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  .hero-glow {
-    position: absolute;
-    top: 10%;
-    left: 50%;
-    transform: translateX(-50%);
-    width: min(500px, 100vw);
-    height: min(500px, 100vw);
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(16, 185, 129, 0.07) 0%, transparent 70%);
-    pointer-events: none;
   }
 
   /* ─── Token card ───────────────────────────────────── */
@@ -407,6 +377,87 @@
   .wallet-adapter-modal-button-close:hover {
     background: rgba(255,255,255,0.12) !important;
   }
+
+  /* ─── Shiny button ──────────────────────────────── */
+  .shiny-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    border-radius: 10px;
+    background: conic-gradient(
+      from var(--shiny-angle),
+      transparent 0%,
+      #10b981 5%,
+      #059669 15%,
+      transparent 25%,
+      transparent 100%
+    );
+    animation: shiny-rotate 4s linear infinite;
+    cursor: pointer;
+    text-decoration: none;
+    border: none;
+    outline: none;
+  }
+  .shiny-btn__content {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 12px 28px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(8, 8, 12, 0.95), rgba(17, 19, 24, 0.95));
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #10b981;
+    position: relative;
+    z-index: 1;
+    transition: color 0.3s;
+  }
+  .shiny-btn::before {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    border-radius: 8px;
+    background: radial-gradient(
+      circle at 1px 1px,
+      rgba(16, 185, 129, 0.12) 0.5px,
+      transparent 0.5px
+    );
+    background-size: 8px 8px;
+    z-index: 0;
+    opacity: 0.4;
+  }
+  .shiny-btn::after {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    border-radius: 8px;
+    background: linear-gradient(
+      83deg,
+      transparent 0%,
+      rgba(16, 185, 129, 0.08) 30%,
+      rgba(16, 185, 129, 0.18) 50%,
+      rgba(16, 185, 129, 0.08) 70%,
+      transparent 100%
+    );
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+  .shiny-btn:hover::after {
+    opacity: 1;
+  }
+  .shiny-btn:hover .shiny-btn__content {
+    color: #fff;
+  }
+  .shiny-btn:focus-visible {
+    outline: 2px solid #10b981;
+    outline-offset: 2px;
+  }
 }
 
 @keyframes pulse-dot {
@@ -427,5 +478,14 @@
   100% {
     transform: translateY(80vh) rotate(720deg);
     opacity: 0;
+  }
+}
+
+@keyframes shiny-rotate {
+  from {
+    --shiny-angle: 0deg;
+  }
+  to {
+    --shiny-angle: 360deg;
   }
 }

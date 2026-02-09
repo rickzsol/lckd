@@ -14,10 +14,10 @@ function hasSupabaseConfig(): boolean {
 
 function computeLockStatus(token: DisplayToken) {
   const pct = token.lock.pct;
-  let status: "fully_locked" | "vesting" | "fully_unlocked";
+  let status: "fully_locked" | "locked" | "fully_unlocked";
   if (pct === 0) status = "fully_locked";
   else if (pct >= 100) status = "fully_unlocked";
-  else status = "vesting";
+  else status = "locked";
 
   const durationMatch = token.lock.duration.match(/^(\d+)/);
   const totalDays = durationMatch ? parseInt(durationMatch[1], 10) : 0;

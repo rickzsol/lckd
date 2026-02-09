@@ -28,24 +28,40 @@ interface RecordBody {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as RecordBody;
+    const body = (await request.json()) as Partial<RecordBody>;
 
     if (!body.mintAddress || !isValidSolanaAddress(body.mintAddress)) {
       return apiError("Valid mintAddress is required", 400);
     }
+
+    const supabase = createServerClient();
+
+    // Partial update — only lockTxSignature provided (lock completed after initial record)
+    if (body.lockTxSignature && !body.name) {
+      const { error } = await supabase
+        .from("tokens")
+        .update({ lock_tx: body.lockTxSignature })
+        .eq("mint_address", body.mintAddress);
+
+      if (error) {
+        console.error("[token/record] Lock update error:", error.message);
+        return apiError(`Failed to update lock: ${error.message}`, 500);
+      }
+      return apiResponse({ success: true, updated: true }, 200);
+    }
+
+    // Full record — validate required fields
     if (!body.creatorWallet || !isValidSolanaAddress(body.creatorWallet)) {
       return apiError("Valid creatorWallet is required", 400);
     }
     if (!body.name?.trim()) return apiError("name is required", 400);
     if (!body.ticker?.trim()) return apiError("ticker is required", 400);
 
-    const supabase = createServerClient();
-
     const { error } = await supabase.from("tokens").upsert(
       {
         mint_address: body.mintAddress,
         name: body.name.trim(),
-        ticker: body.ticker.trim(),
+        ticker: body.ticker!.trim(),
         description: body.description ?? "",
         image_uri: body.imageUri ?? "",
         creator_wallet: body.creatorWallet,

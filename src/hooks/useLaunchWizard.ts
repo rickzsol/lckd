@@ -12,9 +12,101 @@ import {
 import {
   prepareCreateTxForSigning,
   buildLockTransaction,
-  estimateTokensFromSol,
-  calculateLockAmount,
+  sendViaJito,
+  createJitoTipInstruction,
 } from "@/lib/solana";
+
+const LAMPORTS_PER_SOL = 1_000_000_000;
+
+/**
+ * Confirms a transaction using blockhash-based strategy (reliable) with a
+ * fallback signature status poll. The deprecated 2-arg confirmTransaction
+ * relies on WebSocket which drops silently on many RPC providers.
+ */
+async function confirmTxReliably(
+  connection: Connection,
+  signature: string,
+  blockhash: string,
+  lastValidBlockHeight: number,
+): Promise<void> {
+  try {
+    const result = await connection.confirmTransaction(
+      { signature, blockhash, lastValidBlockHeight },
+      "confirmed",
+    );
+    if (result.value.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(result.value.err)}`);
+    }
+    return;
+  } catch (err) {
+    // Blockhash-based confirmation can throw if the blockhash expires.
+    // Fall back to polling getSignatureStatuses (up to ~60s).
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const statusRes = await connection.getSignatureStatuses([signature]);
+      const status = statusRes.value[0];
+      if (status) {
+        if (status.err) {
+          throw new Error(`Transaction failed: ${JSON.stringify(status.err)}`);
+        }
+        if (
+          status.confirmationStatus === "confirmed" ||
+          status.confirmationStatus === "finalized"
+        ) {
+          return;
+        }
+      }
+    }
+    throw err;
+  }
+}
+
+function parseTransactionError(raw: string, buyAmountSol: number): string {
+  // Insufficient SOL
+  const lamportMatch = raw.match(/insufficient lamports (\d+), need (\d+)/);
+  if (lamportMatch) {
+    const have = parseInt(lamportMatch[1]) / LAMPORTS_PER_SOL;
+    const need = parseInt(lamportMatch[2]) / LAMPORTS_PER_SOL;
+    return `Insufficient SOL. You have ${have.toFixed(3)} SOL but need ~${need.toFixed(3)} SOL (${buyAmountSol} SOL buy + fees). Fund your wallet and try again.`;
+  }
+
+  // Insufficient token balance (lock overshoot)
+  if (raw.includes("insufficient") && raw.includes("token")) {
+    return "Insufficient token balance for the lock amount. Try a lower lock percentage.";
+  }
+
+  // Streamflow timestamp
+  if (raw.includes("timestamps are invalid")) {
+    return "Token lock failed due to a timing issue. Please try again.";
+  }
+
+  // Token account not found
+  if (raw.includes("could not find account") || raw.includes("No tokens found")) {
+    return "Token account not found yet. Wait a few seconds for the network to confirm, then retry.";
+  }
+
+  // Confirmation timeout
+  if (raw.includes("not confirmed in") || raw.includes("unknown if it succeeded")) {
+    return "Transaction was sent but confirmation timed out. Check Solscan — it may have succeeded. If not, retry.";
+  }
+
+  // Blockhash expired
+  if (raw.includes("blockhash") && raw.includes("not found")) {
+    return "Transaction expired before it could be confirmed. Please try again.";
+  }
+
+  // User rejected
+  if (raw.includes("User rejected") || raw.includes("user rejected")) {
+    return "Transaction was rejected in your wallet.";
+  }
+
+  // Slippage / swap failure
+  if (raw.includes("Slippage") || raw.includes("0x1771")) {
+    return "Transaction failed due to slippage. Try increasing your buy amount or try again.";
+  }
+
+  return raw;
+}
 
 export const STEP_LABELS = [
   "Token Details",
@@ -29,16 +121,19 @@ export const LAUNCH_PHASES_WITH_LOCK = [
   "Uploading metadata to IPFS...",
   "Building create transaction...",
   "Awaiting wallet signature (create)...",
-  "Confirming token creation on-chain...",
+  "Sending token creation...",
+  "Confirming token on-chain...",
+  "Building token lock...",
   "Awaiting wallet signature (lock)...",
-  "Confirming vesting lock on-chain...",
+  "Confirming token lock on-chain...",
 ] as const;
 
 export const LAUNCH_PHASES_NO_LOCK = [
   "Uploading metadata to IPFS...",
   "Building create transaction...",
   "Awaiting wallet signature (create)...",
-  "Confirming token creation on-chain...",
+  "Sending token creation...",
+  "Confirming token on-chain...",
 ] as const;
 
 export type LaunchStatus = "idle" | "launching" | "success" | "error" | "partial";
@@ -55,7 +150,7 @@ export interface LaunchDeps {
   connection: Connection;
 }
 
-const STORAGE_KEY = "trudev_launch_wizard";
+const STORAGE_KEY = "lockpad_launch_wizard";
 
 const INITIAL_CONFIG: LaunchConfig = {
   name: "",
@@ -337,51 +432,88 @@ export function useLaunchWizard() {
       let createTx = prepareCreateTxForSigning(txBytes, mintKeypair);
       createTx = await signTransaction(createTx);
 
-      // Phase 3: Send + confirm create transaction
+      // Phase 3: Send create transaction via RPC (+ Jito fire-and-forget for speed)
       setLaunchPhase(3);
+      const createBlockhash = await connection.getLatestBlockhash("confirmed");
+      const serializedCreate = createTx.serialize();
+      // Send via regular RPC for guaranteed propagation to all validators.
+      // The PumpPortal VersionedTx already has priority fees but no Jito tip,
+      // so bundleOnly submission is unreliable. RPC is the primary path.
       confirmedCreateSig = await connection.sendRawTransaction(
-        createTx.serialize(),
+        serializedCreate,
         { skipPreflight: false, maxRetries: 3 },
       );
-      await connection.confirmTransaction(confirmedCreateSig, "confirmed");
-      isCreateConfirmed = true;
+      // Also fire via Jito for faster landing (fire-and-forget, don't block)
+      sendViaJito(serializedCreate).catch(() => {});
 
-      // Store partial result in case lock fails
-      setLaunchResult({
-        mintAddress: confirmedMintAddress,
-        createTxSignature: confirmedCreateSig,
-        lockTxSignature: null,
-      });
+      // Phase 4: Wait for create tx to actually confirm on-chain
+      setLaunchPhase(4);
+      await confirmTxReliably(
+        connection,
+        confirmedCreateSig,
+        createBlockhash.blockhash,
+        createBlockhash.lastValidBlockHeight,
+      );
+      isCreateConfirmed = true;
 
       let lockSig: string | null = null;
 
       if (!config.skipLock) {
-        // Phase 4: Build + sign lock transaction
-        setLaunchPhase(4);
-        const { transaction: lockTx } = await buildLockTransaction(
+        // Phase 5: Build lock transaction (polls for token balance)
+        setLaunchPhase(5);
+        const { transaction: lockTx, additionalSigners } = await buildLockTransaction(
           config,
           publicKey,
           mintKeypair.publicKey,
           connection,
         );
-        const signedLockTx = await signTransaction(lockTx);
 
-        // Phase 5: Send + confirm lock transaction
-        setLaunchPhase(5);
-        lockSig = await connection.sendRawTransaction(
-          signedLockTx.serialize(),
-          { skipPreflight: false, maxRetries: 3 },
+        // Add Jito tip to the lock transaction for faster landing
+        lockTx.add(createJitoTipInstruction(publicKey));
+
+        // Phase 6: Sign lock transaction
+        setLaunchPhase(6);
+        const walletSignedLockTx = await signTransaction(lockTx);
+        for (const signer of additionalSigners) {
+          walletSignedLockTx.partialSign(signer);
+        }
+
+        // Store partial result in case lock send fails
+        setLaunchResult({
+          mintAddress: confirmedMintAddress,
+          createTxSignature: confirmedCreateSig,
+          lockTxSignature: null,
+        });
+
+        // Phase 7: Send + confirm lock transaction (Jito with RPC fallback)
+        setLaunchPhase(7);
+        const lockBlockhash = await connection.getLatestBlockhash("confirmed");
+        const serializedLock = walletSignedLockTx.serialize();
+        const jitoLockResult = await sendViaJito(serializedLock);
+        if (jitoLockResult) {
+          lockSig = jitoLockResult.signature;
+        } else {
+          lockSig = await connection.sendRawTransaction(
+            serializedLock,
+            { skipPreflight: true, maxRetries: 5 },
+          );
+        }
+        await confirmTxReliably(
+          connection,
+          lockSig,
+          lockBlockhash.blockhash,
+          lockBlockhash.lastValidBlockHeight,
         );
-        await connection.confirmTransaction(lockSig, "confirmed");
       }
 
-      // Record to Supabase (via server route with service role key)
-      const estimatedTokens = estimateTokensFromSol(config.buyAmountSol);
-      const lockAmount = config.skipLock
-        ? 0
-        : calculateLockAmount(estimatedTokens, config.lockPercentage);
+      // Record to Supabase after both TXs confirmed
+      setLaunchResult({
+        mintAddress: confirmedMintAddress,
+        createTxSignature: confirmedCreateSig,
+        lockTxSignature: lockSig,
+      });
 
-      const recordRes = await fetch("/api/v1/token/record", {
+      await fetch("/api/v1/token/record", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -395,7 +527,7 @@ export function useLaunchWizard() {
           lockTxSignature: lockSig ?? "",
           lockDurationDays: config.skipLock ? 0 : config.lockDurationDays,
           lockPercentage: config.skipLock ? 0 : config.lockPercentage,
-          lockAmount: lockAmount.toString(),
+          lockAmount: "0",
           buyAmountSol: config.buyAmountSol,
           githubUsername: config.githubUsername,
           githubRepo: config.githubRepo,
@@ -405,25 +537,17 @@ export function useLaunchWizard() {
           websiteUrl: config.websiteUrl,
         }),
       });
-      if (!recordRes.ok) {
-        console.warn("Failed to record launch to database — token page may not load immediately");
-      }
 
-      setLaunchResult({
-        mintAddress: confirmedMintAddress,
-        createTxSignature: confirmedCreateSig,
-        lockTxSignature: lockSig,
-      });
       setLaunchStatus("success");
       sessionStorage.removeItem(STORAGE_KEY);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error occurred";
+      const raw = err instanceof Error ? err.message : "Unknown error occurred";
+      const message = parseTransactionError(raw, config.buyAmountSol);
 
       if (isCreateConfirmed && !config.skipLock) {
         setLaunchStatus("partial");
         setErrorMessage(`Token created but lock failed: ${message}`);
       } else if (isCreateConfirmed && config.skipLock) {
-        // Create succeeded and no lock was needed — treat as success
         setLaunchStatus("success");
         sessionStorage.removeItem(STORAGE_KEY);
       } else {
@@ -440,29 +564,47 @@ export function useLaunchWizard() {
     const { publicKey, signTransaction, connection } = deps;
 
     setLaunchStatus("launching");
-    setLaunchPhase(4);
+    setLaunchPhase(5); // Building lock
     setErrorMessage(null);
 
     try {
       const mintPubkey = new PublicKey(pendingMintAddress);
 
-      const { transaction: lockTx } = await buildLockTransaction(
+      const { transaction: lockTx, additionalSigners } = await buildLockTransaction(
         config,
         publicKey,
         mintPubkey,
         connection,
       );
-      const signedLockTx = await signTransaction(lockTx);
 
-      setLaunchPhase(5);
-      const lockSig = await connection.sendRawTransaction(
-        signedLockTx.serialize(),
-        { skipPreflight: false, maxRetries: 3 },
+      // Add Jito tip for faster landing
+      lockTx.add(createJitoTipInstruction(publicKey));
+
+      setLaunchPhase(6); // Signing lock
+      const walletSignedLockTx = await signTransaction(lockTx);
+      for (const signer of additionalSigners) {
+        walletSignedLockTx.partialSign(signer);
+      }
+
+      setLaunchPhase(7); // Confirming lock
+      const retryBlockhash = await connection.getLatestBlockhash("confirmed");
+      const serializedRetryLock = walletSignedLockTx.serialize();
+      const jitoRetryResult = await sendViaJito(serializedRetryLock);
+      let lockSig: string;
+      if (jitoRetryResult) {
+        lockSig = jitoRetryResult.signature;
+      } else {
+        lockSig = await connection.sendRawTransaction(
+          serializedRetryLock,
+          { skipPreflight: true, maxRetries: 5 },
+        );
+      }
+      await confirmTxReliably(
+        connection,
+        lockSig,
+        retryBlockhash.blockhash,
+        retryBlockhash.lastValidBlockHeight,
       );
-      await connection.confirmTransaction(lockSig, "confirmed");
-
-      const estimatedTokens = estimateTokensFromSol(config.buyAmountSol);
-      const lockAmount = calculateLockAmount(estimatedTokens, config.lockPercentage);
 
       await fetch("/api/v1/token/record", {
         method: "POST",
@@ -478,7 +620,7 @@ export function useLaunchWizard() {
           lockTxSignature: lockSig,
           lockDurationDays: config.lockDurationDays,
           lockPercentage: config.lockPercentage,
-          lockAmount: lockAmount.toString(),
+          lockAmount: "0",
           buyAmountSol: config.buyAmountSol,
           githubUsername: config.githubUsername,
           githubRepo: config.githubRepo,
@@ -493,7 +635,8 @@ export function useLaunchWizard() {
       setLaunchStatus("success");
       sessionStorage.removeItem(STORAGE_KEY);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error occurred";
+      const raw = err instanceof Error ? err.message : "Unknown error occurred";
+      const message = parseTransactionError(raw, config.buyAmountSol);
       setLaunchStatus("partial");
       setErrorMessage(`Lock retry failed: ${message}`);
     }

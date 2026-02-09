@@ -8,7 +8,7 @@ interface TocSection {
 }
 
 const SECTIONS: TocSection[] = [
-  { id: "what-is-trudev", label: "What is trudev.fun?" },
+  { id: "what-is-lockpad", label: "What is Lockpad?" },
   { id: "how-it-works", label: "How It Works" },
   { id: "trust-tiers", label: "Trust Tiers" },
   { id: "for-developers", label: "For Developers" },

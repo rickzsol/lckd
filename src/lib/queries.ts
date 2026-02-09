@@ -1,6 +1,7 @@
 import { type Token, TrustTier } from "@/types/index";
 import type { DisplayToken, DisplayCommit } from "@/types/display";
 import { TOKENS as MOCK_TOKENS, COMMITS as MOCK_COMMITS } from "./mock-data";
+import type { DexMarketData } from "./dexscreener";
 
 function hasSupabaseConfig(): boolean {
   return !!(
@@ -21,7 +22,7 @@ const TIER_LABELS: Record<TrustTier, string> = {
   [TrustTier.SHIPPED]: "SHIPPED",
 };
 
-export function tokenToDisplay(t: Token): DisplayToken {
+export function tokenToDisplay(t: Token, market?: DexMarketData | null): DisplayToken {
   const lockDaysElapsed = Math.min(
     t.lock_duration_days,
     Math.floor(
@@ -58,11 +59,12 @@ export function tokenToDisplay(t: Token): DisplayToken {
       start: fmtDate(launchDate),
       end: fmtDate(lockEndDate),
     },
-    mcap: "--",
-    vol: "--",
-    price: "--",
-    chg: "+0.0%",
-    holders: 0,
+    mcap: market?.mcap ?? "--",
+    vol: market?.volume ?? "--",
+    price: market?.price ?? "--",
+    chg: market?.change24h ?? "+0.0%",
+    holders: market?.holders ?? 0,
+    liquidity: market?.liquidity ?? undefined,
     live: t.live_url ?? undefined,
     mintAddress: t.mint_address,
   };
@@ -72,17 +74,32 @@ export async function getTokens(): Promise<DisplayToken[]> {
   if (!hasSupabaseConfig()) return MOCK_TOKENS;
 
   try {
-    const supabase = await getSupabaseClient();
+    const { createServerClient } = await import("./supabase");
+    const supabase = createServerClient();
     const { data, error } = await supabase
       .from("tokens")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(50);
 
-    if (error || !data || data.length === 0) return MOCK_TOKENS;
+    if (error) {
+      console.error("getTokens error:", error.message);
+      return MOCK_TOKENS;
+    }
 
-    return (data as Token[]).map(tokenToDisplay);
-  } catch {
+    if (!data || data.length === 0) return [];
+
+    const tokens = data as Token[];
+    const mints = tokens.map((t) => t.mint_address).filter(Boolean);
+
+    const { fetchMarketDataBatch } = await import("./dexscreener");
+    const marketMap = await fetchMarketDataBatch(mints);
+
+    return tokens.map((t) =>
+      tokenToDisplay(t, marketMap.get(t.mint_address) ?? null),
+    );
+  } catch (err) {
+    console.error("getTokens exception:", err);
     return MOCK_TOKENS;
   }
 }
@@ -101,7 +118,8 @@ export async function getTokenByIdOrMint(
   if (!hasSupabaseConfig()) return findMockToken(id);
 
   try {
-    const supabase = await getSupabaseClient();
+    const { createServerClient } = await import("./supabase");
+    const supabase = createServerClient();
 
     let { data, error } = await supabase
       .from("tokens")
@@ -119,7 +137,11 @@ export async function getTokenByIdOrMint(
 
     if (error || !data) return findMockToken(id);
 
-    return tokenToDisplay(data as Token);
+    const token = data as Token;
+    const { fetchMarketData } = await import("./dexscreener");
+    const market = await fetchMarketData(token.mint_address);
+
+    return tokenToDisplay(token, market);
   } catch {
     return findMockToken(id);
   }

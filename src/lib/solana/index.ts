@@ -36,3 +36,13 @@ export {
   type LockTxBundle,
   type RecordLaunchParams,
 } from "./launchTransaction";
+
+export {
+  sendViaJito,
+  sendJitoBundle,
+  pollJitoBundleStatus,
+  createJitoTipInstruction,
+  getJitoTipFloor,
+  type JitoSendResult,
+  type BundleLandingStatus,
+} from "./jito";

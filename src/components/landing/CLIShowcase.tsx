@@ -19,12 +19,12 @@ const CLI_STEPS = [
 ];
 
 const BANNER_LINES = [
-  "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2557   \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2557   \u2588\u2588\u2557",
-  "\u255a\u2550\u2550\u2588\u2588\u2554\u2550\u2550\u255d\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d\u2588\u2588\u2551   \u2588\u2588\u2551",
-  "   \u2588\u2588\u2551   \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551   \u2588\u2588\u2551",
-  "   \u2588\u2588\u2551   \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u255d  \u255a\u2588\u2588\u2557 \u2588\u2588\u2554\u255d",
-  "   \u2588\u2588\u2551   \u2588\u2588\u2551  \u2588\u2588\u2551\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u255a\u2588\u2588\u2588\u2588\u2554\u255d ",
-  "   \u255a\u2550\u255d   \u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u255d  ",
+  "\u2588\u2588\u2557      \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2557  \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557 ",
+  "\u2588\u2588\u2551     \u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d\u2588\u2588\u2551 \u2588\u2588\u2554\u255d\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557",
+  "\u2588\u2588\u2551     \u2588\u2588\u2551  \u2588\u2588\u2557\u2588\u2588\u2551     \u2588\u2588\u2588\u2588\u2588\u2554\u255d \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2551",
+  "\u2588\u2588\u2551     \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2551     \u2588\u2588\u2554\u2550\u2588\u2588\u2557 \u2588\u2588\u2554\u2550\u2550\u255d  \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2551",
+  "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2551  \u2588\u2588\u2557\u2588\u2588\u2551     \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d",
+  "\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d     \u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u2550\u2550\u2550\u2550\u255d ",
 ];
 
 function TermLine({
@@ -224,7 +224,7 @@ export default function CLIShowcase() {
               <span className="h-[7px] w-[7px] rounded-full bg-[#27c93f]/60" />
             </div>
             <span className="font-mono text-[10px] text-[#444]">
-              terminal &mdash; trudev
+              terminal &mdash; lockpad
             </span>
           </div>
 
@@ -242,7 +242,7 @@ export default function CLIShowcase() {
               <div className="cli-command mb-2">
                 <TermLine className="text-[12px]">
                   <span className="text-[#555]">$ </span>
-                  <span className="text-text-primary">npx trudev launch</span>
+                  <span className="text-text-primary">npx lockpad launch</span>
                 </TermLine>
               </div>
 
@@ -257,11 +257,8 @@ export default function CLIShowcase() {
                     </TermLine>
                   ))}
                 </div>
-                <TermLine className="text-[10px] text-[#555] sm:text-[11px]">
-                  {"                                              .fun"}
-                </TermLine>
                 <TermLine className="mt-1 text-[10px] text-[#555] sm:text-[11px]">
-                  {"     token launches with locked dev allocations"}
+                  {"     builders who ship. tokens that lock. lockpad.fun"}
                 </TermLine>
               </div>
 
@@ -352,7 +349,7 @@ export default function CLIShowcase() {
                 <TermLine className="text-[11px]">
                   <span className="inline-block w-20 text-[#555]">Token</span>
                   <span className="text-emerald-accent underline decoration-emerald-accent/30 underline-offset-2">
-                    trudev.fun/token/NdEv...4K2p
+                    lockpad.fun/token/NdEv...4K2p
                   </span>
                 </TermLine>
                 <TermLine className="text-[11px]">

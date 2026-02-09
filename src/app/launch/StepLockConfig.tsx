@@ -67,7 +67,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
                 <div className="mx-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-all" />
               </div>
               <span className="font-mono text-[11px] font-bold text-white">
-                Skip vesting lock
+                Skip token lock
               </span>
             </div>
             <span
@@ -87,7 +87,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
                 Highly unrecommended
               </div>
               <div className="font-mono text-[10px] leading-relaxed text-red-400/80">
-                Launching without a vesting lock means your dev tokens are fully
+                Launching without a token lock means your dev tokens are fully
                 liquid. Holders will have no on-chain guarantee that you
                 won&apos;t sell. This will significantly hurt trust and your
                 trust tier.
@@ -199,7 +199,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
               ${w.config.ticker || "???"}
             </span>
             {isSkipped ? (
-              <span className="text-red-400"> with no vesting lock</span>
+              <span className="text-red-400"> with no token lock</span>
             ) : (
               <>
                 {" "}and lock{" "}
@@ -215,7 +215,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
           </div>
           {!isSkipped && (
             <div className="mt-2 font-mono text-[10px] text-[#555]">
-              Linear unlock &middot; Non-cancelable &middot; Streamflow vesting
+              Non-cancelable &middot; Streamflow token lock
             </div>
           )}
         </div>
@@ -225,9 +225,9 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
           <div className="flex items-start gap-2 rounded-lg border border-white/6 bg-white/2 px-3 py-2.5">
             <span className="mt-0.5 text-[12px] text-[#555]">i</span>
             <span className="font-mono text-[10px] leading-relaxed text-[#555]">
-              The lock is non-cancelable and uses Streamflow linear vesting.
-              Tokens unlock gradually over the full duration. This cannot be
-              reversed after launch.
+              The lock is non-cancelable and uses a Streamflow token lock.
+              Tokens unlock in full at the end of the lock period. This cannot
+              be reversed after launch.
             </span>
           </div>
         )}

@@ -12,9 +12,9 @@ import {
 } from "@/components/docs/DocsPrimitives";
 
 export const metadata: Metadata = {
-  title: "Docs — trudev.fun",
+  title: "Docs — Lockpad",
   description:
-    "Learn how trudev.fun enforces transparent token launches with locked dev allocations via Streamflow vesting.",
+    "Learn how Lockpad enforces transparent token launches with locked dev allocations via Streamflow token locks.",
 };
 
 export default function DocsPage() {
@@ -23,30 +23,30 @@ export default function DocsPage() {
       <DocsToc />
 
       <article className="min-w-0 max-w-3xl flex-1 space-y-16">
-        {/* ─── What is trudev.fun? ──────────────────────── */}
+        {/* ─── What is Lockpad? ──────────────────────── */}
         <section className="space-y-5">
-          <SectionHeading id="what-is-trudev">What is trudev.fun?</SectionHeading>
+          <SectionHeading id="what-is-lockpad">What is Lockpad?</SectionHeading>
 
           <Prose>
-            trudev.fun is a <Accent>trust-enforcement wrapper</Accent> around pump.fun. It
+            Lockpad is a <Accent>trust-enforcement wrapper</Accent> around pump.fun. It
             is <strong className="text-white">not</strong> a competing DEX or launchpad.
-            All trading still happens on pump.fun exactly as you{"'"}d expect — trudev.fun
-            only handles the launch transaction, adding mandatory vesting locks to the
+            All trading still happens on pump.fun exactly as you{"'"}d expect — Lockpad
+            only handles the launch transaction, adding mandatory token locks to the
             developer{"'"}s token allocation before the token ever goes live.
           </Prose>
 
           <Prose>
             The problem is simple: devs launch tokens, buy a bag during creation, and dump
-            it on buyers within minutes. trudev.fun makes that impossible by locking the dev
-            buy through <Accent>Streamflow vesting</Accent> — an audited, non-cancelable
-            on-chain lock. If a dev launches through trudev.fun, their tokens are locked.
+            it on buyers within minutes. Lockpad makes that impossible by locking the dev
+            buy through a <Accent>Streamflow token lock</Accent> — an audited, non-cancelable
+            on-chain lock. If a dev launches through Lockpad, their tokens are locked.
             Period.
           </Prose>
 
           <div className="rounded-lg border border-emerald-accent/20 bg-emerald-accent/[0.04] px-4 py-3">
             <p className="font-mono text-xs font-bold text-emerald-accent">Key point</p>
             <p className="mt-1 text-sm leading-relaxed text-text-muted">
-              trudev.fun does not custody funds, run a DEX, or deploy a custom on-chain
+              Lockpad does not custody funds, run a DEX, or deploy a custom on-chain
               program. It constructs a client-side transaction bundle that atomically
               creates, buys, and locks — all in one signature.
             </p>
@@ -59,7 +59,7 @@ export default function DocsPage() {
 
           <SubHeading>The Atomic Transaction</SubHeading>
           <Prose>
-            When you launch a token through trudev.fun, three instructions are bundled into
+            When you launch a token through Lockpad, three instructions are bundled into
             a single Solana transaction:
           </Prose>
 
@@ -77,7 +77,7 @@ export default function DocsPage() {
             <FlowStep
               n={3}
               label="Tokens are locked via Streamflow"
-              sub="The purchased tokens are immediately deposited into a Streamflow vesting contract with your chosen duration and schedule."
+              sub="The purchased tokens are immediately deposited into a Streamflow token lock contract with your chosen duration."
             />
           </div>
 
@@ -96,7 +96,7 @@ export default function DocsPage() {
                 { label: "pump.fun buy", color: "text-emerald-accent" },
                 { label: "Tokens", color: "text-white" },
                 { label: "Streamflow lock", color: "text-emerald-accent" },
-                { label: "Vesting schedule", color: "text-white" },
+                { label: "Lock schedule", color: "text-white" },
               ].map((step, i) => (
                 <div key={step.label} className="flex items-center">
                   <div className="rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-2">
@@ -114,10 +114,10 @@ export default function DocsPage() {
             </div>
           </div>
 
-          <SubHeading>Streamflow Vesting</SubHeading>
+          <SubHeading>Streamflow Token Lock</SubHeading>
           <Prose>
-            Streamflow is an <Accent>audited token vesting protocol</Accent> on Solana.
-            When trudev.fun locks your tokens, it creates a Streamflow vesting contract
+            Streamflow is an <Accent>audited token lock protocol</Accent> on Solana.
+            When Lockpad locks your tokens, it creates a Streamflow token lock contract
             with the following properties:
           </Prose>
 
@@ -127,8 +127,8 @@ export default function DocsPage() {
               creator cannot withdraw tokens early
             </li>
             <li className="list-disc">
-              <strong className="text-white">Linear vesting</strong> — tokens unlock
-              gradually over the chosen duration
+              <strong className="text-white">Cliff-based lock</strong> — tokens unlock
+              in full at the end of the lock period
             </li>
             <li className="list-disc">
               <strong className="text-white">On-chain verifiable</strong> — anyone can
@@ -146,7 +146,7 @@ export default function DocsPage() {
           <SectionHeading id="trust-tiers">Trust Tiers Explained</SectionHeading>
 
           <Prose>
-            Every token launched on trudev.fun receives a trust tier based on the
+            Every token launched on Lockpad receives a trust tier based on the
             developer{"'"}s profile and launch configuration. Tiers are
             computed <Accent>dynamically</Accent> — they can go up or down as conditions
             change.
@@ -174,7 +174,7 @@ export default function DocsPage() {
                     <Badge tier={TrustTier.LOCKED} label="LOCKED" />
                   </td>
                   <td className="py-3 pr-4 align-top text-text-muted">
-                    Token launched with a vesting lock. No GitHub connected.
+                    Token launched with a token lock. No GitHub connected.
                   </td>
                   <td className="py-3 align-top text-text-muted">
                     Dev tokens are locked, but the developer is anonymous.
@@ -249,7 +249,7 @@ export default function DocsPage() {
               want to buy at launch
             </li>
             <li className="list-decimal">
-              <strong className="text-white">Lock configuration</strong> — vesting
+              <strong className="text-white">Lock configuration</strong> — lock
               duration and percentage of your buy to lock
             </li>
             <li className="list-decimal">
@@ -260,7 +260,7 @@ export default function DocsPage() {
 
           <SubHeading>GitHub Verification</SubHeading>
           <Prose>
-            Sign in with GitHub via OAuth. trudev.fun reads your public profile — account
+            Sign in with GitHub via OAuth. Lockpad reads your public profile — account
             age, public repos, and contribution history. No private data is accessed. Your
             GitHub username is displayed on your token{"'"}s page so buyers can verify your
             identity.
@@ -313,7 +313,7 @@ export default function DocsPage() {
 
           <SubHeading>Reading a Trust Tier</SubHeading>
           <Prose>
-            Every token on trudev.fun displays a tier badge. Higher tiers mean more
+            Every token on Lockpad displays a tier badge. Higher tiers mean more
             verifiable signals of developer commitment. A{" "}
             <Badge tier={TrustTier.SHIPPED} label="SHIPPED" /> badge means the dev has a
             verified GitHub, a public repo, a live product, and a 30+ day lock. A{" "}
@@ -323,15 +323,15 @@ export default function DocsPage() {
 
           <SubHeading>What the Lock Means for You</SubHeading>
           <Prose>
-            A Streamflow vesting lock means the developer <Accent>cannot sell</Accent> their
-            locked tokens until the vesting schedule releases them. This protects you from
+            A Streamflow token lock means the developer <Accent>cannot sell</Accent> their
+            locked tokens until the lock period ends. This protects you from
             immediate dumps. However, a lock does not guarantee the project will succeed — it
             only guarantees the dev cannot rug by dumping their allocation.
           </Prose>
 
           <SubHeading>Verify Independently</SubHeading>
           <Prose>
-            Every token page on trudev.fun links to the Streamflow lock transaction. You can
+            Every token page on Lockpad links to the Streamflow lock transaction. You can
             verify the lock directly on{" "}
             <a
               href="https://app.streamflow.finance"
@@ -366,7 +366,7 @@ export default function DocsPage() {
           <SectionHeading id="faq">FAQ</SectionHeading>
 
           <FaqItem q="Is this free?">
-            Yes. During the MVP phase, trudev.fun charges no additional fees. You only pay
+            Yes. During the MVP phase, Lockpad charges no additional fees. You only pay
             standard Solana transaction fees and the pump.fun creation fee.
           </FaqItem>
 
@@ -377,14 +377,14 @@ export default function DocsPage() {
           </FaqItem>
 
           <FaqItem q="Can I cancel my lock?">
-            No. Streamflow locks created through trudev.fun are{" "}
+            No. Streamflow locks created through Lockpad are{" "}
             <strong className="text-white">non-cancelable by design</strong>. This is the
             entire value proposition — buyers can trust that the lock is permanent. Once
-            signed, you wait for the vesting schedule.
+            signed, you wait for the lock period to end.
           </FaqItem>
 
           <FaqItem q="What if pump.fun changes their program?">
-            trudev.fun constructs transactions against pump.fun{"'"}s on-chain program. If
+            Lockpad constructs transactions against pump.fun{"'"}s on-chain program. If
             pump.fun updates their program ID or instruction format, we monitor for changes
             and update our transaction builder accordingly. Your existing locks on
             Streamflow are unaffected by any pump.fun changes.
@@ -393,10 +393,10 @@ export default function DocsPage() {
           <FaqItem q="Is this audited?">
             <strong className="text-white">Streamflow</strong> is audited (by Sec3/Soteria
             and others).{" "}
-            <strong className="text-white">trudev.fun itself</strong> does not deploy a
+            <strong className="text-white">Lockpad itself</strong> does not deploy a
             custom on-chain program — it bundles existing audited programs (pump.fun +
             Streamflow) into a single client-side transaction. There is no smart contract
-            risk from trudev.fun specifically; the risk surface is the same as using
+            risk from Lockpad specifically; the risk surface is the same as using
             pump.fun and Streamflow directly.
           </FaqItem>
 

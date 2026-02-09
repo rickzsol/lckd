@@ -16,27 +16,27 @@ const PROPS = [
     lines: [
       "No more begging devs to lock.",
       "No more gambling on promises.",
-      "Every allocation is vested before the first trade.",
+      "Every allocation is locked before the first trade.",
     ],
-    accent: "Streamflow vesting. Enforced. On-chain.",
+    accent: "Streamflow token lock. Enforced. On-chain.",
     icon: "LK",
   },
   {
     label: "02",
-    heading: "Built for Devs.",
+    heading: "Built for Builders.",
     lines: [
       "Connect your GitHub. Prove your code.",
       "Your commit history becomes your reputation.",
-      "Ship code, build trust, earn your tier.",
+      "Ship code, lock tokens, earn your tier.",
     ],
     accent: "GitHub-verified profiles. Real builders only.",
     icon: "GH",
   },
   {
     label: "03",
-    heading: "Trust, On-Chain.",
+    heading: "Proof, On-Chain.",
     lines: [
-      "Transparent vesting schedules anyone can verify.",
+      "Transparent lock schedules anyone can verify.",
       "Dev bags visible. Lock duration public.",
       "The chart speaks. The contract proves it.",
     ],
@@ -243,7 +243,7 @@ export default function ValueProps() {
       <div className="relative z-10 mx-auto max-w-[1100px]">
         {/* Section tag */}
         <div className="vp-section-tag mb-16 text-center font-mono text-[11px] uppercase tracking-[0.25em] text-emerald-accent/50 md:mb-24">
-          Why trudev
+          Why Lockpad
         </div>
 
         {/* Value blocks — full-width grid */}

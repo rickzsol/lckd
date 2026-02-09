@@ -17,7 +17,7 @@ export interface StreamflowLockParams {
   mint: PublicKey;
   /** Total token amount to lock (in raw units, 6 decimals for pump.fun tokens) */
   amount: BN;
-  /** Vesting duration in seconds */
+  /** Lock duration in seconds (tokens unlock all at once after this period) */
   durationSeconds: number;
   /** Token name used for the stream contract name */
   tokenName: string;
@@ -34,11 +34,13 @@ export interface StreamflowLockResult {
 }
 
 /**
- * Builds Streamflow vesting lock instructions for a self-lock (sender = recipient).
- * Linear vesting, non-cancelable, non-transferable, no cliff, specified duration.
+ * Builds Streamflow token lock instructions for a self-lock (sender = recipient).
+ * All tokens locked until the cliff date, then released in full.
+ * Non-cancelable, non-transferable — appears under "Locks" in Streamflow dashboard.
  *
- * The returned instructions can be appended to an existing transaction.
- * If a metadata keypair is returned, it must be included as an additional signer.
+ * Streamflow classifies a stream as a Lock (not Vesting) when:
+ *   cliffAmount >= depositedAmount - 1
+ * i.e., full amount unlocks at cliff in a lump sum.
  */
 export async function buildStreamflowLockInstructions(
   params: StreamflowLockParams,
@@ -60,29 +62,30 @@ export async function buildStreamflowLockInstructions(
     cluster: ICluster.Mainnet,
   });
 
-  const nowSeconds = Math.floor(Date.now() / 1000);
+  // Buffer so the start time is still in the future when the tx lands on-chain.
+  // 120s accounts for wallet signature approval time + network propagation.
+  const startTime = Math.floor(Date.now() / 1000) + 120;
 
-  // Linear vesting: distribute `amount` evenly over the duration.
-  // period = 1 second for smooth linear unlock. amountPerPeriod = amount / duration.
-  const period = 1;
-  const amountPerPeriod = amount.div(new BN(durationSeconds));
+  // Cliff = unlock date. All tokens release at once.
+  const cliffTime = startTime + durationSeconds;
 
-  // If amount doesn't divide evenly, the remainder is implicitly handled by
-  // Streamflow's contract (last period gets the remainder).
   const streamName = tokenName
     .slice(0, STREAM_NAME_MAX_LENGTH)
     .padEnd(1, " ");
 
+  // Token Lock config: cliffAmount = full amount, released at cliff date.
+  // period/amountPerPeriod are required fields but irrelevant for locks
+  // since cliffAmount covers the full deposit.
   const streamData: ICreateLinearStreamData = {
     recipient: sender.toBase58(),
     amount: amount,
-    amountPerPeriod: amountPerPeriod,
+    amountPerPeriod: amount,
     name: streamName,
     tokenId: mint.toBase58(),
-    start: nowSeconds,
-    period: period,
-    cliff: nowSeconds, // no cliff: set to start time
-    cliffAmount: new BN(0),
+    start: startTime,
+    period: durationSeconds,
+    cliff: cliffTime,
+    cliffAmount: amount,
     cancelableBySender: false,
     cancelableByRecipient: false,
     transferableBySender: false,
@@ -116,8 +119,15 @@ export async function buildStreamflowLockInstructions(
 }
 
 /**
+ * Streamflow charges a 0.19% service fee on top of the deposited amount.
+ * When locking a percentage of the wallet balance, we must reduce the lock
+ * amount so that lockAmount + fee <= available balance.
+ */
+const STREAMFLOW_FEE_BPS = 19; // 0.19% = 19 basis points
+
+/**
  * Calculates the raw token amount to lock based on total tokens held
- * and the desired lock percentage.
+ * and the desired lock percentage, accounting for Streamflow's service fee.
  */
 export function calculateLockAmount(
   totalTokens: bigint,
@@ -127,8 +137,13 @@ export function calculateLockAmount(
     throw new Error("Lock percentage must be between 1 and 100");
   }
 
-  // Use integer math: (total * percentage) / 100
-  const locked = (totalTokens * BigInt(lockPercentage)) / BigInt(100);
+  // Tokens the user wants to lock (before fee)
+  const desired = (totalTokens * BigInt(lockPercentage)) / BigInt(100);
+
+  // Streamflow transfers: lockAmount + (lockAmount * fee / 10000)
+  // So max lockAmount = desired * 10000 / (10000 + feeBps)
+  const locked = (desired * BigInt(10000)) / BigInt(10000 + STREAMFLOW_FEE_BPS);
+
   return new BN(locked.toString());
 }
 

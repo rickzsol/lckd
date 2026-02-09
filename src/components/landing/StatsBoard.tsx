@@ -7,12 +7,12 @@ interface StatItem {
   value: string;
 }
 
-const STATS: StatItem[] = [
-  { label: "launched", value: "--" },
-  { label: "total locked", value: "--" },
-  { label: "devs verified", value: "--" },
-  { label: "building now", value: "--" },
-];
+function formatNumber(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
+}
 
 const CHARS = "0123456789$.,KMB%+";
 const CYCLE_DURATION = 800;
@@ -120,16 +120,33 @@ function StatCell({ label, value, delay }: { label: string; value: string; delay
 }
 
 export default function StatsBoard() {
+  const [stats, setStats] = useState<StatItem[]>([
+    { label: "launched", value: "--" },
+    { label: "total locked", value: "--" },
+    { label: "devs verified", value: "--" },
+    { label: "building now", value: "--" },
+  ]);
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    setIsReady(true);
+    fetch("/api/v1/stats")
+      .then((r) => r.json())
+      .then((data) => {
+        setStats([
+          { label: "launched", value: data.launched.toString() },
+          { label: "total locked", value: formatNumber(data.totalLocked) },
+          { label: "devs verified", value: data.devsVerified.toString() },
+          { label: "building now", value: data.buildingNow.toString() },
+        ]);
+        setIsReady(true);
+      })
+      .catch(() => setIsReady(true));
   }, []);
 
   if (!isReady) {
     return (
       <div className="grid w-full grid-cols-2 gap-1.5 sm:grid-cols-4">
-        {STATS.map((stat) => (
+        {stats.map((stat) => (
           <div key={stat.label} className="text-center">
             <div className="font-mono text-[clamp(16px,4vw,22px)] font-bold text-white">
               --
@@ -145,7 +162,7 @@ export default function StatsBoard() {
 
   return (
     <div className="grid w-full grid-cols-2 gap-1.5 sm:grid-cols-4">
-      {STATS.map((stat, i) => (
+      {stats.map((stat, i) => (
         <StatCell
           key={stat.label}
           label={stat.label}

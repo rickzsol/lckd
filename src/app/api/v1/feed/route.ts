@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
           tokens = MOCK_TOKENS;
         } else {
           const { tokenToDisplay } = await import("@/lib/queries");
-          tokens = data.map(tokenToDisplay);
+          tokens = data.map((t: import("@/types/index").Token) => tokenToDisplay(t));
         }
       } catch {
         tokens = MOCK_TOKENS;

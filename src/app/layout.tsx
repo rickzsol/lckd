@@ -19,33 +19,33 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "trudev.fun — Dev Bags Locked on Launch",
+    default: "Lockpad — Builders who ship. Tokens that lock.",
     template: "%s",
   },
   description:
-    "Launch Solana tokens with enforced vesting locks. No more rugs — every launch is transparent and dev tokens are locked via Streamflow.",
+    "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it. Built on pump.fun + Streamflow.",
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL || "https://www.trudev.fun",
+    process.env.NEXT_PUBLIC_APP_URL || "https://www.lockpad.fun",
   ),
   icons: {
     icon: [
-      { url: "/icon-transparent.png", type: "image/png" },
+      { url: "/icon.png", type: "image/png" },
     ],
-    shortcut: "/icon-transparent.png",
-    apple: "/icon-transparent.png",
+    shortcut: "/icon.png",
+    apple: "/icon.png",
   },
   openGraph: {
-    title: "trudev.fun — Dev Bags Locked on Launch",
+    title: "Lockpad — Builders who ship. Tokens that lock.",
     description:
-      "Launch Solana tokens with enforced vesting locks. Dev tokens locked via Streamflow — verifiable on-chain.",
-    siteName: "trudev.fun",
+      "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it on-chain.",
+    siteName: "Lockpad",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "trudev.fun — Dev Bags Locked on Launch",
+    title: "Lockpad — Builders who ship. Tokens that lock.",
     description:
-      "Launch Solana tokens with enforced vesting locks. Dev tokens locked via Streamflow.",
+      "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it.",
   },
 };
 
@@ -61,8 +61,6 @@ export default function RootLayout({
       >
         <AuthProvider>
           <WalletProvider>
-            <div className="dot-grid" aria-hidden="true" />
-            <div className="page-glow" aria-hidden="true" />
             <Navbar />
             <main className="relative z-[1]">{children}</main>
           </WalletProvider>

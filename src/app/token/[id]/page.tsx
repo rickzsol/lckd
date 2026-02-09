@@ -14,11 +14,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const token = await getTokenByIdOrMint(id);
 
   if (!token) {
-    return { title: "Token Not Found — trudev.fun" };
+    return { title: "Token Not Found — Lockpad" };
   }
 
-  const title = `${token.name} (${token.ticker}) — trudev.fun`;
-  const description = `${token.name} — ${token.tierLabel} tier. ${token.lock.amount} tokens locked for ${token.lock.duration}. Built on pump.fun with Streamflow vesting.`;
+  const title = `${token.name} (${token.ticker}) — Lockpad`;
+  const description = `${token.name} — ${token.tierLabel} tier. ${token.lock.amount} tokens locked for ${token.lock.duration}. Built on pump.fun with Streamflow token lock.`;
 
   return {
     title,
@@ -26,7 +26,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: {
       title,
       description,
-      siteName: "trudev.fun",
+      siteName: "Lockpad",
       type: "website",
       ...(token.image.startsWith("http") && {
         images: [{ url: token.image, width: 256, height: 256 }],

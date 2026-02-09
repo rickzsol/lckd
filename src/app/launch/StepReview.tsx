@@ -130,12 +130,12 @@ function ReviewForm({ w }: { w: WizardContext }) {
       {/* Info box */}
       {w.config.skipLock ? (
         <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/5 px-3.5 py-3 font-mono text-[11px] leading-relaxed text-red-400">
-          <span className="font-bold uppercase">No vesting lock.</span> Your dev tokens will be
+          <span className="font-bold uppercase">No token lock.</span> Your dev tokens will be
           fully liquid at launch. This is highly unrecommended and will hurt holder trust.
         </div>
       ) : (
         <div className="warning-box mb-4">
-          Two signatures required. Create + buy in one tx, then vesting lock in a second.
+          Two signatures required. Create + buy in one tx, then token lock in a second.
         </div>
       )}
 
@@ -211,7 +211,7 @@ function LaunchingView({ w }: { w: WizardContext }) {
       </div>
 
       {/* Wallet hint for signature phases */}
-      {(w.launchPhase === 2 || (!w.config.skipLock && w.launchPhase === 4)) && (
+      {(w.launchPhase === 2 || (!w.config.skipLock && w.launchPhase === 6)) && (
         <div className="mt-6 rounded-lg border border-emerald-accent/20 bg-emerald-accent/5 px-4 py-2.5 font-mono text-[11px] text-emerald-accent">
           Check your wallet for a signature request
         </div>
@@ -284,7 +284,7 @@ function PartialView({ w }: { w: WizardContext }) {
         Token Created — Lock Failed
       </div>
       <div className="mb-4 max-w-[360px] text-center font-mono text-xs text-[#555]">
-        Your token was created on pump.fun but the vesting lock transaction failed.
+        Your token was created on pump.fun but the token lock transaction failed.
         Your tokens are in your wallet — retry the lock below.
       </div>
 
@@ -306,7 +306,7 @@ function PartialView({ w }: { w: WizardContext }) {
       )}
 
       <button onClick={handleRetryLock} className="btn-launch w-full max-w-[320px]">
-        RETRY VESTING LOCK
+        RETRY TOKEN LOCK
       </button>
     </div>
   );
