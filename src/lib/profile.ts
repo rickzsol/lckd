@@ -2,6 +2,7 @@ import { type Token, TrustTier } from "@/types/index";
 import type { GitHubProfile } from "@/types/index";
 import type { DisplayToken } from "@/types/display";
 import { tokenToDisplay } from "./queries";
+import { hasSupabaseConfig } from "./supabase";
 
 const MOCK_PROFILE: GitHubProfile = {
   id: "mock-1",
@@ -15,17 +16,8 @@ const MOCK_PROFILE: GitHubProfile = {
   last_refreshed: new Date().toISOString(),
 };
 
-function hasSupabaseConfig(): boolean {
-  return !!(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  );
-}
-
-async function getSupabaseClient() {
-  const { getSupabase } = await import("./supabase");
-  return getSupabase();
-}
+const PROFILE_COLUMNS = "id, github_id, github_username, github_avatar, account_created_at, public_repos, wallet_address, total_commits, last_refreshed";
+const TOKEN_COLUMNS = "mint_address, name, ticker, image_uri, trust_tier, creator_wallet, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx";
 
 export async function getProfileByUsername(
   username: string,
@@ -35,10 +27,11 @@ export async function getProfileByUsername(
   }
 
   try {
-    const supabase = await getSupabaseClient();
+    const { getSupabase } = await import("./supabase");
+    const supabase = getSupabase();
     const { data, error } = await supabase
       .from("github_profiles")
-      .select("*")
+      .select(PROFILE_COLUMNS)
       .eq("github_username", username)
       .single();
 
@@ -58,10 +51,11 @@ export async function getTokensByCreator(
   }
 
   try {
-    const supabase = await getSupabaseClient();
+    const { getSupabase } = await import("./supabase");
+    const supabase = getSupabase();
     const { data, error } = await supabase
       .from("tokens")
-      .select("*")
+      .select(TOKEN_COLUMNS)
       .eq("github_username", username)
       .order("created_at", { ascending: false });
 
@@ -72,22 +66,27 @@ export async function getTokensByCreator(
   }
 }
 
+/** Server-only: links a wallet to a GitHub profile. */
 export async function linkWallet(
   githubId: string,
   walletAddress: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { createServerClient } = await import("./supabase");
-    const supabase = createServerClient();
+    const { getServerClient } = await import("./supabase");
+    const supabase = getServerClient();
 
     const { error } = await supabase
       .from("github_profiles")
       .update({ wallet_address: walletAddress })
       .eq("github_id", githubId);
 
-    if (error) return { success: false, error: error.message };
+    if (error) {
+      console.error("[linkWallet] Supabase error:", error.message);
+      return { success: false, error: "Failed to link wallet" };
+    }
     return { success: true };
   } catch (err) {
-    return { success: false, error: String(err) };
+    console.error("[linkWallet] Error:", err);
+    return { success: false, error: "Failed to link wallet" };
   }
 }

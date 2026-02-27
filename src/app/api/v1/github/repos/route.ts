@@ -1,4 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest } from "next/server";
+import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
+import { requireAuth } from "@/lib/api/auth";
+import { checkRateLimit } from "@/lib/api/rateLimit";
+import { isValidGitHubUsername } from "@/lib/api/validation";
+
+export { OPTIONS };
 
 interface GitHubRepo {
   name: string;
@@ -11,9 +17,20 @@ interface GitHubRepo {
 }
 
 export async function GET(req: NextRequest) {
+  const limited = checkRateLimit(req, "github");
+  if (limited) return limited;
+
+  const { session, error: authErr } = await requireAuth();
+  if (authErr) return authErr;
+
   const username = req.nextUrl.searchParams.get("username");
-  if (!username) {
-    return NextResponse.json({ error: "username required" }, { status: 400 });
+  if (!username || !isValidGitHubUsername(username)) {
+    return apiError("Valid username required", 400);
+  }
+
+  // Only allow fetching repos for the authenticated user
+  if (username.toLowerCase() !== session.github_username.toLowerCase()) {
+    return apiError("Can only fetch repos for your own account", 403);
   }
 
   const pat = process.env.GITHUB_PAT;
@@ -30,10 +47,7 @@ export async function GET(req: NextRequest) {
     );
 
     if (!res.ok) {
-      return NextResponse.json(
-        { error: `GitHub API returned ${res.status}` },
-        { status: res.status },
-      );
+      return apiError(`GitHub API returned ${res.status}`, res.status);
     }
 
     const raw: GitHubRepo[] = await res.json();
@@ -48,11 +62,8 @@ export async function GET(req: NextRequest) {
         language: r.language,
       }));
 
-    return NextResponse.json(repos);
+    return apiResponse(repos);
   } catch {
-    return NextResponse.json(
-      { error: "Failed to fetch repositories" },
-      { status: 502 },
-    );
+    return apiError("Failed to fetch repositories", 502);
   }
 }

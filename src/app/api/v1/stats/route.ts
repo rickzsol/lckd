@@ -1,17 +1,31 @@
-import { NextResponse } from "next/server";
+import { apiResponse, apiError } from "@/lib/api/helpers";
+import { hasSupabaseConfig } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 60;
 
 export async function GET() {
+  if (!hasSupabaseConfig()) {
+    return apiError("Stats unavailable", 503);
+  }
+
   try {
-    const { createServerClient } = await import("@/lib/supabase");
-    const supabase = createServerClient();
+    const { getSupabase } = await import("@/lib/supabase");
+    const supabase = getSupabase();
 
     const [tokensRes, profilesRes] = await Promise.all([
       supabase.from("tokens").select("lock_amount, trust_tier"),
       supabase.from("github_profiles").select("github_id"),
     ]);
+
+    if (tokensRes.error) {
+      console.error("[stats] tokens query error:", tokensRes.error.message);
+      return apiError("Failed to fetch stats", 500);
+    }
+    if (profilesRes.error) {
+      console.error("[stats] profiles query error:", profilesRes.error.message);
+      return apiError("Failed to fetch stats", 500);
+    }
 
     const tokens = tokensRes.data ?? [];
     const profiles = profilesRes.data ?? [];
@@ -23,22 +37,12 @@ export async function GET() {
       return sum + (isNaN(amt) ? 0 : amt);
     }, 0);
 
-    // Devs verified = tier >= 2 (VERIFIED, BUILDER, SHIPPED)
     const devsVerified = tokens.filter((t) => t.trust_tier >= 2).length;
-
-    // Building now = unique GitHub profiles linked
     const buildingNow = profiles.length;
 
-    return NextResponse.json({
-      launched,
-      totalLocked,
-      devsVerified,
-      buildingNow,
-    });
-  } catch {
-    return NextResponse.json(
-      { launched: 0, totalLocked: 0, devsVerified: 0, buildingNow: 0 },
-      { status: 200 },
-    );
+    return apiResponse({ launched, totalLocked, devsVerified, buildingNow });
+  } catch (err) {
+    console.error("[stats] Error:", err instanceof Error ? err.message : err);
+    return apiError("Failed to fetch stats", 500);
   }
 }

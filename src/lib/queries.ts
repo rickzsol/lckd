@@ -1,13 +1,7 @@
 import { type Token, TrustTier } from "@/types/index";
 import type { DisplayToken } from "@/types/display";
 import type { DexMarketData } from "./dexscreener";
-
-function hasSupabaseConfig(): boolean {
-  return !!(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  );
-}
+import { hasSupabaseConfig } from "./supabase";
 
 const TIER_LABELS: Record<TrustTier, string> = {
   [TrustTier.LOCKED]: "LOCKED",
@@ -16,21 +10,17 @@ const TIER_LABELS: Record<TrustTier, string> = {
   [TrustTier.SHIPPED]: "SHIPPED",
 };
 
+const TOKEN_COLUMNS = "mint_address, name, ticker, image_uri, trust_tier, creator_wallet, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, description, twitter_url, telegram_url, website_url";
+
 function formatTokenAmount(raw: string): string {
   const num = parseFloat(raw);
   if (!num || isNaN(num)) return "0";
-  // pump.fun tokens have 6 decimals
   const tokens = num / 1_000_000;
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
   if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`;
   return tokens.toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
-/**
- * Resolve an image URI that might be a metadata JSON URL.
- * Pump.fun IPFS returns a JSON with an `image` field — if the URI
- * points at JSON, extract the real image URL from it.
- */
 async function resolveImageUri(uri: string): Promise<string> {
   if (!uri || !uri.startsWith("http")) return uri;
 
@@ -49,7 +39,7 @@ async function resolveImageUri(uri: string): Promise<string> {
       return meta.image;
     }
   } catch {
-    // Network error or timeout — fall back to original
+    // Network error or timeout
   }
   return uri;
 }
@@ -105,7 +95,6 @@ export function tokenToDisplay(t: Token, market?: DexMarketData | null): Display
 }
 
 export async function getTokens(): Promise<DisplayToken[]> {
-  // TODO: re-enable Supabase fetch after launch
   const { FEATURED_TOKEN } = await import("./mock-data");
   return [FEATURED_TOKEN];
 }
@@ -116,22 +105,16 @@ export async function getTokenByIdOrMint(
   if (!hasSupabaseConfig()) return null;
 
   try {
-    const { createServerClient } = await import("./supabase");
-    const supabase = createServerClient();
+    const { getSupabase } = await import("./supabase");
+    const supabase = getSupabase();
 
-    let { data, error } = await supabase
+    // Single query with OR filter instead of two sequential queries
+    const { data, error } = await supabase
       .from("tokens")
-      .select("*")
-      .eq("mint_address", id)
+      .select(TOKEN_COLUMNS)
+      .or(`mint_address.eq.${id},id.eq.${id}`)
+      .limit(1)
       .single();
-
-    if (error || !data) {
-      ({ data, error } = await supabase
-        .from("tokens")
-        .select("*")
-        .eq("id", id)
-        .single());
-    }
 
     if (error || !data) return null;
 
@@ -149,4 +132,3 @@ export async function getTokenByIdOrMint(
     return null;
   }
 }
-

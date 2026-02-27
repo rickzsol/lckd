@@ -5,6 +5,8 @@ import { PublicKey } from "@solana/web3.js";
 import nacl from "tweetnacl";
 import { linkWallet } from "@/lib/profile";
 
+const EXPECTED_PREFIX = "Link wallet to lckd.tech";
+
 interface LinkWalletBody {
   walletAddress: string;
   signature: string;
@@ -32,23 +34,21 @@ export async function POST(req: Request) {
     );
   }
 
-  // Validate the message format contains the correct username
-  if (!message.includes(`Username: ${session.github_username}`)) {
+  // Validate exact message format:
+  // "LCKD Wallet Verification\nUsername: <username>\nTimestamp: <ts>"
+  const expectedPattern = new RegExp(
+    `^${EXPECTED_PREFIX}\\nUsername: ${escapeRegex(session.github_username)}\\nTimestamp: (\\d+)$`,
+  );
+  const match = message.match(expectedPattern);
+  if (!match) {
     return NextResponse.json(
-      { error: "Message does not match session user" },
+      { error: "Message format does not match expected template" },
       { status: 403 },
     );
   }
 
   // Verify timestamp is within 5 minutes
-  const tsMatch = message.match(/Timestamp: (\d+)/);
-  if (!tsMatch) {
-    return NextResponse.json(
-      { error: "Missing timestamp in message" },
-      { status: 400 },
-    );
-  }
-  const ts = Number(tsMatch[1]);
+  const ts = Number(match[1]);
   if (Math.abs(Date.now() - ts) > 5 * 60 * 1000) {
     return NextResponse.json(
       { error: "Message expired" },
@@ -90,4 +90,8 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ success: true });
+}
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

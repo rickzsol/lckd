@@ -1,16 +1,10 @@
 import { type NextRequest } from "next/server";
 import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
+import { hasSupabaseConfig } from "@/lib/supabase";
 import { FEATURED_TOKEN } from "@/lib/mock-data";
 import type { DisplayToken } from "@/types/display";
 
 export { OPTIONS };
-
-function hasSupabaseConfig(): boolean {
-  return !!(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  );
-}
 
 function computeLockStatus(token: DisplayToken) {
   const pct = token.lock.pct;
@@ -54,8 +48,9 @@ export async function GET(
       try {
         const { getTokenByIdOrMint } = await import("@/lib/queries");
         token = await getTokenByIdOrMint(ca);
-      } catch {
-        // fall through to mock
+      } catch (err) {
+        console.error("[token/lock] Supabase error:", err instanceof Error ? err.message : err);
+        return apiError("Failed to fetch token lock status", 500);
       }
     }
 
@@ -69,7 +64,7 @@ export async function GET(
 
     return apiResponse({ lock: computeLockStatus(token) });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return apiError(message, 500);
+    console.error("[token/lock] Error:", err instanceof Error ? err.message : err);
+    return apiError("Internal server error", 500);
   }
 }

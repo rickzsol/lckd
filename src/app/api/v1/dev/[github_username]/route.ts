@@ -1,16 +1,12 @@
 import { type NextRequest } from "next/server";
 import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
 import { isValidGitHubUsername } from "@/lib/api/validation";
+import { hasSupabaseConfig } from "@/lib/supabase";
 import { FEATURED_TOKEN } from "@/lib/mock-data";
 
 export { OPTIONS };
 
-function hasSupabaseConfig(): boolean {
-  return !!(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  );
-}
+const DEV_TOKEN_COLUMNS = "id, mint_address, name, ticker, description, image_uri, trust_tier, creator_wallet, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, twitter_url, telegram_url, website_url";
 
 export async function GET(
   _request: NextRequest,
@@ -30,17 +26,23 @@ export async function GET(
 
         const { data, error } = await supabase
           .from("tokens")
-          .select("*")
+          .select(DEV_TOKEN_COLUMNS)
           .eq("github_username", github_username)
           .order("created_at", { ascending: false });
 
-        if (!error && data && data.length > 0) {
+        if (error) {
+          console.error("[dev] Supabase error:", error.message);
+          return apiError("Failed to fetch developer tokens", 500);
+        }
+
+        if (data && data.length > 0) {
           const { tokenToDisplay } = await import("@/lib/queries");
           const tokens = data.map((t: import("@/types/index").Token) => tokenToDisplay(t));
           return apiResponse({ developer: github_username, tokens });
         }
-      } catch {
-        // fall through to mock
+      } catch (err) {
+        console.error("[dev] Error:", err instanceof Error ? err.message : err);
+        return apiError("Failed to fetch developer tokens", 500);
       }
     }
 
@@ -50,7 +52,7 @@ export async function GET(
 
     return apiError("No tokens found for this developer", 404);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return apiError(message, 500);
+    console.error("[dev] Error:", err instanceof Error ? err.message : err);
+    return apiError("Internal server error", 500);
   }
 }

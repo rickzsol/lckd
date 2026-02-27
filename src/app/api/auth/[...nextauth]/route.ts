@@ -1,6 +1,6 @@
 import NextAuth, { type AuthOptions } from "next-auth";
 import GitHubProvider from "next-auth/providers/github";
-import { createServerClient } from "@/lib/supabase";
+import { getServerClient } from "@/lib/supabase";
 
 interface GitHubOAuthProfile {
   id: number;
@@ -10,12 +10,16 @@ interface GitHubOAuthProfile {
   public_repos: number;
 }
 
+const clientId = process.env.GITHUB_CLIENT_ID;
+const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+
+if (!clientId || !clientSecret) {
+  throw new Error("Missing GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET env vars");
+}
+
 export const authOptions: AuthOptions = {
   providers: [
-    GitHubProvider({
-      clientId: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-    }),
+    GitHubProvider({ clientId, clientSecret }),
   ],
   session: { strategy: "jwt" },
   callbacks: {
@@ -23,7 +27,7 @@ export const authOptions: AuthOptions = {
       if (account?.provider !== "github" || !profile) return true;
 
       const gh = profile as unknown as GitHubOAuthProfile;
-      const supabase = createServerClient();
+      const supabase = getServerClient();
 
       const { data: existing } = await supabase
         .from("github_profiles")

@@ -154,6 +154,8 @@ export async function getRecentCommits(
   }));
 }
 
+const MAX_COMMIT_PAGES = 5;
+
 export async function getCommitCountSinceLaunch(
   owner: string,
   repo: string,
@@ -164,7 +166,7 @@ export async function getCommitCountSinceLaunch(
   let page = 1;
   const perPage = 100;
 
-  while (true) {
+  while (page <= MAX_COMMIT_PAGES) {
     const data = await ghFetch<GitHubCommitResponse[]>(
       `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?since=${encodeURIComponent(since)}&per_page=${perPage}&page=${page}`,
       token,

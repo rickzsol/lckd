@@ -1,9 +1,19 @@
 import { type NextRequest } from "next/server";
 import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
+import { requireAuth } from "@/lib/api/auth";
+import { checkRateLimit } from "@/lib/api/rateLimit";
 
 export { OPTIONS };
 
+const MAX_FILE_SIZE = 4 * 1024 * 1024;
+
 export async function POST(request: NextRequest) {
+  const limited = checkRateLimit(request, "upload");
+  if (limited) return limited;
+
+  const { error: authErr } = await requireAuth();
+  if (authErr) return authErr;
+
   try {
     const formData = await request.formData();
 
@@ -16,14 +26,14 @@ export async function POST(request: NextRequest) {
     const website = formData.get("website") as string | null;
 
     if (!file) return apiError("file is required", 400);
-    if (file.size > 4 * 1024 * 1024) return apiError("file must be under 4MB", 400);
+    if (file.size > MAX_FILE_SIZE) return apiError("file must be under 4MB", 400);
     if (!name || name.trim().length === 0) return apiError("name is required", 400);
+    if (name.trim().length > 64) return apiError("name must be 64 characters or fewer", 400);
     if (!symbol || symbol.trim().length === 0) return apiError("symbol is required", 400);
+    if (symbol.trim().length > 10) return apiError("symbol must be 10 characters or fewer", 400);
 
     const { uploadToIPFS } = await import("@/lib/solana/ipfs");
 
-    // Convert to a fresh File with explicit bytes — Node.js FormData
-    // re-serialization can lose content from the original request File.
     const bytes = new Uint8Array(await file.arrayBuffer());
     const freshFile = new File([bytes], file.name, { type: file.type });
 
@@ -36,7 +46,6 @@ export async function POST(request: NextRequest) {
       website: website ?? undefined,
     });
 
-    // Resolve actual image URL from the metadata JSON
     let imageUri = metadataUri;
     try {
       const metaRes = await fetch(metadataUri);
@@ -50,8 +59,7 @@ export async function POST(request: NextRequest) {
 
     return apiResponse({ metadataUri, imageUri }, 201);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
-    console.error("[metadata/upload] Error:", message, err);
-    return apiError(message, 500);
+    console.error("[metadata/upload] Error:", err instanceof Error ? err.message : err);
+    return apiError("Upload failed", 500);
   }
 }

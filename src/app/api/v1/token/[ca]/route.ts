@@ -1,15 +1,9 @@
 import { type NextRequest } from "next/server";
 import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
+import { hasSupabaseConfig } from "@/lib/supabase";
 import { FEATURED_TOKEN } from "@/lib/mock-data";
 
 export { OPTIONS };
-
-function hasSupabaseConfig(): boolean {
-  return !!(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  );
-}
 
 export async function GET(
   _request: NextRequest,
@@ -27,8 +21,9 @@ export async function GET(
         const { getTokenByIdOrMint } = await import("@/lib/queries");
         const token = await getTokenByIdOrMint(ca);
         if (token) return apiResponse({ token });
-      } catch {
-        // fall through to featured
+      } catch (err) {
+        console.error("[token/get] Supabase error:", err instanceof Error ? err.message : err);
+        return apiError("Failed to fetch token", 500);
       }
     }
 
@@ -38,7 +33,7 @@ export async function GET(
 
     return apiError("Token not found", 404);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Internal server error";
-    return apiError(message, 500);
+    console.error("[token/get] Error:", err instanceof Error ? err.message : err);
+    return apiError("Internal server error", 500);
   }
 }

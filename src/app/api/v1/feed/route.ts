@@ -1,6 +1,7 @@
 import { type NextRequest } from "next/server";
 import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
 import { parsePositiveInt } from "@/lib/api/validation";
+import { hasSupabaseConfig } from "@/lib/supabase";
 import { TrustTier } from "@/types/index";
 import type { DisplayToken } from "@/types/display";
 import { FEATURED_TOKEN } from "@/lib/mock-data";
@@ -15,13 +16,7 @@ const TIER_MAP: Record<string, TrustTier> = {
 };
 
 const MAX_LIMIT = 100;
-
-function hasSupabaseConfig(): boolean {
-  return !!(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  );
-}
+const TOKEN_COLUMNS = "id, mint_address, name, ticker, description, image_uri, trust_tier, creator_wallet, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, twitter_url, telegram_url, website_url";
 
 export async function GET(request: NextRequest) {
   try {
@@ -37,52 +32,49 @@ export async function GET(request: NextRequest) {
     }
 
     let tokens: DisplayToken[] = [FEATURED_TOKEN];
-    let isMockOnly = true;
+    let total = 1;
 
     if (hasSupabaseConfig()) {
       try {
         const { getSupabase } = await import("@/lib/supabase");
         const supabase = getSupabase();
 
-        let query = supabase.from("tokens").select("*");
+        // Get total count for proper pagination
+        let countQuery = supabase.from("tokens").select("*", { count: "exact", head: true });
+        if (tierParam) countQuery = countQuery.eq("trust_tier", TIER_MAP[tierParam]);
+        const { count } = await countQuery;
 
-        if (tierParam) {
-          query = query.eq("trust_tier", TIER_MAP[tierParam]);
-        }
+        let query = supabase.from("tokens").select(TOKEN_COLUMNS);
+        if (tierParam) query = query.eq("trust_tier", TIER_MAP[tierParam]);
 
         const ascending = sort === "oldest";
         query = query.order("created_at", { ascending }).range(effectiveOffset, effectiveOffset + limit - 1);
 
         const { data, error } = await query;
 
-        if (!error && data && data.length > 0) {
+        if (error) {
+          console.error("[feed] Supabase error:", error.message);
+          return apiError("Failed to fetch feed", 500);
+        }
+
+        if (data && data.length > 0) {
           const { tokenToDisplay } = await import("@/lib/queries");
           tokens = [FEATURED_TOKEN, ...data.map((t: import("@/types/index").Token) => tokenToDisplay(t))];
-          isMockOnly = false;
+          total = (count ?? 0) + 1; // +1 for featured token
         }
-      } catch {
-        // keep featured token only
+      } catch (err) {
+        console.error("[feed] Error:", err instanceof Error ? err.message : err);
+        return apiError("Failed to fetch feed", 500);
       }
-    }
-
-    if (isMockOnly) {
-      if (tierParam && TIER_MAP[tierParam]) {
-        tokens = tokens.filter((t) => t.tier === TIER_MAP[tierParam]);
-      }
-
-      if (sort === "oldest") {
-        tokens = [...tokens].reverse();
-      }
-
-      tokens = tokens.slice(effectiveOffset, effectiveOffset + limit);
     }
 
     return apiResponse({
       tokens,
-      meta: { total: tokens.length, limit, offset: effectiveOffset, sort },
+      meta: { total, limit, offset: effectiveOffset, sort },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal server error";
-    return apiError(message, 500);
+    console.error("[feed] Error:", message);
+    return apiError("Internal server error", 500);
   }
 }
