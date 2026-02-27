@@ -105,7 +105,9 @@ export function tokenToDisplay(t: Token, market?: DexMarketData | null): Display
 }
 
 export async function getTokens(): Promise<DisplayToken[]> {
-  if (!hasSupabaseConfig()) return [];
+  const { FEATURED_TOKEN } = await import("./mock-data");
+
+  if (!hasSupabaseConfig()) return [FEATURED_TOKEN];
 
   try {
     const { createServerClient } = await import("./supabase");
@@ -116,12 +118,7 @@ export async function getTokens(): Promise<DisplayToken[]> {
       .order("created_at", { ascending: false })
       .limit(50);
 
-    if (error) {
-      console.error("getTokens error:", error.message);
-      return [];
-    }
-
-    if (!data || data.length === 0) return [];
+    if (error || !data || data.length === 0) return [FEATURED_TOKEN];
 
     const tokens = data as Token[];
     const mints = tokens.map((t) => t.mint_address).filter(Boolean);
@@ -136,15 +133,17 @@ export async function getTokens(): Promise<DisplayToken[]> {
       ),
     ]);
 
-    return tokens.map((t, i) =>
+    const supabaseTokens = tokens.map((t, i) =>
       tokenToDisplay(
         { ...t, image_uri: resolvedImages[i] || t.image_uri },
         marketMap.get(t.mint_address) ?? null,
       ),
     );
+
+    return [FEATURED_TOKEN, ...supabaseTokens];
   } catch (err) {
     console.error("getTokens exception:", err);
-    return [];
+    return [FEATURED_TOKEN];
   }
 }
 

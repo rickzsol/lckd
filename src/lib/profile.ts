@@ -53,8 +53,8 @@ export async function getTokensByCreator(
   username: string,
 ): Promise<DisplayToken[]> {
   if (!hasSupabaseConfig()) {
-    const { TOKENS } = await import("./mock-data");
-    return TOKENS.filter((t) => t.dev.github === username);
+    const { FEATURED_TOKEN } = await import("./mock-data");
+    return FEATURED_TOKEN.dev.github === username ? [FEATURED_TOKEN] : [];
   }
 
   try {

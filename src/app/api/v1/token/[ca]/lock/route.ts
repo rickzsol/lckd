@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
 import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
-import { TOKENS as MOCK_TOKENS } from "@/lib/mock-data";
+import { FEATURED_TOKEN } from "@/lib/mock-data";
 import type { DisplayToken } from "@/types/display";
 
 export { OPTIONS };
@@ -60,10 +60,9 @@ export async function GET(
     }
 
     if (!token) {
-      const mock = MOCK_TOKENS.find(
-        (t) => String(t.id) === ca || t.mintAddress === ca,
-      );
-      token = mock ?? null;
+      if (String(FEATURED_TOKEN.id) === ca || FEATURED_TOKEN.mintAddress === ca) {
+        token = FEATURED_TOKEN;
+      }
     }
 
     if (!token) return apiError("Token not found", 404);

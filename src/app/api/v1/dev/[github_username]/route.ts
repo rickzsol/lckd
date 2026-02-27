@@ -1,7 +1,7 @@
 import { type NextRequest } from "next/server";
 import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
 import { isValidGitHubUsername } from "@/lib/api/validation";
-import { TOKENS as MOCK_TOKENS } from "@/lib/mock-data";
+import { FEATURED_TOKEN } from "@/lib/mock-data";
 
 export { OPTIONS };
 
@@ -44,15 +44,11 @@ export async function GET(
       }
     }
 
-    const mockTokens = MOCK_TOKENS.filter(
-      (t) => t.dev.github?.toLowerCase() === github_username.toLowerCase(),
-    );
-
-    if (mockTokens.length === 0) {
-      return apiError("No tokens found for this developer", 404);
+    if (FEATURED_TOKEN.dev.github?.toLowerCase() === github_username.toLowerCase()) {
+      return apiResponse({ developer: github_username, tokens: [FEATURED_TOKEN] });
     }
 
-    return apiResponse({ developer: github_username, tokens: mockTokens });
+    return apiError("No tokens found for this developer", 404);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal server error";
     return apiError(message, 500);

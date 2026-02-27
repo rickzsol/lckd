@@ -3,7 +3,7 @@ import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
 import { parsePositiveInt } from "@/lib/api/validation";
 import { TrustTier } from "@/types/index";
 import type { DisplayToken } from "@/types/display";
-import { TOKENS as MOCK_TOKENS } from "@/lib/mock-data";
+import { FEATURED_TOKEN } from "@/lib/mock-data";
 
 export { OPTIONS };
 
@@ -36,7 +36,8 @@ export async function GET(request: NextRequest) {
       return apiError(`Invalid tier. Use: ${Object.keys(TIER_MAP).join(", ")}`, 400);
     }
 
-    let tokens: DisplayToken[];
+    let tokens: DisplayToken[] = [FEATURED_TOKEN];
+    let isMockOnly = true;
 
     if (hasSupabaseConfig()) {
       try {
@@ -54,21 +55,17 @@ export async function GET(request: NextRequest) {
 
         const { data, error } = await query;
 
-        if (error || !data || data.length === 0) {
-          tokens = MOCK_TOKENS;
-        } else {
+        if (!error && data && data.length > 0) {
           const { tokenToDisplay } = await import("@/lib/queries");
-          tokens = data.map((t: import("@/types/index").Token) => tokenToDisplay(t));
+          tokens = [FEATURED_TOKEN, ...data.map((t: import("@/types/index").Token) => tokenToDisplay(t))];
+          isMockOnly = false;
         }
       } catch {
-        tokens = MOCK_TOKENS;
+        // keep featured token only
       }
-    } else {
-      tokens = MOCK_TOKENS;
     }
 
-    // Apply client-side filtering/sorting on mock data
-    if (!hasSupabaseConfig() || tokens === MOCK_TOKENS) {
+    if (isMockOnly) {
       if (tierParam && TIER_MAP[tierParam]) {
         tokens = tokens.filter((t) => t.tier === TIER_MAP[tierParam]);
       }

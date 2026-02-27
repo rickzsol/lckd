@@ -1,17 +1,30 @@
-import type { DisplayToken, DisplayCommit } from "@/types/display";
+import type { DisplayToken } from "@/types/display";
 import { TrustTier } from "@/types/index";
 
-export const TOKENS: DisplayToken[] = [
-  {
-    id: 0, name: "lckd", ticker: "$TEST", tier: TrustTier.BUILDER, tierLabel: "BUILDER", image: "/logo.png",
-    dev: { github: "lckd", avatar: "TD", accountAge: "2yr", repos: 12, commits: 847, lastCommit: "1h ago", lastCommitMsg: "feat: add no-lock option to launch wizard" },
-    repo: { name: "lckd", lang: "TypeScript", stars: 3, forks: 0, lastPush: "1h", commits30d: 34 },
-    lock: { amount: "10 SOL", duration: "180d", pct: 8, start: "Feb 06", end: "Aug 05" },
-    mcap: "$12K", vol: "$1.8K", price: "$0.000012", chg: "+0.0%", holders: 1,
-    mintAddress: "lckd-test",
+export const FEATURED_TOKEN: DisplayToken = {
+  id: 0,
+  name: "Lckd",
+  ticker: "$LCKD",
+  tier: TrustTier.SHIPPED,
+  tierLabel: "SHIPPED",
+  image: "/lckd-token.png",
+  dev: {
+    github: "kaelxsol",
+    avatar: "KS",
+    accountAge: "2yr",
+    repos: 12,
+    commits: 847,
   },
-];
-
-export const COMMITS: DisplayCommit[] = [
-  { dev: "lckd", ticker: "$TEST", msg: "feat: add no-lock option to launch", time: "1h" },
-];
+  lock: {
+    amount: "--",
+    duration: "9,125d",
+    pct: 0,
+    start: "TBA",
+    end: "TBA",
+  },
+  mcap: "--",
+  vol: "--",
+  price: "--",
+  chg: "+0.0%",
+  holders: 0,
+};

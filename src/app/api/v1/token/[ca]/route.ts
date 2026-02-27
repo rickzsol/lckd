@@ -1,7 +1,6 @@
 import { type NextRequest } from "next/server";
 import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
-import { TOKENS as MOCK_TOKENS } from "@/lib/mock-data";
-import type { DisplayToken } from "@/types/display";
+import { FEATURED_TOKEN } from "@/lib/mock-data";
 
 export { OPTIONS };
 
@@ -9,12 +8,6 @@ function hasSupabaseConfig(): boolean {
   return !!(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  );
-}
-
-function findMockToken(ca: string): DisplayToken | undefined {
-  return MOCK_TOKENS.find(
-    (t) => String(t.id) === ca || t.mintAddress === ca,
   );
 }
 
@@ -35,12 +28,13 @@ export async function GET(
         const token = await getTokenByIdOrMint(ca);
         if (token) return apiResponse({ token });
       } catch {
-        // fall through to mock
+        // fall through to featured
       }
     }
 
-    const mock = findMockToken(ca);
-    if (mock) return apiResponse({ token: mock });
+    if (String(FEATURED_TOKEN.id) === ca || FEATURED_TOKEN.mintAddress === ca) {
+      return apiResponse({ token: FEATURED_TOKEN });
+    }
 
     return apiError("Token not found", 404);
   } catch (err) {
