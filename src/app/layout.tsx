@@ -25,7 +25,7 @@ export const metadata: Metadata = {
   description:
     "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it. Built on pump.fun + Streamflow.",
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL || "https://www.lckd.tech",
+    process.env.NEXT_PUBLIC_APP_URL || "https://lckd.tech",
   ),
   icons: {
     icon: [
