@@ -1,11 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-
-const LCKD_CA = "DDwx6M5CYtq1GCkRSKBu8i7gzmJmjBoD7eWopmS8nN5Y";
-const LCKD_CA_SHORT = `${LCKD_CA.slice(0, 4)}...${LCKD_CA.slice(-4)}`;
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import dynamic from "next/dynamic";
@@ -29,13 +26,6 @@ export default function Navbar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [caCopied, setCaCopied] = useState(false);
-
-  const copyCA = useCallback(() => {
-    navigator.clipboard.writeText(LCKD_CA);
-    setCaCopied(true);
-    setTimeout(() => setCaCopied(false), 1500);
-  }, []);
 
   useEffect(() => {
     if (isMobileOpen) {
@@ -81,17 +71,8 @@ export default function Navbar() {
             );
           })}
           <span className="h-3.5 w-px bg-white/[0.08]" />
-          <button
-            onClick={copyCA}
-            className="cursor-pointer rounded-md border border-white/[0.06] px-2 py-1 font-mono text-[10px] text-[#555] transition-colors hover:border-accent/30 hover:text-accent"
-            title="Copy CA"
-          >
-            <span className="text-[#444]">CA</span>{" "}
-            {caCopied ? "copied!" : LCKD_CA_SHORT}
-          </button>
-          <span className="h-3.5 w-px bg-white/[0.08]" />
           <a
-            href="https://x.com/lckdlaunch"
+            href="https://x.com/lckdtech"
             target="_blank"
             rel="noopener noreferrer"
             className="text-[#555] transition-colors hover:text-accent"
@@ -163,18 +144,9 @@ export default function Navbar() {
                 </Link>
               );
             })}
-            <div className="border-t border-white/[0.06] pt-3 pb-2">
-              <button
-                onClick={copyCA}
-                className="flex w-full items-center gap-2 rounded-md border border-white/[0.06] px-3 py-2 font-mono text-[11px] text-[#555] transition-colors hover:border-accent/30 hover:text-accent"
-              >
-                <span className="text-[#444]">CA</span>{" "}
-                {caCopied ? "copied!" : LCKD_CA_SHORT}
-              </button>
-            </div>
             <div className="border-t border-white/[0.06] pt-3">
               <a
-                href="https://x.com/lckdlaunch"
+                href="https://x.com/lckdtech"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[#555] transition-colors hover:text-accent"
