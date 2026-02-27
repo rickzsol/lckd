@@ -40,12 +40,14 @@ export const metadata: Metadata = {
       "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it on-chain.",
     siteName: "LCKD",
     type: "website",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "LCKD" }],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "LCKD — Builders who ship. Tokens that lock.",
     description:
       "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it.",
+    images: ["/og.png"],
   },
 };
 
