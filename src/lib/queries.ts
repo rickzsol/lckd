@@ -105,46 +105,9 @@ export function tokenToDisplay(t: Token, market?: DexMarketData | null): Display
 }
 
 export async function getTokens(): Promise<DisplayToken[]> {
+  // TODO: re-enable Supabase fetch after launch
   const { FEATURED_TOKEN } = await import("./mock-data");
-
-  if (!hasSupabaseConfig()) return [FEATURED_TOKEN];
-
-  try {
-    const { createServerClient } = await import("./supabase");
-    const supabase = createServerClient();
-    const { data, error } = await supabase
-      .from("tokens")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    if (error || !data || data.length === 0) return [FEATURED_TOKEN];
-
-    const tokens = data as Token[];
-    const mints = tokens.map((t) => t.mint_address).filter(Boolean);
-
-    // Resolve image URIs and market data in parallel
-    const [marketMap, resolvedImages] = await Promise.all([
-      import("./dexscreener").then((m) => m.fetchMarketDataBatch(mints)),
-      Promise.all(
-        tokens.map((t) =>
-          t.image_uri ? resolveImageUri(t.image_uri) : Promise.resolve(""),
-        ),
-      ),
-    ]);
-
-    const supabaseTokens = tokens.map((t, i) =>
-      tokenToDisplay(
-        { ...t, image_uri: resolvedImages[i] || t.image_uri },
-        marketMap.get(t.mint_address) ?? null,
-      ),
-    );
-
-    return [FEATURED_TOKEN, ...supabaseTokens];
-  } catch (err) {
-    console.error("getTokens exception:", err);
-    return [FEATURED_TOKEN];
-  }
+  return [FEATURED_TOKEN];
 }
 
 export async function getTokenByIdOrMint(
