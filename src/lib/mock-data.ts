@@ -9,9 +9,9 @@ export const FEATURED_TOKEN: DisplayToken = {
   tierLabel: "SHIPPED",
   image: "/lckd-token.png",
   dev: {
-    github: "kaelxsol",
-    avatar: "KS",
-    accountAge: "2yr",
+    github: "lckd",
+    avatar: "LC",
+    accountAge: "25yr",
     repos: 12,
     commits: 847,
   },
