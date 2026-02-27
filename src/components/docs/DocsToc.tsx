@@ -8,7 +8,7 @@ interface TocSection {
 }
 
 const SECTIONS: TocSection[] = [
-  { id: "what-is-lockpad", label: "What is Lockpad?" },
+  { id: "what-is-lckd", label: "What is LCKD?" },
   { id: "how-it-works", label: "How It Works" },
   { id: "trust-tiers", label: "Trust Tiers" },
   { id: "for-developers", label: "For Developers" },
@@ -55,7 +55,7 @@ export default function DocsToc() {
   return (
     <>
       {/* Mobile dropdown */}
-      <div className="sticky top-[49px] z-30 border-b border-white/[0.06] bg-[rgba(8,8,12,0.95)] backdrop-blur-md lg:hidden">
+      <div className="sticky top-[49px] z-30 border-b border-white/[0.06] bg-[rgba(6,6,15,0.95)] backdrop-blur-md lg:hidden">
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
@@ -81,7 +81,7 @@ export default function DocsToc() {
                 onClick={() => handleClick(id)}
                 className={`block w-full py-2 text-left font-mono text-xs transition-colors ${
                   id === activeId
-                    ? "text-emerald-accent"
+                    ? "text-accent"
                     : "text-text-muted hover:text-text-primary"
                 }`}
               >
@@ -105,7 +105,7 @@ export default function DocsToc() {
                 onClick={() => handleClick(id)}
                 className={`block w-full py-1 pl-3 text-left font-mono text-[11px] transition-colors ${
                   id === activeId
-                    ? "border-l-2 border-emerald-accent -ml-px text-emerald-accent"
+                    ? "border-l-2 border-accent -ml-px text-accent"
                     : "text-text-muted hover:text-text-primary"
                 }`}
               >

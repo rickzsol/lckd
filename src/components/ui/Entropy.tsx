@@ -112,8 +112,8 @@ export default function Entropy({ className = "" }: { className?: string }) {
         ctx!.beginPath();
         ctx!.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx!.fillStyle = p.isOrdered
-          ? "rgba(16, 185, 129, 0.45)"
-          : "rgba(16, 185, 129, 0.18)";
+          ? "rgba(139, 92, 246, 0.45)"
+          : "rgba(139, 92, 246, 0.18)";
         ctx!.fill();
       }
 

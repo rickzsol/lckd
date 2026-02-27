@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   const pat = process.env.GITHUB_PAT;
   const headers: Record<string, string> = {
     Accept: "application/vnd.github.v3+json",
-    "User-Agent": "lockpad",
+    "User-Agent": "lckd",
   };
   if (pat) headers.Authorization = `Bearer ${pat}`;
 

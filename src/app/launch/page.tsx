@@ -33,7 +33,7 @@ export default function LaunchPage() {
               <Fragment key={num}>
                 {i > 0 && (
                   <div
-                    className={`mt-4 h-px flex-1 transition-colors ${isComplete ? "bg-emerald-accent/60" : "bg-white/8"}`}
+                    className={`mt-4 h-px flex-1 transition-colors ${isComplete ? "bg-accent/60" : "bg-white/8"}`}
                   />
                 )}
                 <button
@@ -47,9 +47,9 @@ export default function LaunchPage() {
                   <div
                     className={`flex h-8 w-8 items-center justify-center rounded-full border-2 font-mono text-[11px] font-bold transition-all ${
                       isActive
-                        ? "border-emerald-accent bg-emerald-accent text-black"
+                        ? "border-accent bg-accent text-black"
                         : isComplete
-                          ? "border-emerald-accent bg-emerald-accent/15 text-emerald-accent"
+                          ? "border-accent bg-accent/15 text-accent"
                           : "border-white/10 bg-transparent text-white/25"
                     }`}
                   >
@@ -74,9 +74,9 @@ export default function LaunchPage() {
                   <span
                     className={`whitespace-nowrap font-mono text-[9px] transition-colors ${
                       isActive
-                        ? "text-emerald-accent"
+                        ? "text-accent"
                         : isComplete
-                          ? "text-emerald-accent/50"
+                          ? "text-accent/50"
                           : "text-white/20"
                     }`}
                   >
@@ -99,7 +99,7 @@ export default function LaunchPage() {
               style={{
                 background:
                   i + 1 <= wizard.step
-                    ? "#10b981"
+                    ? "#8b5cf6"
                     : "rgba(255,255,255,0.06)",
               }}
             />

@@ -11,7 +11,7 @@ const SECONDS_PER_DAY = 86_400;
 const STREAM_NAME_MAX_LENGTH = 64;
 
 export interface StreamflowLockParams {
-  /** Wallet creating and receiving the vesting lock (self-lock) */
+  /** Wallet creating and receiving the lock (self-lock) */
   sender: PublicKey;
   /** Token mint address */
   mint: PublicKey;
@@ -35,12 +35,8 @@ export interface StreamflowLockResult {
 
 /**
  * Builds Streamflow token lock instructions for a self-lock (sender = recipient).
- * All tokens locked until the cliff date, then released in full.
- * Non-cancelable, non-transferable — appears under "Locks" in Streamflow dashboard.
- *
- * Streamflow classifies a stream as a Lock (not Vesting) when:
- *   cliffAmount >= depositedAmount - 1
- * i.e., full amount unlocks at cliff in a lump sum.
+ * Straight lock: one period equal to the full duration, full amount released at end.
+ * Non-cancelable, non-transferable.
  */
 export async function buildStreamflowLockInstructions(
   params: StreamflowLockParams,
@@ -63,29 +59,30 @@ export async function buildStreamflowLockInstructions(
   });
 
   // Buffer so the start time is still in the future when the tx lands on-chain.
-  // 120s accounts for wallet signature approval time + network propagation.
-  const startTime = Math.floor(Date.now() / 1000) + 120;
-
-  // Cliff = unlock date. All tokens release at once.
-  const cliffTime = startTime + durationSeconds;
+  // 60s accounts for wallet signature approval and network congestion.
+  const startTime = Math.floor(Date.now() / 1000) + 60;
 
   const streamName = tokenName
     .slice(0, STREAM_NAME_MAX_LENGTH)
     .padEnd(1, " ");
 
-  // Token Lock config: cliffAmount = full amount, released at cliff date.
-  // period/amountPerPeriod are required fields but irrelevant for locks
-  // since cliffAmount covers the full deposit.
+  // True LOCK (not vesting) — based on Streamflow token lock pattern:
+  // - cliff at end of lock period releases (amount - 1) instantly
+  // - remaining 1 unit vests over 30s (on-chain minimum period is 30s, error 6003)
+  // - end_time = cliff + 30 seconds (negligible)
+  // - isTokenLock() = true because cliffAmount >= depositedAmount - 1
+  const MINIMUM_PERIOD_SECONDS = 30;
+  const cliffTimestamp = startTime + durationSeconds;
   const streamData: ICreateLinearStreamData = {
     recipient: sender.toBase58(),
     amount: amount,
-    amountPerPeriod: amount,
+    amountPerPeriod: new BN(1),
     name: streamName,
     tokenId: mint.toBase58(),
     start: startTime,
-    period: durationSeconds,
-    cliff: cliffTime,
-    cliffAmount: amount,
+    period: MINIMUM_PERIOD_SECONDS,
+    cliff: cliffTimestamp,
+    cliffAmount: amount.sub(new BN(1)),
     cancelableBySender: false,
     cancelableByRecipient: false,
     transferableBySender: false,

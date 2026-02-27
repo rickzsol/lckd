@@ -3,11 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 const COMMANDS = [
-  "lockpad verify --lock --ship",
-  "lockpad launch --lock 90d",
-  "lockpad status --trust-tier",
-  "lockpad connect --github --wallet",
-  "lockpad lock --amount 10% --stream",
+  "lckd verify --lock --ship",
+  "lckd launch --lock 90d",
+  "lckd status --trust-tier",
+  "lckd connect --github --wallet",
+  "lckd lock --amount 10% --stream",
 ];
 
 const TYPE_SPEED = 50;
@@ -78,11 +78,11 @@ export default function HeroTerminal() {
   }, [clear]);
 
   return (
-    <div className="mb-5 inline-block max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-md border border-emerald-accent/15 bg-emerald-accent/[0.06] px-3.5 py-1.5 font-mono text-[clamp(11px,2.5vw,14px)] text-emerald-accent">
+    <div className="mb-5 inline-block max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-md border border-accent/15 bg-accent/[0.06] px-3.5 py-1.5 font-mono text-[clamp(11px,2.5vw,14px)] text-accent">
       <span className="text-[#555]">$ </span>
       {typed}
       <span
-        className={`text-emerald-accent ${isTyping ? "" : "animate-[cursor-blink_1.06s_step-end_infinite]"}`}
+        className={`text-accent ${isTyping ? "" : "animate-[cursor-blink_1.06s_step-end_infinite]"}`}
         style={isTyping ? { opacity: 1 } : undefined}
       >
         &#9610;

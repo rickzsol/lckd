@@ -19,13 +19,13 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Lockpad — Builders who ship. Tokens that lock.",
+    default: "LCKD — Builders who ship. Tokens that lock.",
     template: "%s",
   },
   description:
     "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it. Built on pump.fun + Streamflow.",
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL || "https://www.lockpad.fun",
+    process.env.NEXT_PUBLIC_APP_URL || "https://www.lckd.tech",
   ),
   icons: {
     icon: [
@@ -35,15 +35,15 @@ export const metadata: Metadata = {
     apple: "/icon.png",
   },
   openGraph: {
-    title: "Lockpad — Builders who ship. Tokens that lock.",
+    title: "LCKD — Builders who ship. Tokens that lock.",
     description:
       "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it on-chain.",
-    siteName: "Lockpad",
+    siteName: "LCKD",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "Lockpad — Builders who ship. Tokens that lock.",
+    title: "LCKD — Builders who ship. Tokens that lock.",
     description:
       "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it.",
   },

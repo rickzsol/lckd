@@ -2,19 +2,19 @@ import {
   Connection,
   Keypair,
   Transaction,
+  TransactionInstruction,
   VersionedTransaction,
   ComputeBudgetProgram,
   PublicKey,
 } from "@solana/web3.js";
 import type { LaunchConfig } from "@/types/index";
 import { uploadToIPFS, type TokenMetadataInput } from "./ipfs";
-import { fetchPumpPortalCreateTx } from "./pumpfun";
+import { estimateTokensFromSol, fetchPumpPortalCreateTx } from "./pumpfun";
 import {
   buildStreamflowLockInstructions,
   calculateLockAmount,
   lockDaysToSeconds,
 } from "./streamflow";
-import { getSupabase } from "@/lib/supabase";
 import {
   DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
   DEFAULT_PRIORITY_FEE_SOL,
@@ -39,8 +39,6 @@ export interface LaunchResult {
 export interface CreateTxBundle {
   /** Serialized transaction bytes from PumpPortal, needs signing */
   txBytes: Uint8Array;
-  /** Mint keypair that must co-sign the create transaction */
-  mintKeypair: Keypair;
 }
 
 export interface LockTxBundle {
@@ -48,6 +46,17 @@ export interface LockTxBundle {
   transaction: Transaction;
   /** Additional signers required (Streamflow metadata keypair) */
   additionalSigners: Keypair[];
+  /** Actual number of tokens locked (raw amount as string) */
+  lockAmount: string;
+}
+
+export interface PrebuiltLockInstructions {
+  /** Raw Streamflow + compute budget instructions (no blockhash) */
+  instructions: TransactionInstruction[];
+  /** Streamflow metadata keypair that must co-sign */
+  additionalSigners: Keypair[];
+  /** Lock amount in raw token units */
+  lockAmount: string;
 }
 
 // ─── Step 1: IPFS Upload ─────────────────────────────────────────────────────
@@ -85,17 +94,16 @@ export async function prepareMetadata(
 export async function buildCreateTransaction(
   config: LaunchConfig,
   walletPublicKey: PublicKey,
+  mintPublicKey: PublicKey,
   metadataUri: string,
 ): Promise<CreateTxBundle> {
   if (config.buyAmountSol <= 0) {
     throw new Error("Initial buy amount must be greater than 0 SOL");
   }
 
-  const mintKeypair = Keypair.generate();
-
   const txBytes = await fetchPumpPortalCreateTx({
     creatorPublicKey: walletPublicKey.toBase58(),
-    mintKeypair,
+    mintPublicKey: mintPublicKey.toBase58(),
     name: config.name,
     symbol: config.ticker,
     metadataUri,
@@ -103,7 +111,7 @@ export async function buildCreateTransaction(
     priorityFeeSol: DEFAULT_PRIORITY_FEE_SOL,
   });
 
-  return { txBytes, mintKeypair };
+  return { txBytes };
 }
 
 /**
@@ -142,8 +150,8 @@ export async function buildLockTransaction(
   // the token account immediately after the create tx confirms.
   const { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } = await import("@solana/spl-token");
 
-  const BALANCE_MAX_RETRIES = 15;
-  const BALANCE_RETRY_DELAY_MS = 2000;
+  const BALANCE_MAX_RETRIES = 10;
+  const BALANCE_RETRY_DELAY_MS = 1500;
 
   let actualBalance = BigInt(0);
   for (let attempt = 0; attempt < BALANCE_MAX_RETRIES; attempt++) {
@@ -212,60 +220,91 @@ export async function buildLockTransaction(
     additionalSigners.push(Keypair.fromSecretKey(lockResult.metadataKeypair.secretKey));
   }
 
-  return { transaction, additionalSigners };
+  return { transaction, additionalSigners, lockAmount: lockAmount.toString() };
 }
 
-// ─── Step 4: Record Launch to Supabase ───────────────────────────────────────
+// ─── Step 3b: Pre-build Lock Instructions (estimate-based, no polling) ───────
 
-export interface RecordLaunchParams {
-  mintAddress: string;
-  name: string;
-  ticker: string;
-  description: string;
-  imageUri: string;
-  creatorWallet: string;
-  launchTxSignature: string;
-  lockTxSignature: string;
-  lockDurationDays: number;
-  lockPercentage: number;
-  lockAmount: string;
-  buyAmountSol: number;
-  githubUsername: string | null;
-  githubRepo: string | null;
-  liveUrl: string | null;
-  twitterUrl: string | null;
-  telegramUrl: string | null;
-  websiteUrl: string | null;
-}
+/**
+ * Pre-builds Streamflow lock instructions using an estimated token balance
+ * derived from the bonding curve math. Called in parallel with create TX
+ * confirmation so there's zero wait after the create confirms.
+ *
+ * Uses a 2% safety margin on the estimate to ensure we never try to lock
+ * more tokens than actually received. The ~2% dust stays in wallet.
+ */
+export async function prebuildLockInstructions(
+  config: LaunchConfig,
+  walletPublicKey: PublicKey,
+  mintAddress: PublicKey,
+  connection: Connection,
+): Promise<PrebuiltLockInstructions> {
+  const durationSeconds = lockDaysToSeconds(config.lockDurationDays);
 
-export async function recordLaunch(params: RecordLaunchParams): Promise<void> {
-  const supabase = getSupabase();
+  const estimatedTokens = estimateTokensFromSol(config.buyAmountSol);
+  // 2% safety margin — never lock more than received
+  const safeEstimate = (estimatedTokens * BigInt(98)) / BigInt(100);
+  const lockAmount = calculateLockAmount(safeEstimate, config.lockPercentage);
 
-  const { error } = await supabase.from("tokens").insert({
-    mint_address: params.mintAddress,
-    name: params.name,
-    ticker: params.ticker,
-    description: params.description,
-    image_uri: params.imageUri,
-    creator_wallet: params.creatorWallet,
-    launch_tx: params.launchTxSignature,
-    lock_tx: params.lockTxSignature,
-    lock_duration_days: params.lockDurationDays,
-    lock_percentage: params.lockPercentage,
-    lock_amount: params.lockAmount,
-    buy_amount_sol: params.buyAmountSol,
-    github_username: params.githubUsername,
-    github_repo: params.githubRepo,
-    live_url: params.liveUrl,
-    twitter_url: params.twitterUrl,
-    telegram_url: params.telegramUrl,
-    website_url: params.websiteUrl,
-    trust_tier: 1, // LOCKED - initial tier for all new launches
-  });
+  const lockResult = await buildStreamflowLockInstructions(
+    {
+      sender: walletPublicKey,
+      mint: mintAddress,
+      amount: lockAmount,
+      durationSeconds,
+      tokenName: config.name,
+    },
+    connection,
+  );
 
-  if (error) {
-    throw new Error(`Failed to record launch in database: ${error.message}`);
+  const instructions: TransactionInstruction[] = [
+    ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
+    }),
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+    ...lockResult.instructions,
+  ];
+
+  const additionalSigners: Keypair[] = [];
+  if (lockResult.metadataKeypair) {
+    additionalSigners.push(
+      Keypair.fromSecretKey(lockResult.metadataKeypair.secretKey),
+    );
   }
+
+  return {
+    instructions,
+    additionalSigners,
+    lockAmount: lockAmount.toString(),
+  };
+}
+
+/**
+ * Assembles a ready-to-sign Transaction from pre-built instructions with a
+ * **fresh** blockhash. Call this immediately before requesting wallet signature
+ * to minimize the time between blockhash fetch and TX landing.
+ */
+export async function assembleLockTransaction(
+  prebuilt: PrebuiltLockInstructions,
+  walletPublicKey: PublicKey,
+  connection: Connection,
+): Promise<LockTxBundle> {
+  const transaction = new Transaction();
+  for (const ix of prebuilt.instructions) {
+    transaction.add(ix);
+  }
+
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash("confirmed");
+  transaction.recentBlockhash = blockhash;
+  transaction.lastValidBlockHeight = lastValidBlockHeight;
+  transaction.feePayer = walletPublicKey;
+
+  return {
+    transaction,
+    additionalSigners: prebuilt.additionalSigners,
+    lockAmount: prebuilt.lockAmount,
+  };
 }
 
 // ─── Full Launch Orchestrator ────────────────────────────────────────────────
@@ -293,15 +332,14 @@ export async function recordLaunch(params: RecordLaunchParams): Promise<void> {
 export async function prepareLaunch(
   config: LaunchConfig,
   walletPublicKey: PublicKey,
+  mintPublicKey: PublicKey,
   onProgress?: (step: LaunchStep) => void,
 ): Promise<{
   metadataUri: string;
   createTxBundle: CreateTxBundle;
 }> {
-  // Validate inputs upfront
   validateLaunchConfig(config);
 
-  // Step 1: Upload to IPFS
   onProgress?.({
     step: "ipfs",
     status: "active",
@@ -316,7 +354,6 @@ export async function prepareLaunch(
     message: "Metadata uploaded successfully",
   });
 
-  // Step 2: Build create+buy transaction
   onProgress?.({
     step: "create",
     status: "active",
@@ -326,13 +363,14 @@ export async function prepareLaunch(
   const createTxBundle = await buildCreateTransaction(
     config,
     walletPublicKey,
+    mintPublicKey,
     metadataUri,
   );
 
   onProgress?.({
     step: "create",
     status: "done",
-    message: `Token mint: ${createTxBundle.mintKeypair.publicKey.toBase58()}`,
+    message: `Token mint: ${mintPublicKey.toBase58()}`,
   });
 
   return { metadataUri, createTxBundle };

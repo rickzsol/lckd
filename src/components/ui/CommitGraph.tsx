@@ -29,11 +29,11 @@ export default function CommitGraph() {
               style={{
                 background:
                   i > 0.7
-                    ? "#10b981"
+                    ? "#8b5cf6"
                     : i > 0.4
-                      ? "#065f46"
+                      ? "#5b21b6"
                       : i > 0.15
-                        ? "#064e3b"
+                        ? "#3b0764"
                         : "rgba(255,255,255,0.03)",
               }}
             />

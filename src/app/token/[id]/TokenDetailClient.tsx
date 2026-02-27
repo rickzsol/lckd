@@ -15,7 +15,7 @@ function TokenImage({ src, alt }: { src: string; alt: string }) {
 
   if (!isUrl || hasError) {
     return (
-      <span className="font-mono text-sm font-bold text-emerald-accent">
+      <span className="font-mono text-sm font-bold text-accent">
         {hasError ? alt.slice(0, 2).toUpperCase() : src}
       </span>
     );
@@ -39,7 +39,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
     <div className="mx-auto max-w-[1100px] p-4">
       <Link
         href="/feed"
-        className="mb-4 inline-block font-mono text-xs text-[#555] transition-colors hover:text-emerald-accent"
+        className="mb-4 inline-block font-mono text-xs text-[#555] transition-colors hover:text-accent"
       >
         &larr; back to feed
       </Link>
@@ -47,7 +47,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
       {/* Header */}
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-emerald-accent/20 bg-emerald-accent/[0.06]">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-accent/20 bg-accent/[0.06]">
             <TokenImage src={t.image} alt={t.name} />
           </div>
           <div>
@@ -66,7 +66,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
                   href={`https://github.com/${t.dev.github}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-emerald-accent hover:underline"
+                  className="text-accent hover:underline"
                 >
                   @{t.dev.github}
                 </a>
@@ -84,7 +84,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
             <div
               className="mt-0.5 font-mono text-xs font-semibold"
               style={{
-                color: t.chg.startsWith("+") ? "#10b981" : "#ef4444",
+                color: t.chg.startsWith("+") ? "#8b5cf6" : "#ef4444",
               }}
             >
               {t.chg} 24h
@@ -107,7 +107,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
                 href={`https://github.com/${t.dev.github}/${t.repo.name}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block rounded-lg border border-white/[0.06] bg-black/30 px-3 py-2.5 transition-colors hover:border-emerald-accent/20"
+                className="block rounded-lg border border-white/[0.06] bg-black/30 px-3 py-2.5 transition-colors hover:border-accent/20"
               >
                 <div className="font-mono text-[12px] font-bold text-white">
                   {t.dev.github}/{t.repo.name}
@@ -132,7 +132,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
           { l: "Locked", v: t.lock.amount },
           { l: "Duration", v: t.lock.duration },
         ].map((s) => (
-          <div key={s.l} className="bg-[rgba(8,8,12,0.8)] px-2.5 py-3">
+          <div key={s.l} className="bg-[rgba(6,6,15,0.8)] px-2.5 py-3">
             <div className="mb-1 font-mono text-[9px] uppercase tracking-wider text-[#444]">
               {s.l}
             </div>
@@ -146,7 +146,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
       {/* Detail grid */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {/* Lock card */}
-        <div className="rounded-xl border border-emerald-accent/15 bg-emerald-accent/[0.03] p-5">
+        <div className="rounded-xl border border-accent/15 bg-accent/[0.03] p-5">
           <div className="mb-3.5 flex items-center justify-between font-mono text-[11px] font-bold uppercase tracking-wider text-[#888]">
             <span>Token Lock &mdash; Streamflow</span>
             <span className="text-[10px] font-normal normal-case tracking-normal text-[#555]">
@@ -161,11 +161,11 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
 
           <div className="relative mb-3 h-2 w-full overflow-visible rounded bg-white/[0.04]">
             <div
-              className="h-full rounded bg-gradient-to-r from-emerald-accent to-emerald-700"
+              className="h-full rounded bg-gradient-to-r from-accent to-emerald-700"
               style={{ width: `${t.lock.pct}%` }}
             />
             <div
-              className="absolute -top-[3px] h-3.5 w-0.5 bg-emerald-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+              className="absolute -top-[3px] h-3.5 w-0.5 bg-accent shadow-[0_0_8px_rgba(139,92,246,0.5)]"
               style={{ left: `${t.lock.pct}%` }}
             />
           </div>
@@ -206,7 +206,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
               Developer Profile
             </div>
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-emerald-accent/30 bg-emerald-accent/10 font-mono text-[13px] font-bold text-emerald-accent">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-accent/30 bg-accent/10 font-mono text-[13px] font-bold text-accent">
                 {t.dev.avatar}
               </div>
               <div>
@@ -214,7 +214,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
                   href={`https://github.com/${t.dev.github}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-mono text-sm font-bold text-white hover:text-emerald-accent"
+                  className="font-mono text-sm font-bold text-white hover:text-accent"
                 >
                   @{t.dev.github}
                 </a>
@@ -238,7 +238,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
             {t.dev.lastCommit && (
               <div className="rounded-lg bg-black/30 px-3 py-2.5 font-mono text-xs">
                 <span className="text-[#555]">latest &rarr; </span>
-                <span className="text-emerald-accent">{t.dev.lastCommit}</span>
+                <span className="text-accent">{t.dev.lastCommit}</span>
                 {t.dev.lastCommitMsg && (
                   <div className="mt-1 text-[11px] text-[#777]">
                     &ldquo;{t.dev.lastCommitMsg}&rdquo;
@@ -254,7 +254,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
           <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-5">
             <div className="flex items-center justify-between">
               <div>
-                <div className="mb-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-emerald-accent">
+                <div className="mb-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-accent">
                   Live Product Verified
                 </div>
                 <a
@@ -263,12 +263,12 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
                   }
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-mono text-[13px] text-white hover:text-emerald-accent"
+                  className="font-mono text-[13px] text-white hover:text-accent"
                 >
                   {t.live}
                 </a>
               </div>
-              <span className="h-2 w-2 rounded-full bg-emerald-accent shadow-[0_0_12px_rgba(16,185,129,0.5)]" />
+              <span className="h-2 w-2 rounded-full bg-accent shadow-[0_0_12px_rgba(139,92,246,0.5)]" />
             </div>
           </div>
         )}

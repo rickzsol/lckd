@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
+const ALLOWED_ORIGIN =
+  process.env.NODE_ENV === "development"
+    ? "http://localhost:3000"
+    : (process.env.ALLOWED_ORIGIN ?? "https://lckd.tech");
+
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };

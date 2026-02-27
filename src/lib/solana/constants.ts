@@ -41,7 +41,13 @@ export const PUMPFUN_IPFS_URL = "https://pump.fun/api/ipfs";
 // -- Transaction defaults --
 export const DEFAULT_PRIORITY_FEE_MICROLAMPORTS = 100_000;
 export const DEFAULT_SLIPPAGE_BPS = 1000; // 10%
-export const DEFAULT_PRIORITY_FEE_SOL = 0.005;
+export const DEFAULT_PRIORITY_FEE_SOL = 0.001;
+
+// Estimated SOL overhead for the lock TX (Streamflow escrow rent + tx fee + Jito tip)
+// Streamflow v11 charges ~0.16 SOL protocol fee + ~0.01 escrow rent + ~0.002 ATA rent
+export const LOCK_TX_SOL_OVERHEAD = 0.2;
+// Estimated SOL overhead for the create TX (priority fee + tx fee + mint/ATA/metadata rent + pump.fun fees)
+export const CREATE_TX_SOL_OVERHEAD = 0.03;
 
 // -- Solana --
 export const LAMPORTS_PER_SOL = 1_000_000_000;

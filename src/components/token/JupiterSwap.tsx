@@ -173,7 +173,7 @@ export default function JupiterSwap({
             onClick={() => setAmount(String(p))}
             className={`flex-1 rounded-md border px-2 py-1.5 font-mono text-[10px] font-semibold transition-all ${
               amount === String(p)
-                ? "border-emerald-accent/30 bg-emerald-accent/[0.08] text-emerald-accent"
+                ? "border-accent/30 bg-accent/[0.08] text-accent"
                 : "border-white/[0.06] text-[#555] hover:border-white/[0.12] hover:text-[#888]"
             }`}
             disabled={state === "signing" || state === "sending"}
@@ -195,7 +195,7 @@ export default function JupiterSwap({
               onClick={() => setSlippageBps(opt.bps)}
               className={`flex-1 rounded-md border px-2 py-1.5 font-mono text-[10px] font-semibold transition-all ${
                 slippageBps === opt.bps
-                  ? "border-emerald-accent/30 bg-emerald-accent/[0.08] text-emerald-accent"
+                  ? "border-accent/30 bg-accent/[0.08] text-accent"
                   : "border-white/[0.06] text-[#555] hover:border-white/[0.12] hover:text-[#888]"
               }`}
             >
@@ -262,8 +262,8 @@ export default function JupiterSwap({
 
       {/* Success */}
       {state === "success" && txSig && (
-        <div className="mb-3 rounded-lg bg-emerald-accent/[0.06] px-3 py-2 font-mono text-[10px]">
-          <span className="text-emerald-accent">Swap confirmed!</span>
+        <div className="mb-3 rounded-lg bg-accent/[0.06] px-3 py-2 font-mono text-[10px]">
+          <span className="text-accent">Swap confirmed!</span>
           <a
             href={`https://solscan.io/tx/${txSig}`}
             target="_blank"

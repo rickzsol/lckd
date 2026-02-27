@@ -91,7 +91,7 @@ export default function DevProfileClient({
               className="h-full w-full object-cover"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-emerald-accent/[0.06] font-mono text-lg font-bold text-emerald-accent">
+            <div className="flex h-full w-full items-center justify-center bg-accent/[0.06] font-mono text-lg font-bold text-accent">
               {profile.github_username.slice(0, 2).toUpperCase()}
             </div>
           )}
@@ -130,7 +130,7 @@ export default function DevProfileClient({
             onClick={() => setActiveTab(tab)}
             className={`px-3 py-2 font-mono text-[11px] font-semibold uppercase tracking-wide transition-colors ${
               activeTab === tab
-                ? "border-b-2 border-emerald-accent text-emerald-accent"
+                ? "border-b-2 border-accent text-accent"
                 : "text-[#555] hover:text-[#888]"
             }`}
           >
@@ -186,7 +186,7 @@ function LaunchesTab({ tokens }: { tokens: DisplayToken[] }) {
         return (
           <Link key={t.id} href={href} className="token-card block">
             <div className="mb-2 flex items-center gap-2.5">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-emerald-accent/20 bg-emerald-accent/[0.06]">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-accent/20 bg-accent/[0.06]">
                 {isImageUrl ? (
                   <Image
                     src={t.image}
@@ -196,7 +196,7 @@ function LaunchesTab({ tokens }: { tokens: DisplayToken[] }) {
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  <span className="font-mono text-xs font-bold text-emerald-accent">
+                  <span className="font-mono text-xs font-bold text-accent">
                     {t.image}
                   </span>
                 )}
@@ -308,7 +308,7 @@ function ContributionGraph({
         const intensity = day.count / maxCount;
         const bg =
           intensity > 0.7
-            ? "#10b981"
+            ? "#8b5cf6"
             : intensity > 0.4
               ? "#065f46"
               : intensity > 0
@@ -353,7 +353,7 @@ function WalletLinkSection({ profile }: { profile: GitHubProfile }) {
 
     try {
       const ts = Date.now();
-      const message = `Link wallet to lockpad.fun\nUsername: ${profile.github_username}\nTimestamp: ${ts}`;
+      const message = `Link wallet to lckd.tech\nUsername: ${profile.github_username}\nTimestamp: ${ts}`;
       const msgBytes = new TextEncoder().encode(message);
       const sigBytes = await signMessage(msgBytes);
       const signature = Buffer.from(sigBytes).toString("base64");
@@ -393,11 +393,11 @@ function WalletLinkSection({ profile }: { profile: GitHubProfile }) {
 
       {linkedAddress ? (
         <div className="flex items-center gap-2">
-          <span className="rounded bg-emerald-accent/[0.08] px-2 py-1 font-mono text-[11px] text-emerald-accent">
+          <span className="rounded bg-accent/[0.08] px-2 py-1 font-mono text-[11px] text-accent">
             {truncateAddress(linkedAddress)}
           </span>
           {linkSuccess && (
-            <span className="font-mono text-[10px] text-emerald-accent">
+            <span className="font-mono text-[10px] text-accent">
               Linked!
             </span>
           )}
@@ -471,7 +471,7 @@ function FeeClaimSection({ profile }: { profile: GitHubProfile }) {
             href={`https://solscan.io/tx/${txSignature}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-mono text-[10px] text-emerald-accent underline underline-offset-2"
+            className="font-mono text-[10px] text-accent underline underline-offset-2"
           >
             View transaction {"\u2192"}
           </a>

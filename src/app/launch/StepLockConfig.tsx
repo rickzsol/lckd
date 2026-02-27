@@ -10,7 +10,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
 
   return (
     <div>
-      <div className="mb-5 font-mono text-[13px] font-bold text-emerald-accent">
+      <div className="mb-5 font-mono text-[13px] font-bold text-accent">
         02 &mdash; Lock Configuration
       </div>
 
@@ -106,7 +106,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
               >
                 Lock Duration
               </label>
-              <span className="font-mono text-sm font-bold text-emerald-accent">
+              <span className="font-mono text-sm font-bold text-accent">
                 {w.config.lockDurationDays} days
               </span>
             </div>
@@ -119,7 +119,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
               onChange={(e) =>
                 w.updateConfig("lockDurationDays", +e.target.value)
               }
-              className="w-full accent-emerald-accent"
+              className="w-full accent-accent"
             />
             <div className="mt-2 flex gap-1.5">
               {DURATION_PRESETS.map((d) => (
@@ -128,7 +128,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
                   onClick={() => w.updateConfig("lockDurationDays", d)}
                   className={`flex-1 rounded-md border py-1.5 font-mono text-[10px] font-bold transition-colors ${
                     w.config.lockDurationDays === d
-                      ? "border-emerald-accent/40 bg-emerald-accent/10 text-emerald-accent"
+                      ? "border-accent/40 bg-accent/10 text-accent"
                       : "border-white/8 bg-white/3 text-[#555] hover:border-white/15 hover:text-[#888]"
                   }`}
                 >
@@ -149,7 +149,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
               >
                 Tokens to Lock
               </label>
-              <span className="font-mono text-sm font-bold text-emerald-accent">
+              <span className="font-mono text-sm font-bold text-accent">
                 {w.config.lockPercentage}%
               </span>
             </div>
@@ -160,7 +160,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
               max={100}
               value={w.config.lockPercentage}
               onChange={(e) => w.updateConfig("lockPercentage", +e.target.value)}
-              className="w-full accent-emerald-accent"
+              className="w-full accent-accent"
             />
             <div className="mt-2 flex gap-1.5">
               {PERCENTAGE_PRESETS.map((p) => (
@@ -169,7 +169,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
                   onClick={() => w.updateConfig("lockPercentage", p)}
                   className={`flex-1 rounded-md border py-1.5 font-mono text-[10px] font-bold transition-colors ${
                     w.config.lockPercentage === p
-                      ? "border-emerald-accent/40 bg-emerald-accent/10 text-emerald-accent"
+                      ? "border-accent/40 bg-accent/10 text-accent"
                       : "border-white/8 bg-white/3 text-[#555] hover:border-white/15 hover:text-[#888]"
                   }`}
                 >
@@ -184,14 +184,14 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
         <div className="lock-preview">
           <div
             className={`mb-1.5 font-mono text-[10px] uppercase tracking-[0.1em] ${
-              isSkipped ? "text-red-400" : "text-emerald-accent"
+              isSkipped ? "text-red-400" : "text-accent"
             }`}
           >
             {isSkipped ? "Launch Preview" : "Lock Preview"}
           </div>
           <div className="font-mono text-xs text-white">
             You will buy{" "}
-            <span className="font-bold text-emerald-accent">
+            <span className="font-bold text-accent">
               {w.config.buyAmountSol} SOL
             </span>{" "}
             worth of{" "}
@@ -203,11 +203,11 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
             ) : (
               <>
                 {" "}and lock{" "}
-                <span className="font-bold text-emerald-accent">
+                <span className="font-bold text-accent">
                   {w.config.lockPercentage}%
                 </span>{" "}
                 for{" "}
-                <span className="font-bold text-emerald-accent">
+                <span className="font-bold text-accent">
                   {w.config.lockDurationDays} days
                 </span>
               </>

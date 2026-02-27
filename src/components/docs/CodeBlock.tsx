@@ -26,7 +26,7 @@ export default function CodeBlock({ code, lang }: CodeBlockProps) {
           <button
             type="button"
             onClick={handleCopy}
-            className="font-mono text-[10px] text-text-muted transition-colors hover:text-emerald-accent"
+            className="font-mono text-[10px] text-text-muted transition-colors hover:text-accent"
           >
             {isCopied ? "copied" : "copy"}
           </button>
@@ -36,7 +36,7 @@ export default function CodeBlock({ code, lang }: CodeBlockProps) {
         <button
           type="button"
           onClick={handleCopy}
-          className="absolute right-3 top-3 font-mono text-[10px] text-text-muted opacity-0 transition-all hover:text-emerald-accent group-hover:opacity-100"
+          className="absolute right-3 top-3 font-mono text-[10px] text-text-muted opacity-0 transition-all hover:text-accent group-hover:opacity-100"
         >
           {isCopied ? "copied" : "copy"}
         </button>

@@ -29,12 +29,13 @@ export {
   buildCreateTransaction,
   prepareCreateTxForSigning,
   buildLockTransaction,
-  recordLaunch,
+  prebuildLockInstructions,
+  assembleLockTransaction,
   type LaunchStep,
   type LaunchResult,
   type CreateTxBundle,
   type LockTxBundle,
-  type RecordLaunchParams,
+  type PrebuiltLockInstructions,
 } from "./launchTransaction";
 
 export {
@@ -46,3 +47,8 @@ export {
   type JitoSendResult,
   type BundleLandingStatus,
 } from "./jito";
+
+export {
+  LOCK_TX_SOL_OVERHEAD,
+  CREATE_TX_SOL_OVERHEAD,
+} from "./constants";

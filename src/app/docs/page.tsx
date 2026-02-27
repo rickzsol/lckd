@@ -12,9 +12,9 @@ import {
 } from "@/components/docs/DocsPrimitives";
 
 export const metadata: Metadata = {
-  title: "Docs — Lockpad",
+  title: "Docs — LCKD",
   description:
-    "Learn how Lockpad enforces transparent token launches with locked dev allocations via Streamflow token locks.",
+    "Learn how LCKD enforces transparent token launches with locked dev allocations via Streamflow token locks.",
 };
 
 export default function DocsPage() {
@@ -23,30 +23,30 @@ export default function DocsPage() {
       <DocsToc />
 
       <article className="min-w-0 max-w-3xl flex-1 space-y-16">
-        {/* ─── What is Lockpad? ──────────────────────── */}
+        {/* ─── What is LCKD? ──────────────────────── */}
         <section className="space-y-5">
-          <SectionHeading id="what-is-lockpad">What is Lockpad?</SectionHeading>
+          <SectionHeading id="what-is-lckd">What is LCKD?</SectionHeading>
 
           <Prose>
-            Lockpad is a <Accent>trust-enforcement wrapper</Accent> around pump.fun. It
+            LCKD is a <Accent>trust-enforcement wrapper</Accent> around pump.fun. It
             is <strong className="text-white">not</strong> a competing DEX or launchpad.
-            All trading still happens on pump.fun exactly as you{"'"}d expect — Lockpad
+            All trading still happens on pump.fun exactly as you{"'"}d expect — LCKD
             only handles the launch transaction, adding mandatory token locks to the
             developer{"'"}s token allocation before the token ever goes live.
           </Prose>
 
           <Prose>
             The problem is simple: devs launch tokens, buy a bag during creation, and dump
-            it on buyers within minutes. Lockpad makes that impossible by locking the dev
+            it on buyers within minutes. LCKD makes that impossible by locking the dev
             buy through a <Accent>Streamflow token lock</Accent> — an audited, non-cancelable
-            on-chain lock. If a dev launches through Lockpad, their tokens are locked.
+            on-chain lock. If a dev launches through LCKD, their tokens are locked.
             Period.
           </Prose>
 
-          <div className="rounded-lg border border-emerald-accent/20 bg-emerald-accent/[0.04] px-4 py-3">
-            <p className="font-mono text-xs font-bold text-emerald-accent">Key point</p>
+          <div className="rounded-lg border border-accent/20 bg-accent/[0.04] px-4 py-3">
+            <p className="font-mono text-xs font-bold text-accent">Key point</p>
             <p className="mt-1 text-sm leading-relaxed text-text-muted">
-              Lockpad does not custody funds, run a DEX, or deploy a custom on-chain
+              LCKD does not custody funds, run a DEX, or deploy a custom on-chain
               program. It constructs a client-side transaction bundle that atomically
               creates, buys, and locks — all in one signature.
             </p>
@@ -59,7 +59,7 @@ export default function DocsPage() {
 
           <SubHeading>The Atomic Transaction</SubHeading>
           <Prose>
-            When you launch a token through Lockpad, three instructions are bundled into
+            When you launch a token through LCKD, three instructions are bundled into
             a single Solana transaction:
           </Prose>
 
@@ -93,9 +93,9 @@ export default function DocsPage() {
             <div className="flex min-w-[540px] items-center gap-0">
               {[
                 { label: "Your SOL", color: "text-white" },
-                { label: "pump.fun buy", color: "text-emerald-accent" },
+                { label: "pump.fun buy", color: "text-accent" },
                 { label: "Tokens", color: "text-white" },
-                { label: "Streamflow lock", color: "text-emerald-accent" },
+                { label: "Streamflow lock", color: "text-accent" },
                 { label: "Lock schedule", color: "text-white" },
               ].map((step, i) => (
                 <div key={step.label} className="flex items-center">
@@ -117,7 +117,7 @@ export default function DocsPage() {
           <SubHeading>Streamflow Token Lock</SubHeading>
           <Prose>
             Streamflow is an <Accent>audited token lock protocol</Accent> on Solana.
-            When Lockpad locks your tokens, it creates a Streamflow token lock contract
+            When LCKD locks your tokens, it creates a Streamflow token lock contract
             with the following properties:
           </Prose>
 
@@ -146,7 +146,7 @@ export default function DocsPage() {
           <SectionHeading id="trust-tiers">Trust Tiers Explained</SectionHeading>
 
           <Prose>
-            Every token launched on Lockpad receives a trust tier based on the
+            Every token launched on LCKD receives a trust tier based on the
             developer{"'"}s profile and launch configuration. Tiers are
             computed <Accent>dynamically</Accent> — they can go up or down as conditions
             change.
@@ -260,7 +260,7 @@ export default function DocsPage() {
 
           <SubHeading>GitHub Verification</SubHeading>
           <Prose>
-            Sign in with GitHub via OAuth. Lockpad reads your public profile — account
+            Sign in with GitHub via OAuth. LCKD reads your public profile — account
             age, public repos, and contribution history. No private data is accessed. Your
             GitHub username is displayed on your token{"'"}s page so buyers can verify your
             identity.
@@ -275,14 +275,14 @@ export default function DocsPage() {
               </span>
             </div>
             <div className="flex items-center justify-between border-b border-white/[0.04] pb-2">
-              <span className="font-mono text-xs text-emerald-accent">30+ days</span>
+              <span className="font-mono text-xs text-accent">30+ days</span>
               <span className="font-mono text-[10px] text-text-muted">
                 Required for <Badge tier={TrustTier.BUILDER} label="BUILDER" /> tier.
                 Recommended.
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="font-mono text-xs text-emerald-accent">90+ days</span>
+              <span className="font-mono text-xs text-accent">90+ days</span>
               <span className="font-mono text-[10px] text-text-muted">
                 Strong signal. Shows long-term commitment to the project.
               </span>
@@ -313,7 +313,7 @@ export default function DocsPage() {
 
           <SubHeading>Reading a Trust Tier</SubHeading>
           <Prose>
-            Every token on Lockpad displays a tier badge. Higher tiers mean more
+            Every token on LCKD displays a tier badge. Higher tiers mean more
             verifiable signals of developer commitment. A{" "}
             <Badge tier={TrustTier.SHIPPED} label="SHIPPED" /> badge means the dev has a
             verified GitHub, a public repo, a live product, and a 30+ day lock. A{" "}
@@ -331,13 +331,13 @@ export default function DocsPage() {
 
           <SubHeading>Verify Independently</SubHeading>
           <Prose>
-            Every token page on Lockpad links to the Streamflow lock transaction. You can
+            Every token page on LCKD links to the Streamflow lock transaction. You can
             verify the lock directly on{" "}
             <a
               href="https://app.streamflow.finance"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-emerald-accent underline decoration-emerald-accent/30 underline-offset-2 hover:decoration-emerald-accent"
+              className="font-medium text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
             >
               Streamflow{"'"}s app
             </a>{" "}
@@ -366,7 +366,7 @@ export default function DocsPage() {
           <SectionHeading id="faq">FAQ</SectionHeading>
 
           <FaqItem q="Is this free?">
-            Yes. During the MVP phase, Lockpad charges no additional fees. You only pay
+            Yes. During the MVP phase, LCKD charges no additional fees. You only pay
             standard Solana transaction fees and the pump.fun creation fee.
           </FaqItem>
 
@@ -377,14 +377,14 @@ export default function DocsPage() {
           </FaqItem>
 
           <FaqItem q="Can I cancel my lock?">
-            No. Streamflow locks created through Lockpad are{" "}
+            No. Streamflow locks created through LCKD are{" "}
             <strong className="text-white">non-cancelable by design</strong>. This is the
             entire value proposition — buyers can trust that the lock is permanent. Once
             signed, you wait for the lock period to end.
           </FaqItem>
 
           <FaqItem q="What if pump.fun changes their program?">
-            Lockpad constructs transactions against pump.fun{"'"}s on-chain program. If
+            LCKD constructs transactions against pump.fun{"'"}s on-chain program. If
             pump.fun updates their program ID or instruction format, we monitor for changes
             and update our transaction builder accordingly. Your existing locks on
             Streamflow are unaffected by any pump.fun changes.
@@ -393,10 +393,10 @@ export default function DocsPage() {
           <FaqItem q="Is this audited?">
             <strong className="text-white">Streamflow</strong> is audited (by Sec3/Soteria
             and others).{" "}
-            <strong className="text-white">Lockpad itself</strong> does not deploy a
+            <strong className="text-white">LCKD itself</strong> does not deploy a
             custom on-chain program — it bundles existing audited programs (pump.fun +
             Streamflow) into a single client-side transaction. There is no smart contract
-            risk from Lockpad specifically; the risk surface is the same as using
+            risk from LCKD specifically; the risk surface is the same as using
             pump.fun and Streamflow directly.
           </FaqItem>
 

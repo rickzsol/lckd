@@ -235,15 +235,15 @@ export default function ValueProps() {
           width: "min(1200px, 100vw)",
           height: "min(800px, 80vw)",
           background:
-            "radial-gradient(ellipse, rgba(16,185,129,0.04) 0%, transparent 70%)",
+            "radial-gradient(ellipse, rgba(139,92,246,0.04) 0%, transparent 70%)",
         }}
         aria-hidden="true"
       />
 
       <div className="relative z-10 mx-auto max-w-[1100px]">
         {/* Section tag */}
-        <div className="vp-section-tag mb-16 text-center font-mono text-[11px] uppercase tracking-[0.25em] text-emerald-accent/50 md:mb-24">
-          Why Lockpad
+        <div className="vp-section-tag mb-16 text-center font-mono text-[11px] uppercase tracking-[0.25em] text-accent/50 md:mb-24">
+          Why LCKD
         </div>
 
         {/* Value blocks — full-width grid */}
@@ -260,7 +260,7 @@ export default function ValueProps() {
                   width: "min(500px, 60vw)",
                   height: "min(300px, 40vw)",
                   background:
-                    "radial-gradient(ellipse, rgba(16,185,129,0.03) 0%, transparent 70%)",
+                    "radial-gradient(ellipse, rgba(139,92,246,0.03) 0%, transparent 70%)",
                 }}
                 aria-hidden="true"
               />
@@ -268,11 +268,11 @@ export default function ValueProps() {
               <div className="relative grid grid-cols-1 gap-6 md:grid-cols-[auto_1fr] md:gap-12">
                 {/* Left: number + icon */}
                 <div className="flex items-start gap-4 md:w-[140px] md:flex-col md:gap-3">
-                  <div className="font-mono text-[11px] font-bold tracking-[0.2em] text-emerald-accent/40">
+                  <div className="font-mono text-[11px] font-bold tracking-[0.2em] text-accent/40">
                     {prop.label}
                   </div>
                   <div
-                    className={`vp-icon-${i} flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-accent/15 bg-emerald-accent/[0.04] font-mono text-sm font-bold text-emerald-accent`}
+                    className={`vp-icon-${i} flex h-12 w-12 items-center justify-center rounded-xl border border-accent/15 bg-accent/[0.04] font-mono text-sm font-bold text-accent`}
                   >
                     {prop.icon}
                   </div>
@@ -301,12 +301,12 @@ export default function ValueProps() {
 
                   {/* Divider rule */}
                   <div
-                    className={`vp-rule-${i} mb-4 h-px bg-gradient-to-r from-emerald-accent/40 via-emerald-accent/15 to-transparent`}
+                    className={`vp-rule-${i} mb-4 h-px bg-gradient-to-r from-accent/40 via-accent/15 to-transparent`}
                   />
 
                   {/* Accent line */}
                   <p
-                    className={`vp-accent-${i} font-mono text-[clamp(11px,2vw,13px)] font-semibold tracking-wide text-emerald-accent/80`}
+                    className={`vp-accent-${i} font-mono text-[clamp(11px,2vw,13px)] font-semibold tracking-wide text-accent/80`}
                   >
                     {prop.accent}
                   </p>

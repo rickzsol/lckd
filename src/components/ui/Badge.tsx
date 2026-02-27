@@ -4,7 +4,7 @@ const TIER_STYLES: Record<TrustTier, { bg: string; border: string; text: string 
   [TrustTier.LOCKED]: { bg: "rgba(100,100,100,0.2)", border: "#555", text: "#999" },
   [TrustTier.VERIFIED]: { bg: "rgba(59,130,246,0.12)", border: "#3b82f6", text: "#60a5fa" },
   [TrustTier.BUILDER]: { bg: "rgba(168,85,247,0.12)", border: "#a855f7", text: "#c084fc" },
-  [TrustTier.SHIPPED]: { bg: "rgba(16,185,129,0.12)", border: "#10b981", text: "#34d399" },
+  [TrustTier.SHIPPED]: { bg: "rgba(139,92,246,0.12)", border: "#8b5cf6", text: "#a78bfa" },
 };
 
 export default function Badge({ tier, label }: { tier: TrustTier; label: string }) {

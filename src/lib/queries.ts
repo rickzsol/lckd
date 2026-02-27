@@ -1,6 +1,5 @@
 import { type Token, TrustTier } from "@/types/index";
-import type { DisplayToken, DisplayCommit } from "@/types/display";
-import { TOKENS as MOCK_TOKENS, COMMITS as MOCK_COMMITS } from "./mock-data";
+import type { DisplayToken } from "@/types/display";
 import type { DexMarketData } from "./dexscreener";
 
 function hasSupabaseConfig(): boolean {
@@ -10,17 +9,50 @@ function hasSupabaseConfig(): boolean {
   );
 }
 
-async function getSupabaseClient() {
-  const { getSupabase } = await import("./supabase");
-  return getSupabase();
-}
-
 const TIER_LABELS: Record<TrustTier, string> = {
   [TrustTier.LOCKED]: "LOCKED",
   [TrustTier.VERIFIED]: "VERIFIED",
   [TrustTier.BUILDER]: "BUILDER",
   [TrustTier.SHIPPED]: "SHIPPED",
 };
+
+function formatTokenAmount(raw: string): string {
+  const num = parseFloat(raw);
+  if (!num || isNaN(num)) return "0";
+  // pump.fun tokens have 6 decimals
+  const tokens = num / 1_000_000;
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`;
+  return tokens.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+/**
+ * Resolve an image URI that might be a metadata JSON URL.
+ * Pump.fun IPFS returns a JSON with an `image` field — if the URI
+ * points at JSON, extract the real image URL from it.
+ */
+async function resolveImageUri(uri: string): Promise<string> {
+  if (!uri || !uri.startsWith("http")) return uri;
+
+  try {
+    const res = await fetch(uri, {
+      signal: AbortSignal.timeout(4000),
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return uri;
+
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("json")) return uri;
+
+    const meta = await res.json();
+    if (typeof meta.image === "string" && meta.image.startsWith("http")) {
+      return meta.image;
+    }
+  } catch {
+    // Network error or timeout — fall back to original
+  }
+  return uri;
+}
 
 export function tokenToDisplay(t: Token, market?: DexMarketData | null): DisplayToken {
   const lockDaysElapsed = Math.min(
@@ -29,7 +61,9 @@ export function tokenToDisplay(t: Token, market?: DexMarketData | null): Display
       (Date.now() - new Date(t.created_at).getTime()) / (1000 * 60 * 60 * 24),
     ),
   );
-  const lockPct = Math.round((lockDaysElapsed / t.lock_duration_days) * 100);
+  const lockPct = t.lock_duration_days > 0
+    ? Math.round((lockDaysElapsed / t.lock_duration_days) * 100)
+    : 0;
 
   const launchDate = new Date(t.created_at);
   const lockEndDate = new Date(t.created_at);
@@ -53,8 +87,8 @@ export function tokenToDisplay(t: Token, market?: DexMarketData | null): Display
       accountAge: null,
     },
     lock: {
-      amount: t.lock_amount,
-      duration: `${t.lock_duration_days}d`,
+      amount: formatTokenAmount(t.lock_amount),
+      duration: t.lock_duration_days > 0 ? `${t.lock_duration_days}d` : "--",
       pct: lockPct,
       start: fmtDate(launchDate),
       end: fmtDate(lockEndDate),
@@ -71,7 +105,7 @@ export function tokenToDisplay(t: Token, market?: DexMarketData | null): Display
 }
 
 export async function getTokens(): Promise<DisplayToken[]> {
-  if (!hasSupabaseConfig()) return MOCK_TOKENS;
+  if (!hasSupabaseConfig()) return [];
 
   try {
     const { createServerClient } = await import("./supabase");
@@ -84,7 +118,7 @@ export async function getTokens(): Promise<DisplayToken[]> {
 
     if (error) {
       console.error("getTokens error:", error.message);
-      return MOCK_TOKENS;
+      return [];
     }
 
     if (!data || data.length === 0) return [];
@@ -92,30 +126,32 @@ export async function getTokens(): Promise<DisplayToken[]> {
     const tokens = data as Token[];
     const mints = tokens.map((t) => t.mint_address).filter(Boolean);
 
-    const { fetchMarketDataBatch } = await import("./dexscreener");
-    const marketMap = await fetchMarketDataBatch(mints);
+    // Resolve image URIs and market data in parallel
+    const [marketMap, resolvedImages] = await Promise.all([
+      import("./dexscreener").then((m) => m.fetchMarketDataBatch(mints)),
+      Promise.all(
+        tokens.map((t) =>
+          t.image_uri ? resolveImageUri(t.image_uri) : Promise.resolve(""),
+        ),
+      ),
+    ]);
 
-    return tokens.map((t) =>
-      tokenToDisplay(t, marketMap.get(t.mint_address) ?? null),
+    return tokens.map((t, i) =>
+      tokenToDisplay(
+        { ...t, image_uri: resolvedImages[i] || t.image_uri },
+        marketMap.get(t.mint_address) ?? null,
+      ),
     );
   } catch (err) {
     console.error("getTokens exception:", err);
-    return MOCK_TOKENS;
+    return [];
   }
-}
-
-function findMockToken(id: string): DisplayToken | null {
-  return (
-    MOCK_TOKENS.find(
-      (t) => t.mintAddress === id || String(t.id) === id,
-    ) ?? null
-  );
 }
 
 export async function getTokenByIdOrMint(
   id: string,
 ): Promise<DisplayToken | null> {
-  if (!hasSupabaseConfig()) return findMockToken(id);
+  if (!hasSupabaseConfig()) return null;
 
   try {
     const { createServerClient } = await import("./supabase");
@@ -135,18 +171,20 @@ export async function getTokenByIdOrMint(
         .single());
     }
 
-    if (error || !data) return findMockToken(id);
+    if (error || !data) return null;
 
     const token = data as Token;
-    const { fetchMarketData } = await import("./dexscreener");
-    const market = await fetchMarketData(token.mint_address);
+    const [market, resolvedImage] = await Promise.all([
+      import("./dexscreener").then((m) => m.fetchMarketData(token.mint_address)),
+      token.image_uri ? resolveImageUri(token.image_uri) : Promise.resolve(""),
+    ]);
 
-    return tokenToDisplay(token, market);
+    return tokenToDisplay(
+      { ...token, image_uri: resolvedImage || token.image_uri },
+      market,
+    );
   } catch {
-    return findMockToken(id);
+    return null;
   }
 }
 
-export function getCommits(): DisplayCommit[] {
-  return MOCK_COMMITS;
-}

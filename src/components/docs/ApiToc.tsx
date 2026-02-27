@@ -60,7 +60,7 @@ export default function ApiToc() {
 
   return (
     <>
-      <div className="sticky top-[49px] z-30 border-b border-white/[0.06] bg-[rgba(8,8,12,0.95)] backdrop-blur-md lg:hidden">
+      <div className="sticky top-[49px] z-30 border-b border-white/[0.06] bg-[rgba(6,6,15,0.95)] backdrop-blur-md lg:hidden">
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
@@ -86,7 +86,7 @@ export default function ApiToc() {
                 onClick={() => handleClick(id)}
                 className={`block w-full py-2 text-left font-mono text-xs transition-colors ${
                   id === activeId
-                    ? "text-emerald-accent"
+                    ? "text-accent"
                     : "text-text-muted hover:text-text-primary"
                 }`}
               >
@@ -109,7 +109,7 @@ export default function ApiToc() {
                 onClick={() => handleClick(id)}
                 className={`block w-full py-1 pl-3 text-left font-mono text-[11px] transition-colors ${
                   id === activeId
-                    ? "border-l-2 border-emerald-accent -ml-px text-emerald-accent"
+                    ? "border-l-2 border-accent -ml-px text-accent"
                     : "text-text-muted hover:text-text-primary"
                 }`}
               >

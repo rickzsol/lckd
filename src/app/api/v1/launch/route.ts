@@ -8,6 +8,7 @@ export { OPTIONS };
 
 interface LaunchRequestBody {
   walletPublicKey: string;
+  mintPublicKey: string;
   metadataUri: string;
   name: string;
   ticker: string;
@@ -31,6 +32,9 @@ export async function POST(request: NextRequest) {
     if (!body.walletPublicKey || !isValidSolanaAddress(body.walletPublicKey)) {
       return apiError("Valid walletPublicKey is required", 400);
     }
+    if (!body.mintPublicKey || !isValidSolanaAddress(body.mintPublicKey)) {
+      return apiError("Valid mintPublicKey is required", 400);
+    }
     if (!body.metadataUri) return apiError("metadataUri is required", 400);
     if (!body.name || body.name.trim().length === 0) return apiError("name is required", 400);
     if (!body.ticker || body.ticker.trim().length === 0) return apiError("ticker is required", 400);
@@ -44,6 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     const walletPubkey = new PublicKey(body.walletPublicKey);
+    const mintPubkey = new PublicKey(body.mintPublicKey);
 
     const config = {
       name: body.name.trim(),
@@ -63,19 +68,18 @@ export async function POST(request: NextRequest) {
       websiteUrl: body.websiteUrl ?? null,
     };
 
-    const { txBytes, mintKeypair } = await buildCreateTransaction(
+    const { txBytes } = await buildCreateTransaction(
       config,
       walletPubkey,
+      mintPubkey,
       body.metadataUri,
     );
 
     const txBase64 = Buffer.from(txBytes).toString("base64");
-    const mintSecretBase64 = Buffer.from(mintKeypair.secretKey).toString("base64");
 
     return apiResponse({
       transaction: txBase64,
-      mintPublicKey: mintKeypair.publicKey.toBase58(),
-      mintSecretKey: mintSecretBase64,
+      mintPublicKey: body.mintPublicKey,
     }, 201);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Launch transaction build failed";

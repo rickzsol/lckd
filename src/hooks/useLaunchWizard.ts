@@ -14,6 +14,8 @@ import {
   buildLockTransaction,
   sendViaJito,
   createJitoTipInstruction,
+  LOCK_TX_SOL_OVERHEAD,
+  CREATE_TX_SOL_OVERHEAD,
 } from "@/lib/solana";
 
 const LAMPORTS_PER_SOL = 1_000_000_000;
@@ -70,6 +72,11 @@ function parseTransactionError(raw: string, buyAmountSol: number): string {
     return `Insufficient SOL. You have ${have.toFixed(3)} SOL but need ~${need.toFixed(3)} SOL (${buyAmountSol} SOL buy + fees). Fund your wallet and try again.`;
   }
 
+  // On-chain InsufficientFunds (Streamflow lock needs SOL for escrow rent)
+  if (raw.includes("InsufficientFunds")) {
+    return `Insufficient SOL for the lock transaction. Streamflow needs ~${LOCK_TX_SOL_OVERHEAD} SOL for escrow rent + fees. Fund your wallet and retry the lock.`;
+  }
+
   // Insufficient token balance (lock overshoot)
   if (raw.includes("insufficient") && raw.includes("token")) {
     return "Insufficient token balance for the lock amount. Try a lower lock percentage.";
@@ -119,11 +126,11 @@ export const STEP_COUNT = 4;
 
 export const LAUNCH_PHASES_WITH_LOCK = [
   "Uploading metadata to IPFS...",
-  "Building create transaction...",
+  "Building transactions...",
   "Awaiting wallet signature (create)...",
   "Sending token creation...",
   "Confirming token on-chain...",
-  "Building token lock...",
+  "Preparing token lock...",
   "Awaiting wallet signature (lock)...",
   "Confirming token lock on-chain...",
 ] as const;
@@ -150,7 +157,7 @@ export interface LaunchDeps {
   connection: Connection;
 }
 
-const STORAGE_KEY = "lockpad_launch_wizard";
+const STORAGE_KEY = "lckd_launch_wizard";
 
 const INITIAL_CONFIG: LaunchConfig = {
   name: "",
@@ -197,8 +204,9 @@ function loadSavedState(): { config: LaunchConfig; step: number } {
 }
 
 export function useLaunchWizard() {
-  const [step, setStep] = useState(() => loadSavedState().step);
-  const [config, setConfig] = useState<LaunchConfig>(() => loadSavedState().config);
+  const [initialState] = useState(loadSavedState);
+  const [step, setStep] = useState(initialState.step);
+  const [config, setConfig] = useState<LaunchConfig>(initialState.config);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [launchStatus, setLaunchStatus] = useState<LaunchStatus>("idle");
@@ -294,8 +302,8 @@ export function useLaunchWizard() {
 
   const validateStep2 = useCallback((): boolean => {
     const errs: Record<string, string> = {};
-    if (config.buyAmountSol < 0.1)
-      errs.buyAmountSol = "Minimum buy is 0.1 SOL";
+    if (config.buyAmountSol < 0.01)
+      errs.buyAmountSol = "Minimum buy is 0.01 SOL";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }, [config.buyAmountSol]);
@@ -364,6 +372,18 @@ export function useLaunchWizard() {
     let confirmedMintAddress = "";
 
     try {
+      // Pre-flight: check wallet has enough SOL for buy + all fees
+      const walletBalance = await connection.getBalance(publicKey);
+      const walletSol = walletBalance / LAMPORTS_PER_SOL;
+      const lockOverhead = config.skipLock ? 0 : LOCK_TX_SOL_OVERHEAD;
+      const totalNeeded = config.buyAmountSol + CREATE_TX_SOL_OVERHEAD + lockOverhead;
+
+      if (walletSol < totalNeeded) {
+        throw new Error(
+          `Insufficient SOL. You have ${walletSol.toFixed(4)} SOL but need ~${totalNeeded.toFixed(4)} SOL (${config.buyAmountSol} buy + ${(CREATE_TX_SOL_OVERHEAD + lockOverhead).toFixed(4)} fees). Fund your wallet and try again.`,
+        );
+      }
+
       // Phase 0: Upload metadata to IPFS (via server proxy)
       const metadataForm = new FormData();
       metadataForm.append("file", config.image!);
@@ -382,25 +402,21 @@ export function useLaunchWizard() {
         const err = await metaRes.json().catch(() => ({ error: "Metadata upload failed" }));
         throw new Error(err.error ?? "Metadata upload failed");
       }
-      const { metadataUri } = await metaRes.json();
-      setPendingMetadataUri(metadataUri);
+      const { metadataUri, imageUri: resolvedImageUri } = await metaRes.json();
+      setPendingMetadataUri(resolvedImageUri ?? metadataUri);
 
-      // Resolve the actual image URL from the metadata JSON
-      let resolvedImageUri = metadataUri;
-      try {
-        const metaJson = await fetch(metadataUri).then((r) => r.json());
-        if (metaJson?.image) resolvedImageUri = metaJson.image;
-      } catch {
-        // Fall back to metadata URI if fetch fails
-      }
-
-      // Phase 1: Build create + buy transaction (via server proxy)
+      // Phase 1: Build create TX (mint keypair generated client-side)
       setLaunchPhase(1);
+
+      const mintKeypair = Keypair.generate();
+      const mintPublicKey = mintKeypair.publicKey.toBase58();
+
       const launchRes = await fetch("/api/v1/launch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           walletPublicKey: publicKey.toBase58(),
+          mintPublicKey,
           metadataUri,
           name: config.name,
           ticker: config.ticker,
@@ -417,13 +433,13 @@ export function useLaunchWizard() {
           websiteUrl: config.websiteUrl,
         }),
       });
+
       if (!launchRes.ok) {
         const err = await launchRes.json().catch(() => ({ error: "Build transaction failed" }));
         throw new Error(err.error ?? "Build transaction failed");
       }
-      const { transaction: txBase64, mintPublicKey, mintSecretKey } = await launchRes.json();
+      const { transaction: txBase64 } = await launchRes.json();
       const txBytes = Uint8Array.from(atob(txBase64), (c) => c.charCodeAt(0));
-      const mintKeypair = Keypair.fromSecretKey(Uint8Array.from(atob(mintSecretKey), (c) => c.charCodeAt(0)));
       confirmedMintAddress = mintPublicKey;
       setPendingMintAddress(confirmedMintAddress);
 
@@ -436,17 +452,13 @@ export function useLaunchWizard() {
       setLaunchPhase(3);
       const createBlockhash = await connection.getLatestBlockhash("confirmed");
       const serializedCreate = createTx.serialize();
-      // Send via regular RPC for guaranteed propagation to all validators.
-      // The PumpPortal VersionedTx already has priority fees but no Jito tip,
-      // so bundleOnly submission is unreliable. RPC is the primary path.
       confirmedCreateSig = await connection.sendRawTransaction(
         serializedCreate,
         { skipPreflight: false, maxRetries: 3 },
       );
-      // Also fire via Jito for faster landing (fire-and-forget, don't block)
-      sendViaJito(serializedCreate).catch(() => {});
+      sendViaJito(serializedCreate).catch((e) => console.warn("[launch] Jito fire-and-forget failed:", e));
 
-      // Phase 4: Wait for create tx to actually confirm on-chain
+      // Phase 4: Wait for create tx to confirm on-chain
       setLaunchPhase(4);
       await confirmTxReliably(
         connection,
@@ -457,19 +469,37 @@ export function useLaunchWizard() {
       isCreateConfirmed = true;
 
       let lockSig: string | null = null;
+      let resolvedLockAmount = "0";
 
       if (!config.skipLock) {
-        // Phase 5: Build lock transaction (polls for token balance)
+        // Phase 5: Build lock TX using ACTUAL on-chain token balance
         setLaunchPhase(5);
-        const { transaction: lockTx, additionalSigners } = await buildLockTransaction(
-          config,
-          publicKey,
-          mintKeypair.publicKey,
-          connection,
-        );
 
-        // Add Jito tip to the lock transaction for faster landing
+        // Check wallet still has enough SOL for the lock TX after create fees
+        const postCreateBalance = await connection.getBalance(publicKey);
+        const postCreateSol = postCreateBalance / LAMPORTS_PER_SOL;
+        if (postCreateSol < LOCK_TX_SOL_OVERHEAD) {
+          throw new Error(
+            `Insufficient SOL for lock. You have ${postCreateSol.toFixed(4)} SOL but need ~${LOCK_TX_SOL_OVERHEAD} SOL for Streamflow escrow rent + fees. Fund your wallet and retry the lock.`,
+          );
+        }
+
+        const { transaction: lockTx, additionalSigners, lockAmount } =
+          await buildLockTransaction(
+            config,
+            publicKey,
+            new PublicKey(confirmedMintAddress),
+            connection,
+          );
+        resolvedLockAmount = lockAmount;
+
+        // Add Jito tip for faster landing
         lockTx.add(createJitoTipInstruction(publicKey));
+
+        // Fresh blockhash right before signing
+        const freshBlockhash = await connection.getLatestBlockhash("confirmed");
+        lockTx.recentBlockhash = freshBlockhash.blockhash;
+        lockTx.lastValidBlockHeight = freshBlockhash.lastValidBlockHeight;
 
         // Phase 6: Sign lock transaction
         setLaunchPhase(6);
@@ -485,24 +515,20 @@ export function useLaunchWizard() {
           lockTxSignature: null,
         });
 
-        // Phase 7: Send + confirm lock transaction (Jito with RPC fallback)
+        // Phase 7: Send via RPC (reliable) + Jito fire-and-forget (speed)
         setLaunchPhase(7);
-        const lockBlockhash = await connection.getLatestBlockhash("confirmed");
         const serializedLock = walletSignedLockTx.serialize();
-        const jitoLockResult = await sendViaJito(serializedLock);
-        if (jitoLockResult) {
-          lockSig = jitoLockResult.signature;
-        } else {
-          lockSig = await connection.sendRawTransaction(
-            serializedLock,
-            { skipPreflight: true, maxRetries: 5 },
-          );
-        }
+        lockSig = await connection.sendRawTransaction(
+          serializedLock,
+          { skipPreflight: true, maxRetries: 5 },
+        );
+        sendViaJito(serializedLock).catch((e) => console.warn("[launch] Jito lock fire-and-forget failed:", e));
+
         await confirmTxReliably(
           connection,
           lockSig,
-          lockBlockhash.blockhash,
-          lockBlockhash.lastValidBlockHeight,
+          freshBlockhash.blockhash,
+          freshBlockhash.lastValidBlockHeight,
         );
       }
 
@@ -527,7 +553,7 @@ export function useLaunchWizard() {
           lockTxSignature: lockSig ?? "",
           lockDurationDays: config.skipLock ? 0 : config.lockDurationDays,
           lockPercentage: config.skipLock ? 0 : config.lockPercentage,
-          lockAmount: "0",
+          lockAmount: resolvedLockAmount,
           buyAmountSol: config.buyAmountSol,
           githubUsername: config.githubUsername,
           githubRepo: config.githubRepo,
@@ -541,7 +567,8 @@ export function useLaunchWizard() {
       setLaunchStatus("success");
       sessionStorage.removeItem(STORAGE_KEY);
     } catch (err) {
-      const raw = err instanceof Error ? err.message : "Unknown error occurred";
+      console.error("[launch] Error:", err);
+      const raw = err instanceof Error ? err.message : String(err ?? "Unknown error occurred");
       const message = parseTransactionError(raw, config.buyAmountSol);
 
       if (isCreateConfirmed && !config.skipLock) {
@@ -570,7 +597,16 @@ export function useLaunchWizard() {
     try {
       const mintPubkey = new PublicKey(pendingMintAddress);
 
-      const { transaction: lockTx, additionalSigners } = await buildLockTransaction(
+      // Verify wallet has enough SOL for lock TX
+      const walletBalance = await connection.getBalance(publicKey);
+      const walletSol = walletBalance / LAMPORTS_PER_SOL;
+      if (walletSol < LOCK_TX_SOL_OVERHEAD) {
+        throw new Error(
+          `Insufficient SOL. You have ${walletSol.toFixed(4)} SOL but need ~${LOCK_TX_SOL_OVERHEAD} SOL for Streamflow escrow rent + fees. Fund your wallet and retry.`,
+        );
+      }
+
+      const { transaction: lockTx, additionalSigners, lockAmount } = await buildLockTransaction(
         config,
         publicKey,
         mintPubkey,
@@ -580,6 +616,11 @@ export function useLaunchWizard() {
       // Add Jito tip for faster landing
       lockTx.add(createJitoTipInstruction(publicKey));
 
+      // Refresh blockhash right before signing — minimizes staleness window
+      const freshBlockhash = await connection.getLatestBlockhash("confirmed");
+      lockTx.recentBlockhash = freshBlockhash.blockhash;
+      lockTx.lastValidBlockHeight = freshBlockhash.lastValidBlockHeight;
+
       setLaunchPhase(6); // Signing lock
       const walletSignedLockTx = await signTransaction(lockTx);
       for (const signer of additionalSigners) {
@@ -587,7 +628,6 @@ export function useLaunchWizard() {
       }
 
       setLaunchPhase(7); // Confirming lock
-      const retryBlockhash = await connection.getLatestBlockhash("confirmed");
       const serializedRetryLock = walletSignedLockTx.serialize();
       const jitoRetryResult = await sendViaJito(serializedRetryLock);
       let lockSig: string;
@@ -602,8 +642,8 @@ export function useLaunchWizard() {
       await confirmTxReliably(
         connection,
         lockSig,
-        retryBlockhash.blockhash,
-        retryBlockhash.lastValidBlockHeight,
+        freshBlockhash.blockhash,
+        freshBlockhash.lastValidBlockHeight,
       );
 
       await fetch("/api/v1/token/record", {
@@ -620,7 +660,7 @@ export function useLaunchWizard() {
           lockTxSignature: lockSig,
           lockDurationDays: config.lockDurationDays,
           lockPercentage: config.lockPercentage,
-          lockAmount: "0",
+          lockAmount: lockAmount,
           buyAmountSol: config.buyAmountSol,
           githubUsername: config.githubUsername,
           githubRepo: config.githubRepo,

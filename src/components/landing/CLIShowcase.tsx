@@ -19,12 +19,12 @@ const CLI_STEPS = [
 ];
 
 const BANNER_LINES = [
-  "\u2588\u2588\u2557      \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2557  \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557 ",
-  "\u2588\u2588\u2551     \u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d\u2588\u2588\u2551 \u2588\u2588\u2554\u255d\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557",
-  "\u2588\u2588\u2551     \u2588\u2588\u2551  \u2588\u2588\u2557\u2588\u2588\u2551     \u2588\u2588\u2588\u2588\u2588\u2554\u255d \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2551",
-  "\u2588\u2588\u2551     \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2551     \u2588\u2588\u2554\u2550\u2588\u2588\u2557 \u2588\u2588\u2554\u2550\u2550\u255d  \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2551",
-  "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2551  \u2588\u2588\u2557\u2588\u2588\u2551     \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d",
-  "\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d     \u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u2550\u2550\u2550\u2550\u255d ",
+  "\u2588\u2588\u2557     \u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2557  \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557 ",
+  "\u2588\u2588\u2551    \u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d\u2588\u2588\u2551 \u2588\u2588\u2554\u255d\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557",
+  "\u2588\u2588\u2551    \u2588\u2588\u2551     \u2588\u2588\u2588\u2588\u2588\u2554\u255d \u2588\u2588\u2551  \u2588\u2588\u2551",
+  "\u2588\u2588\u2551    \u2588\u2588\u2551     \u2588\u2588\u2554\u2550\u2588\u2588\u2557 \u2588\u2588\u2551  \u2588\u2588\u2551",
+  "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2551  \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d",
+  "\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u2550\u2550\u2550\u2550\u255d ",
 ];
 
 function TermLine({
@@ -203,19 +203,19 @@ export default function CLIShowcase() {
           width: "min(700px, 90vw)",
           height: "min(400px, 50vw)",
           background:
-            "radial-gradient(ellipse, rgba(16,185,129,0.05) 0%, transparent 70%)",
+            "radial-gradient(ellipse, rgba(139,92,246,0.05) 0%, transparent 70%)",
         }}
         aria-hidden="true"
       />
 
       <div className="mx-auto max-w-[900px] px-4 pt-4 md:px-6 lg:pr-44">
         {/* Section label */}
-        <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.15em] text-emerald-accent/50">
+        <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.15em] text-accent/50">
           CLI Experience
         </div>
 
         {/* Terminal window */}
-        <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-[rgba(10,10,14,0.95)]">
+        <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-[rgba(8,8,18,0.95)]">
           {/* Title bar */}
           <div className="flex items-center gap-3 border-b border-white/[0.06] px-4 py-2.5">
             <div className="flex gap-1.5">
@@ -224,7 +224,7 @@ export default function CLIShowcase() {
               <span className="h-[7px] w-[7px] rounded-full bg-[#27c93f]/60" />
             </div>
             <span className="font-mono text-[10px] text-[#444]">
-              terminal &mdash; lockpad
+              terminal &mdash; lckd
             </span>
           </div>
 
@@ -242,7 +242,7 @@ export default function CLIShowcase() {
               <div className="cli-command mb-2">
                 <TermLine className="text-[12px]">
                   <span className="text-[#555]">$ </span>
-                  <span className="text-text-primary">npx lockpad launch</span>
+                  <span className="text-text-primary">npx lckd launch</span>
                 </TermLine>
               </div>
 
@@ -251,14 +251,14 @@ export default function CLIShowcase() {
                   {BANNER_LINES.map((line, i) => (
                     <TermLine
                       key={i}
-                      className="text-[9px] leading-[1.35] text-emerald-accent sm:text-[10px] md:text-[11px]"
+                      className="text-[9px] leading-[1.35] text-accent sm:text-[10px] md:text-[11px]"
                     >
                       {"  "}{line}
                     </TermLine>
                   ))}
                 </div>
                 <TermLine className="mt-1 text-[10px] text-[#555] sm:text-[11px]">
-                  {"     builders who ship. tokens that lock. lockpad.fun"}
+                  {"     builders who ship. tokens that lock. lckd.tech"}
                 </TermLine>
               </div>
 
@@ -276,7 +276,7 @@ export default function CLIShowcase() {
                   { q: "Lock percentage", a: "100" },
                 ].map((prompt) => (
                   <TermLine key={prompt.q} className="text-[11px]">
-                    <span className="text-emerald-accent">? </span>
+                    <span className="text-accent">? </span>
                     <span className="text-[#888]">{prompt.q}</span>
                     <span className="text-[#555]">{" \u203A "}</span>
                     <span className="text-text-primary">{prompt.a}</span>
@@ -301,7 +301,7 @@ export default function CLIShowcase() {
                       <span
                         className={
                           row.highlight
-                            ? "text-emerald-accent"
+                            ? "text-accent"
                             : "text-text-primary"
                         }
                       >
@@ -311,10 +311,10 @@ export default function CLIShowcase() {
                   ))}
                 </div>
                 <TermLine className="mt-2 text-[11px]">
-                  <span className="text-emerald-accent">? </span>
+                  <span className="text-accent">? </span>
                   <span className="text-[#888]">Sign and submit?</span>
                   <span className="text-[#555]">{" \u203A "}</span>
-                  <span className="font-semibold text-emerald-accent">Yes</span>
+                  <span className="font-semibold text-accent">Yes</span>
                 </TermLine>
               </div>
 
@@ -327,8 +327,8 @@ export default function CLIShowcase() {
                   "Transaction confirmed!",
                 ].map((step) => (
                   <TermLine key={step} className="text-[11px]">
-                    <span className="text-emerald-accent">{"\u2713"} </span>
-                    <span className="text-emerald-accent">{step}</span>
+                    <span className="text-accent">{"\u2713"} </span>
+                    <span className="text-accent">{step}</span>
                   </TermLine>
                 ))}
               </div>
@@ -348,15 +348,15 @@ export default function CLIShowcase() {
                 <div className="mt-2" />
                 <TermLine className="text-[11px]">
                   <span className="inline-block w-20 text-[#555]">Token</span>
-                  <span className="text-emerald-accent underline decoration-emerald-accent/30 underline-offset-2">
-                    lockpad.fun/token/NdEv...4K2p
+                  <span className="text-accent underline decoration-accent/30 underline-offset-2">
+                    lckd.tech/token/NdEv...4K2p
                   </span>
                 </TermLine>
                 <TermLine className="text-[11px]">
                   <span className="inline-block w-20 text-[#555]">
                     Explorer
                   </span>
-                  <span className="text-emerald-accent underline decoration-emerald-accent/30 underline-offset-2">
+                  <span className="text-accent underline decoration-accent/30 underline-offset-2">
                     solscan.io/tx/5fG8...xR2w
                   </span>
                 </TermLine>
@@ -371,7 +371,7 @@ export default function CLIShowcase() {
         <div className="relative flex flex-col gap-9">
           {/* Progress track */}
           <div className="absolute left-[calc(100%-5px)] top-[6px] h-[calc(100%-12px)] w-px bg-white/[0.04]">
-            <div className="cli-progress-fill h-full w-full bg-gradient-to-b from-emerald-accent/50 via-emerald-accent/30 to-emerald-accent/10" />
+            <div className="cli-progress-fill h-full w-full bg-gradient-to-b from-accent/50 via-accent/30 to-accent/10" />
           </div>
 
           {CLI_STEPS.map((step, i) => (
@@ -380,14 +380,14 @@ export default function CLIShowcase() {
               className={`cli-step-${i} flex items-center gap-3`}
             >
               <div className="text-right">
-                <div className="font-mono text-[9px] tracking-[0.15em] text-emerald-accent/60">
+                <div className="font-mono text-[9px] tracking-[0.15em] text-accent/60">
                   {step.num}
                 </div>
                 <div className="font-sans text-[13px] leading-tight font-semibold text-white/80">
                   {step.title}
                 </div>
               </div>
-              <div className="relative z-10 h-2.5 w-2.5 shrink-0 rounded-full border border-emerald-accent/30 bg-emerald-accent/15" />
+              <div className="relative z-10 h-2.5 w-2.5 shrink-0 rounded-full border border-accent/30 bg-accent/15" />
             </div>
           ))}
         </div>

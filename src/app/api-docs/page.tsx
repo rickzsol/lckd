@@ -10,15 +10,15 @@ import {
 } from "@/components/docs/DocsPrimitives";
 
 export const metadata: Metadata = {
-  title: "API Docs — Lockpad",
+  title: "API Docs — LCKD",
   description:
-    "REST API documentation for Lockpad — launch tokens, query lock status, and integrate with your tools.",
+    "REST API documentation for LCKD — launch tokens, query lock status, and integrate with your tools.",
 };
 
 function ParamRow({ name, type, desc }: { name: string; type: string; desc: string }) {
   return (
     <tr className="border-b border-white/[0.04]">
-      <td className="py-2 pr-4 align-top font-mono text-xs text-emerald-accent">{name}</td>
+      <td className="py-2 pr-4 align-top font-mono text-xs text-accent">{name}</td>
       <td className="py-2 pr-4 align-top font-mono text-[11px] text-text-muted">{type}</td>
       <td className="py-2 align-top text-sm text-text-muted">{desc}</td>
     </tr>
@@ -71,7 +71,7 @@ export default function ApiDocsPage() {
           <SectionHeading id="overview">API Overview</SectionHeading>
 
           <Prose>
-            The lockpad.fun REST API lets you integrate token launches, lock queries, and
+            The lckd.tech REST API lets you integrate token launches, lock queries, and
             developer profiles into CLIs, bots, CI/CD pipelines, and dashboards. All
             endpoints return JSON and support CORS.
           </Prose>
@@ -79,7 +79,7 @@ export default function ApiDocsPage() {
           <div className="space-y-3">
             <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-4">
               <p className="mb-2 font-mono text-xs font-bold text-white">Base URL</p>
-              <code className="font-mono text-sm text-emerald-accent">https://www.lockpad.fun/api/v1</code>
+              <code className="font-mono text-sm text-accent">https://www.lckd.tech/api/v1</code>
             </div>
 
             <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-4">
@@ -92,8 +92,8 @@ export default function ApiDocsPage() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-emerald-accent/20 bg-emerald-accent/[0.04] px-4 py-3">
-            <p className="font-mono text-xs font-bold text-emerald-accent">No auth required</p>
+          <div className="rounded-lg border border-accent/20 bg-accent/[0.04] px-4 py-3">
+            <p className="font-mono text-xs font-bold text-accent">No auth required</p>
             <p className="mt-1 text-sm leading-relaxed text-text-muted">
               All GET endpoints are public. POST endpoints require valid input parameters
               but no API key during the MVP phase.
@@ -111,28 +111,28 @@ export default function ApiDocsPage() {
           </Prose>
 
           <SubHeading>Installation</SubHeading>
-          <CodeBlock lang="bash" code="npx lockpad launch" />
+          <CodeBlock lang="bash" code="npx lckd launch" />
 
           <SubHeading>Commands</SubHeading>
           <div className="space-y-2">
             {[
-              { cmd: "lockpad launch", desc: "Interactive token launch wizard" },
-              { cmd: "lockpad status <mint-address>", desc: "Check lock status for a token" },
-              { cmd: "lockpad profile <github-username>", desc: "View all tokens by a developer" },
-              { cmd: "lockpad verify-dex <mint-address>", desc: "Check DexScreener data for a token" },
-              { cmd: "lockpad tokens", desc: "List recent token launches" },
+              { cmd: "lckd launch", desc: "Interactive token launch wizard" },
+              { cmd: "lckd status <mint-address>", desc: "Check lock status for a token" },
+              { cmd: "lckd profile <github-username>", desc: "View all tokens by a developer" },
+              { cmd: "lckd verify-dex <mint-address>", desc: "Check DexScreener data for a token" },
+              { cmd: "lckd tokens", desc: "List recent token launches" },
             ].map((item) => (
               <div key={item.cmd} className="flex items-start gap-3 rounded-lg border border-white/[0.04] bg-white/[0.015] px-4 py-3">
-                <code className="shrink-0 font-mono text-xs text-emerald-accent">{item.cmd}</code>
+                <code className="shrink-0 font-mono text-xs text-accent">{item.cmd}</code>
                 <span className="text-sm text-text-muted">{item.desc}</span>
               </div>
             ))}
           </div>
 
           <SubHeading>Launch Wizard Output</SubHeading>
-          <CodeBlock lang="terminal" code={`$ lockpad launch
+          <CodeBlock lang="terminal" code={`$ lckd launch
 
-  lockpad.fun — builders who ship. tokens that lock.
+  lckd.tech — builders who ship. tokens that lock.
 
   ? Token name: MyToken
   ? Ticker: $MTK
@@ -156,7 +156,7 @@ export default function ApiDocsPage() {
   ? Sign and submit? Yes
 
   Transaction submitted: 5xYZ...abc
-  Token live at: https://www.lockpad.fun/token/7xKX...AsU`} />
+  Token live at: https://www.lckd.tech/token/7xKX...AsU`} />
         </section>
 
         {/* ─── Config File ───────────────────────────────── */}
@@ -164,7 +164,7 @@ export default function ApiDocsPage() {
           <SectionHeading id="config-file">Config File</SectionHeading>
 
           <Prose>
-            For CI/CD and automated launches, use a <Accent>lockpad.json</Accent> config
+            For CI/CD and automated launches, use a <Accent>lckd.json</Accent> config
             file instead of the interactive wizard.
           </Prose>
 
@@ -185,7 +185,7 @@ export default function ApiDocsPage() {
 }`} />
 
           <Prose>
-            Then run: <code className="font-mono text-xs text-emerald-accent">lockpad launch --config lockpad.json</code>
+            Then run: <code className="font-mono text-xs text-accent">lckd launch --config lckd.json</code>
           </Prose>
         </section>
 
@@ -234,8 +234,8 @@ Content-Type: application/json
   "mintSecretKey": "base64-encoded-mint-secret-key"
 }`} />
 
-          <div className="rounded-lg border border-emerald-accent/20 bg-emerald-accent/[0.04] px-4 py-3">
-            <p className="font-mono text-xs font-bold text-emerald-accent">Why mintSecretKey?</p>
+          <div className="rounded-lg border border-accent/20 bg-accent/[0.04] px-4 py-3">
+            <p className="font-mono text-xs font-bold text-accent">Why mintSecretKey?</p>
             <p className="mt-1 text-sm leading-relaxed text-text-muted">
               The mint keypair is ephemeral — generated per-launch for the token{"'"}s mint
               account. Your client needs it to co-sign the create transaction. The server
@@ -256,7 +256,7 @@ Content-Type: application/json
           </Prose>
 
           <SubHeading>Request</SubHeading>
-          <CodeBlock lang="bash" code={`curl -X POST https://www.lockpad.fun/api/v1/metadata/upload \\
+          <CodeBlock lang="bash" code={`curl -X POST https://www.lckd.tech/api/v1/metadata/upload \\
   -F "file=@token-logo.png" \\
   -F "name=MyToken" \\
   -F "symbol=MTK" \\
@@ -472,7 +472,7 @@ jobs:
       - name: Upload metadata
         id: metadata
         run: |
-          RESPONSE=$(curl -s -X POST https://www.lockpad.fun/api/v1/metadata/upload \\
+          RESPONSE=$(curl -s -X POST https://www.lckd.tech/api/v1/metadata/upload \\
             -F "file=@./token-logo.png" \\
             -F "name=\${{ vars.TOKEN_NAME }}" \\
             -F "symbol=\${{ vars.TOKEN_TICKER }}" \\
@@ -481,7 +481,7 @@ jobs:
 
       - name: Build launch transaction
         run: |
-          curl -s -X POST https://www.lockpad.fun/api/v1/launch \\
+          curl -s -X POST https://www.lckd.tech/api/v1/launch \\
             -H "Content-Type: application/json" \\
             -d '{
               "walletPublicKey": "\${{ secrets.WALLET_PUBKEY }}",
@@ -494,7 +494,7 @@ jobs:
             }'`} />
 
           <SubHeading>Bot Integration (TypeScript)</SubHeading>
-          <CodeBlock lang="typescript" code={`const BASE = "https://www.lockpad.fun/api/v1";
+          <CodeBlock lang="typescript" code={`const BASE = "https://www.lckd.tech/api/v1";
 
 async function getTokenLockStatus(mintAddress: string) {
   const res = await fetch(\`\${BASE}/token/\${mintAddress}/lock\`);
@@ -521,7 +521,7 @@ const POLL_INTERVAL = 60_000; // 1 minute
 
 async function pollLockStatus() {
   const res = await fetch(
-    \`https://www.lockpad.fun/api/v1/token/\${MINT}/lock\`
+    \`https://www.lckd.tech/api/v1/token/\${MINT}/lock\`
   );
   const { lock } = await res.json();
 

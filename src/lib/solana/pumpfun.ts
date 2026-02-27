@@ -1,5 +1,4 @@
 import {
-  Keypair,
   PublicKey,
   TransactionInstruction,
 } from "@solana/web3.js";
@@ -249,7 +248,7 @@ export function buildPumpfunBuyIx(params: BuyIxParams): TransactionInstruction {
 
 export interface PumpPortalCreateParams {
   creatorPublicKey: string;
-  mintKeypair: Keypair;
+  mintPublicKey: string;
   name: string;
   symbol: string;
   metadataUri: string;
@@ -268,7 +267,7 @@ export async function fetchPumpPortalCreateTx(
 ): Promise<Uint8Array> {
   const {
     creatorPublicKey,
-    mintKeypair,
+    mintPublicKey,
     name,
     symbol,
     metadataUri,
@@ -285,7 +284,7 @@ export async function fetchPumpPortalCreateTx(
     publicKey: creatorPublicKey,
     action: "create",
     tokenMetadata: { name, symbol, uri: metadataUri },
-    mint: mintKeypair.publicKey.toBase58(),
+    mint: mintPublicKey,
     denominatedInSol: "true",
     amount: buyAmountSol,
     slippage: slippagePercent,
@@ -311,13 +310,13 @@ export async function fetchPumpPortalCreateTx(
 }
 
 /**
- * Converts SOL amount to the expected token quantity at the bonding curve launch price.
- * pump.fun initial price is approximately 30 SOL for 1B tokens (793M in curve + 207M reserved).
- * This is a rough estimate for slippage calculation only.
+ * Converts SOL amount to the expected raw token quantity at the bonding curve launch price.
+ * pump.fun initial virtual reserves: ~1.073B tokens (human-readable) / 30 SOL.
+ * Linear approximation — accurate for small buys, overestimates for large ones.
  */
 export function estimateTokensFromSol(solAmount: number): bigint {
   const INITIAL_VIRTUAL_SOL_RESERVES = 30;
-  const INITIAL_VIRTUAL_TOKEN_RESERVES = 1_073_000_000; // ~1.073B raw (with 6 decimals applied below)
+  const INITIAL_VIRTUAL_TOKEN_RESERVES = 1_073_000_000; // ~1.073B human-readable tokens
   const tokensPerSol = INITIAL_VIRTUAL_TOKEN_RESERVES / INITIAL_VIRTUAL_SOL_RESERVES;
   const rawTokens = Math.floor(solAmount * tokensPerSol * 10 ** PUMPFUN_TOKEN_DECIMALS);
   return BigInt(rawTokens);

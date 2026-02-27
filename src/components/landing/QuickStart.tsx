@@ -33,11 +33,11 @@ function CopyButton({ text }: { text: string }) {
       className="shrink-0 opacity-0 transition-opacity group-hover/line:opacity-100"
     >
       {copied ? (
-        <svg className="h-3.5 w-3.5 text-emerald-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+        <svg className="h-3.5 w-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
           <polyline points="20 6 9 17 4 12" />
         </svg>
       ) : (
-        <svg className="h-3.5 w-3.5 text-[#555] hover:text-emerald-accent transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+        <svg className="h-3.5 w-3.5 text-[#555] hover:text-accent transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
           <rect x="9" y="9" width="13" height="13" rx="2" />
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
         </svg>
@@ -67,32 +67,32 @@ const CONTENT: Record<Tab, LineProps[]> = {
   npx: [
     {
       comment: "# launch a token with locked dev allocation",
-      cmd: "npx lockpad launch",
-      copyText: "npx lockpad launch",
+      cmd: "npx lckd launch",
+      copyText: "npx lckd launch",
     },
   ],
   npm: [
     {
       comment: "# install globally",
-      cmd: "npm i -g lockpad",
-      copyText: "npm i -g lockpad",
+      cmd: "npm i -g lckd",
+      copyText: "npm i -g lckd",
     },
     {
       comment: "# interactive launch wizard",
-      cmd: "lockpad launch",
-      copyText: "lockpad launch",
+      cmd: "lckd launch",
+      copyText: "lckd launch",
     },
   ],
   config: [
     {
       comment: "# launch from config (CI/CD, bots)",
-      cmd: "lockpad launch --config lockpad.json",
-      copyText: "lockpad launch --config lockpad.json",
+      cmd: "lckd launch --config lckd.json",
+      copyText: "lckd launch --config lckd.json",
     },
     {
       comment: "# check lock status",
-      cmd: "lockpad status <mint-address>",
-      copyText: "lockpad status ",
+      cmd: "lckd status <mint-address>",
+      copyText: "lckd status ",
     },
   ],
 };
@@ -101,7 +101,7 @@ export default function QuickStart() {
   const [active, setActive] = useState<Tab>("npx");
 
   return (
-    <div className="w-full max-w-[480px] overflow-hidden rounded-xl border border-white/[0.06] bg-[rgba(17,19,24,0.6)] backdrop-blur-sm">
+    <div className="w-full max-w-[480px] overflow-hidden rounded-xl border border-white/[0.06] bg-[rgba(13,14,26,0.6)] backdrop-blur-sm">
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-white/[0.06] px-4 py-2.5">
         {/* Dots */}
@@ -120,7 +120,7 @@ export default function QuickStart() {
               onClick={() => setActive(tab.key)}
               className={`rounded-md px-2.5 py-1 font-mono text-[10px] font-medium transition-colors ${
                 active === tab.key
-                  ? "bg-emerald-accent/10 text-emerald-accent"
+                  ? "bg-accent/10 text-accent"
                   : "text-[#555] hover:text-[#888]"
               }`}
             >

@@ -28,7 +28,7 @@ export function Prose({ children }: { children: ReactNode }) {
 }
 
 export function Accent({ children }: { children: ReactNode }) {
-  return <span className="font-medium text-emerald-accent">{children}</span>;
+  return <span className="font-medium text-accent">{children}</span>;
 }
 
 export function FaqItem({ q, children }: { q: string; children: ReactNode }) {

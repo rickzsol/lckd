@@ -38,7 +38,7 @@ function ReviewForm({ w }: { w: WizardContext }) {
 
   return (
     <div>
-      <div className="mb-5 font-mono text-[13px] font-bold text-emerald-accent">
+      <div className="mb-5 font-mono text-[13px] font-bold text-accent">
         04 &mdash; Review &amp; Launch
       </div>
 
@@ -61,7 +61,7 @@ function ReviewForm({ w }: { w: WizardContext }) {
           <div>
             <div className="font-mono text-sm font-bold text-white">
               {w.config.name}{" "}
-              <span className="text-emerald-accent">${w.config.ticker}</span>
+              <span className="text-accent">${w.config.ticker}</span>
             </div>
             <div className="mt-0.5 font-mono text-[10px] text-[#555]">
               {w.config.description.length > 80
@@ -166,7 +166,7 @@ function ReviewForm({ w }: { w: WizardContext }) {
 function LaunchingView({ w }: { w: WizardContext }) {
   return (
     <div className="flex flex-col items-center py-12">
-      <div className="mb-6 h-12 w-12 animate-spin rounded-full border-[3px] border-white/10 border-t-emerald-accent" />
+      <div className="mb-6 h-12 w-12 animate-spin rounded-full border-[3px] border-white/10 border-t-accent" />
 
       <div className="mb-6 font-mono text-sm font-bold text-white">
         Launching {w.config.name}...
@@ -185,11 +185,11 @@ function LaunchingView({ w }: { w: WizardContext }) {
             >
               <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
                 {isComplete ? (
-                  <svg className="h-3.5 w-3.5 text-emerald-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <svg className="h-3.5 w-3.5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 ) : isActive ? (
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-accent" />
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
                 ) : (
                   <span className="h-1.5 w-1.5 rounded-full bg-white/20" />
                 )}
@@ -199,7 +199,7 @@ function LaunchingView({ w }: { w: WizardContext }) {
                   isActive
                     ? "text-white"
                     : isComplete
-                      ? "text-emerald-accent/60"
+                      ? "text-accent/60"
                       : "text-[#555]"
                 }
               >
@@ -212,7 +212,7 @@ function LaunchingView({ w }: { w: WizardContext }) {
 
       {/* Wallet hint for signature phases */}
       {(w.launchPhase === 2 || (!w.config.skipLock && w.launchPhase === 6)) && (
-        <div className="mt-6 rounded-lg border border-emerald-accent/20 bg-emerald-accent/5 px-4 py-2.5 font-mono text-[11px] text-emerald-accent">
+        <div className="mt-6 rounded-lg border border-accent/20 bg-accent/5 px-4 py-2.5 font-mono text-[11px] text-accent">
           Check your wallet for a signature request
         </div>
       )}
@@ -293,7 +293,7 @@ function PartialView({ w }: { w: WizardContext }) {
           href={`${SOLSCAN_BASE}/tx/${w.launchResult.createTxSignature}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="mb-4 font-mono text-[10px] text-emerald-accent underline underline-offset-2"
+          className="mb-4 font-mono text-[10px] text-accent underline underline-offset-2"
         >
           View create tx on Solscan
         </a>
@@ -326,7 +326,7 @@ const CONFETTI = Array.from({ length: 20 }, (_, i) => {
     h: 4 + (s2 / 100) * 6,
     left: 10 + (s3 / 100) * 80,
     top: -5 - (s4 / 100) * 10,
-    bg: ["#10b981", "#3b82f6", "#a855f7", "#f59e0b", "#ef4444"][i % 5],
+    bg: ["#8b5cf6", "#3b82f6", "#a855f7", "#f59e0b", "#ef4444"][i % 5],
     dur: 2 + (s5 / 100) * 2,
     delay: (s6 / 100) * 1.5,
   };
@@ -359,9 +359,9 @@ function SuccessView({ w }: { w: WizardContext }) {
       </div>
 
       {/* Success checkmark */}
-      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full border-2 border-emerald-accent bg-emerald-accent/10">
+      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full border-2 border-accent bg-accent/10">
         <svg
-          className="h-8 w-8 text-emerald-accent"
+          className="h-8 w-8 text-accent"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"

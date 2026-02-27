@@ -201,8 +201,8 @@ export default function TokenShowcase() {
       {/* Full-page falling pattern background */}
       <div className="pointer-events-none fixed inset-0 z-0" aria-hidden="true">
         <FallingPattern
-          color="#10b981"
-          backgroundColor="#08080c"
+          color="#8b5cf6"
+          backgroundColor="#06060f"
           className="h-full opacity-40"
         />
       </div>
@@ -217,7 +217,7 @@ export default function TokenShowcase() {
           <h1 className="gsap-hero-heading mx-auto mb-3.5 font-sans text-[clamp(32px,8vw,60px)] leading-[1.05] font-extrabold tracking-[-0.03em] text-white">
             Builders who
             <br />
-            <span className="text-emerald-accent">ship.</span>
+            <span className="text-accent">ship.</span>
           </h1>
 
           <p className="gsap-hero-sub mx-auto mb-7 max-w-[440px] font-mono text-[clamp(11px,2.3vw,14px)] leading-[1.7] text-[#777]">
@@ -254,7 +254,7 @@ export default function TokenShowcase() {
             see how it works
           </span>
           <div className="flex h-5 w-3 items-start justify-center rounded-full border border-white/[0.08] pt-1">
-            <div className="h-1 w-0.5 animate-bounce rounded-full bg-emerald-accent/60" />
+            <div className="h-1 w-0.5 animate-bounce rounded-full bg-accent/60" />
           </div>
         </div>
       </section>
@@ -262,17 +262,17 @@ export default function TokenShowcase() {
       {/* ── Features ─────────────────────────────────────── */}
       <section className="relative z-[1] px-4 py-24 md:py-32">
         <div className="mx-auto max-w-[1000px]">
-          <div className="gsap-features-tag mb-16 text-center font-mono text-[11px] uppercase tracking-[0.25em] text-emerald-accent/50">
-            Why Lockpad
+          <div className="gsap-features-tag mb-16 text-center font-mono text-[11px] uppercase tracking-[0.25em] text-accent/50">
+            Why LCKD
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             {FEATURES.map((f, i) => (
               <div
                 key={i}
-                className="gsap-feature group rounded-xl border border-white/[0.06] bg-white/[0.015] p-6 transition-colors hover:border-emerald-accent/15"
+                className="gsap-feature group rounded-xl border border-white/[0.06] bg-white/[0.015] p-6 transition-colors hover:border-accent/15"
               >
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-accent/15 bg-emerald-accent/[0.04] text-emerald-accent transition-colors group-hover:bg-emerald-accent/[0.08]">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-accent/15 bg-accent/[0.04] text-accent transition-colors group-hover:bg-accent/[0.08]">
                   {f.icon}
                 </div>
                 <h3 className="mb-2 font-sans text-lg font-bold text-white">
@@ -290,12 +290,12 @@ export default function TokenShowcase() {
       {/* ── CTA ──────────────────────────────────────────── */}
       <section className="gsap-cta relative z-[1] flex min-h-[calc(100dvh-49px)] flex-col items-center justify-center px-4 text-center">
         <div>
-          <div className="gsap-cta-tag mb-3 font-mono text-[11px] tracking-[0.15em] text-emerald-accent/60">
+          <div className="gsap-cta-tag mb-3 font-mono text-[11px] tracking-[0.15em] text-accent/60">
             EVERY TOKEN. LOCKED.
           </div>
           <h2 className="gsap-cta-heading mb-4 font-sans text-[clamp(28px,6vw,48px)] font-extrabold text-white">
             Ready to{" "}
-            <span className="text-emerald-accent">ship</span>?
+            <span className="text-accent">ship</span>?
           </h2>
           <p className="gsap-cta-desc mb-8 max-w-md font-mono text-[13px] leading-relaxed text-[#555]">
             Launch your token with locked dev bags. Let the code speak for

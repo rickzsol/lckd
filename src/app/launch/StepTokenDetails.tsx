@@ -10,7 +10,7 @@ export default function StepTokenDetails({ w }: { w: WizardContext }) {
 
   return (
     <div>
-      <div className="mb-5 font-mono text-[13px] font-bold text-emerald-accent">
+      <div className="mb-5 font-mono text-[13px] font-bold text-accent">
         01 &mdash; Token Details
       </div>
 
@@ -53,7 +53,7 @@ export default function StepTokenDetails({ w }: { w: WizardContext }) {
             <div
               role="button"
               tabIndex={0}
-              className={`upload-box transition-colors ${isDragging ? "border-emerald-accent/50 bg-emerald-accent/5" : ""}`}
+              className={`upload-box transition-colors ${isDragging ? "border-accent/50 bg-accent/5" : ""}`}
               onClick={() => fileRef.current?.click()}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") fileRef.current?.click();

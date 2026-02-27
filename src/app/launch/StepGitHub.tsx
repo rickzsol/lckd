@@ -73,9 +73,9 @@ function RepoSelector({
   if (value) {
     const selected = repos.find((r) => r.full_name === value);
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-emerald-accent/20 bg-emerald-accent/[0.04] px-3 py-2.5">
+      <div className="flex items-center gap-2 rounded-lg border border-accent/20 bg-accent/[0.04] px-3 py-2.5">
         <div className="flex-1 min-w-0">
-          <div className="font-mono text-xs font-bold text-emerald-accent truncate">
+          <div className="font-mono text-xs font-bold text-accent truncate">
             {value}
           </div>
           {selected?.description && (
@@ -128,7 +128,7 @@ function RepoSelector({
       </div>
 
       {isOpen && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[240px] overflow-y-auto rounded-lg border border-white/[0.08] bg-[#111318] shadow-xl">
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[240px] overflow-y-auto rounded-lg border border-white/[0.08] bg-[#0d0e1a] shadow-xl">
           {isLoading ? (
             <div className="px-3 py-4 text-center font-mono text-[11px] text-[#555]">
               fetching repositories...
@@ -142,7 +142,7 @@ function RepoSelector({
               <button
                 key={repo.full_name}
                 onClick={() => handleSelect(repo)}
-                className="flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-emerald-accent/[0.06]"
+                className="flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-accent/[0.06]"
               >
                 <div className="flex-1 min-w-0">
                   <div className="font-mono text-[12px] font-semibold text-white truncate">
@@ -194,7 +194,7 @@ export default function StepGitHub({ w }: { w: WizardContext }) {
 
   return (
     <div>
-      <div className="mb-5 font-mono text-[13px] font-bold text-emerald-accent">
+      <div className="mb-5 font-mono text-[13px] font-bold text-accent">
         03 &mdash; GitHub Verification
       </div>
       <p className="mb-5 font-mono text-[11px] text-[#555]">
@@ -240,16 +240,16 @@ export default function StepGitHub({ w }: { w: WizardContext }) {
       ) : (
         <div>
           {/* GitHub profile card */}
-          <div className="mb-4 flex items-center gap-3 rounded-lg border border-emerald-accent/20 bg-emerald-accent/[0.04] px-3.5 py-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-accent/10 font-mono text-sm font-bold text-emerald-accent">
+          <div className="mb-4 flex items-center gap-3 rounded-lg border border-accent/20 bg-accent/[0.04] px-3.5 py-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/10 font-mono text-sm font-bold text-accent">
               {(w.config.githubUsername ?? "?")[0].toUpperCase()}
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-bold text-emerald-accent">
+                <span className="font-mono text-xs font-bold text-accent">
                   @{w.config.githubUsername ?? session?.github_username}
                 </span>
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-accent" />
+                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
               </div>
               <span className="font-mono text-[10px] text-[#555]">
                 GitHub connected

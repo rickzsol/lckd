@@ -15,15 +15,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const profile = await getProfileByUsername(username);
 
   if (!profile) {
-    return { title: "Profile Not Found — Lockpad" };
+    return { title: "Profile Not Found — LCKD" };
   }
 
   return {
-    title: `@${profile.github_username} — Lockpad`,
-    description: `${profile.github_username}'s developer profile on Lockpad. ${profile.public_repos} repos, ${profile.total_commits} commits.`,
+    title: `@${profile.github_username} — LCKD`,
+    description: `${profile.github_username}'s developer profile on LCKD. ${profile.public_repos} repos, ${profile.total_commits} commits.`,
     openGraph: {
-      title: `@${profile.github_username} — Lockpad`,
-      description: `Developer profile with ${profile.public_repos} repos on Lockpad`,
+      title: `@${profile.github_username} — LCKD`,
+      description: `Developer profile with ${profile.public_repos} repos on LCKD`,
       images: profile.github_avatar ? [profile.github_avatar] : undefined,
     },
   };

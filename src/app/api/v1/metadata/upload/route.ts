@@ -22,7 +22,12 @@ export async function POST(request: NextRequest) {
 
     const { uploadToIPFS } = await import("@/lib/solana/ipfs");
 
-    const metadataUri = await uploadToIPFS(file, {
+    // Convert to a fresh File with explicit bytes — Node.js FormData
+    // re-serialization can lose content from the original request File.
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const freshFile = new File([bytes], file.name, { type: file.type });
+
+    const metadataUri = await uploadToIPFS(freshFile, {
       name: name.trim(),
       symbol: symbol.trim(),
       description,
@@ -31,7 +36,19 @@ export async function POST(request: NextRequest) {
       website: website ?? undefined,
     });
 
-    return apiResponse({ metadataUri }, 201);
+    // Resolve actual image URL from the metadata JSON
+    let imageUri = metadataUri;
+    try {
+      const metaRes = await fetch(metadataUri);
+      if (metaRes.ok) {
+        const meta = await metaRes.json();
+        if (meta.image) imageUri = meta.image;
+      }
+    } catch {
+      // Fall back to metadataUri if resolution fails
+    }
+
+    return apiResponse({ metadataUri, imageUri }, 201);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Upload failed";
     console.error("[metadata/upload] Error:", message, err);

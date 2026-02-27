@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import Badge from "@/components/ui/Badge";
 import Bar from "@/components/ui/Bar";
-import type { DisplayToken, DisplayCommit } from "@/types/display";
+import type { DisplayToken } from "@/types/display";
 
 function FeedImage({ src, alt }: { src: string; alt: string }) {
   const [hasError, setHasError] = useState(false);
@@ -13,7 +13,7 @@ function FeedImage({ src, alt }: { src: string; alt: string }) {
 
   if (!isUrl || hasError) {
     return (
-      <span className="font-mono text-xs font-bold text-emerald-accent">
+      <span className="font-mono text-xs font-bold text-accent">
         {hasError ? alt.slice(0, 2).toUpperCase() : src}
       </span>
     );
@@ -34,24 +34,8 @@ function FeedImage({ src, alt }: { src: string; alt: string }) {
 
 type Filter = "all" | "builders" | "shipped";
 
-export default function FeedClient({
-  tokens,
-  commits,
-}: {
-  tokens: DisplayToken[];
-  commits: DisplayCommit[];
-}) {
+export default function FeedClient({ tokens }: { tokens: DisplayToken[] }) {
   const [filter, setFilter] = useState<Filter>("all");
-  const [commitIdx, setCommitIdx] = useState(0);
-
-  useEffect(() => {
-    if (commits.length === 0) return;
-    const iv = setInterval(
-      () => setCommitIdx((i) => (i + 1) % commits.length),
-      3000,
-    );
-    return () => clearInterval(iv);
-  }, [commits.length]);
 
   const list = tokens.filter((t) =>
     filter === "builders"
@@ -61,22 +45,8 @@ export default function FeedClient({
         : true,
   );
 
-  const c = commits[commitIdx];
-
   return (
     <div className="mx-auto max-w-[1100px] p-4">
-      {/* Live ticker */}
-      {c && (
-        <div className="mb-3.5 flex items-center gap-2 overflow-hidden rounded-lg border border-emerald-accent/10 bg-emerald-accent/[0.04] px-3 py-2 font-mono text-[11px]">
-          <span className="pulse-dot" />
-          <span className="shrink-0 text-emerald-accent">@{c.dev}</span>
-          <span className="shrink-0 text-[#444]">&rarr;</span>
-          <span className="shrink-0 font-semibold text-white">{c.ticker}</span>
-          <span className="min-w-0 flex-1 truncate text-[#555]">{c.msg}</span>
-          <span className="shrink-0 text-[#444]">{c.time}</span>
-        </div>
-      )}
-
       {/* Header + filters */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-sans text-xl font-bold text-white">
@@ -89,7 +59,7 @@ export default function FeedClient({
               onClick={() => setFilter(f)}
               className={`rounded-[5px] border px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wide transition-all ${
                 filter === f
-                  ? "border-emerald-accent/30 bg-emerald-accent/[0.08] text-emerald-accent"
+                  ? "border-accent/30 bg-accent/[0.08] text-accent"
                   : "border-white/[0.06] bg-transparent text-[#555]"
               }`}
             >
@@ -124,7 +94,7 @@ export default function FeedClient({
               </p>
               <button
                 onClick={() => setFilter("all")}
-                className="mt-2 font-mono text-xs text-emerald-accent underline underline-offset-2"
+                className="mt-2 font-mono text-xs text-accent underline underline-offset-2"
               >
                 show all tokens
               </button>
@@ -144,7 +114,7 @@ export default function FeedClient({
             <Link key={t.id} href={href} className="token-card block">
               {/* Row 1 */}
               <div className="mb-2 flex items-center gap-2.5">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-emerald-accent/20 bg-emerald-accent/[0.06]">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-accent/20 bg-accent/[0.06]">
                   <FeedImage src={t.image} alt={t.name} />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -171,7 +141,7 @@ export default function FeedClient({
                     <div
                       className="font-mono text-[11px] font-semibold"
                       style={{
-                        color: t.chg.startsWith("+") ? "#10b981" : "#ef4444",
+                        color: t.chg.startsWith("+") ? "#8b5cf6" : "#ef4444",
                       }}
                     >
                       {t.chg}

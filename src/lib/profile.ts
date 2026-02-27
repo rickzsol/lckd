@@ -7,7 +7,7 @@ const MOCK_PROFILE: GitHubProfile = {
   id: "mock-1",
   wallet_address: "",
   github_id: "0",
-  github_username: "lockpad",
+  github_username: "lckd",
   github_avatar: "/logo.png",
   account_created_at: "2023-01-15T00:00:00Z",
   public_repos: 12,
@@ -31,7 +31,7 @@ export async function getProfileByUsername(
   username: string,
 ): Promise<GitHubProfile | null> {
   if (!hasSupabaseConfig()) {
-    return username === "lockpad" ? MOCK_PROFILE : null;
+    return username === "lckd" ? MOCK_PROFILE : null;
   }
 
   try {
