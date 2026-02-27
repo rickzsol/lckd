@@ -12,12 +12,14 @@ export const metadata: Metadata = {
       "Browse verified token launches with locked dev allocations on Solana.",
     siteName: "LCKD",
     type: "website",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "LCKD" }],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Explore Builders — LCKD",
     description:
       "Browse verified token launches with locked dev allocations on Solana.",
+    images: ["/og.png"],
   },
 };
 

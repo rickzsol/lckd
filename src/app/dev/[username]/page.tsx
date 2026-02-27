@@ -24,7 +24,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: {
       title: `@${profile.github_username} — LCKD`,
       description: `Developer profile with ${profile.public_repos} repos on LCKD`,
-      images: profile.github_avatar ? [profile.github_avatar] : undefined,
+      images: profile.github_avatar
+        ? [profile.github_avatar]
+        : [{ url: "/og.png", width: 1200, height: 630, alt: "LCKD" }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `@${profile.github_username} — LCKD`,
+      description: `Developer profile with ${profile.public_repos} repos on LCKD`,
+      images: profile.github_avatar ? [profile.github_avatar] : ["/og.png"],
     },
   };
 }

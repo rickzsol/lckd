@@ -10,12 +10,14 @@ export const metadata: Metadata = {
       "Create a rug-proof token on Solana with enforced dev token locks.",
     siteName: "LCKD",
     type: "website",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "LCKD" }],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Launch a Token — LCKD",
     description:
       "Create a rug-proof token on Solana with enforced dev token locks.",
+    images: ["/og.png"],
   },
 };
 

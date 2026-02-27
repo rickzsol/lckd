@@ -28,14 +28,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description,
       siteName: "LCKD",
       type: "website",
-      ...(token.image.startsWith("http") && {
-        images: [{ url: token.image, width: 256, height: 256 }],
-      }),
+      images: token.image.startsWith("http")
+        ? [{ url: token.image, width: 256, height: 256 }]
+        : [{ url: "/og.png", width: 1200, height: 630, alt: "LCKD" }],
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title,
       description,
+      images: token.image.startsWith("http") ? [token.image] : ["/og.png"],
     },
   };
 }

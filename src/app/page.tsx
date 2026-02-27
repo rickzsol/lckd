@@ -11,6 +11,14 @@ export const metadata: Metadata = {
       "Launch tokens where devs can't rug. Every dev allocation is locked via Streamflow token lock.",
     siteName: "LCKD",
     type: "website",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "LCKD" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "LCKD — Builders who ship. Tokens that lock.",
+    description:
+      "Launch tokens where devs can't rug. Every dev allocation is locked via Streamflow token lock.",
+    images: ["/og.png"],
   },
 };
 
