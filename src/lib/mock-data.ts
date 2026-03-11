@@ -2,7 +2,7 @@ import type { DisplayToken } from "@/types/display";
 import { TrustTier } from "@/types/index";
 
 export const FEATURED_TOKEN: DisplayToken = {
-  id: 0,
+  id: "featured",
   name: "Lckd",
   ticker: "$LCKD",
   tier: TrustTier.SHIPPED,
@@ -27,4 +27,5 @@ export const FEATURED_TOKEN: DisplayToken = {
   price: "--",
   chg: "+0.0%",
   holders: 0,
+  mintAddress: "HGtQYABTAAFdD184UW8GJgk3bG99pongSfDnd2Njpump",
 };

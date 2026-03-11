@@ -5,15 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import dynamic from "next/dynamic";
-
-const WalletMultiButton = dynamic(
-  () =>
-    import("@solana/wallet-adapter-react-ui").then(
-      (mod) => mod.WalletMultiButton
-    ),
-  { ssr: false }
-);
+import WalletMultiButton from "@/components/ui/WalletButton";
 
 const NAV_LINKS = [
   { href: "/feed", label: "explore" },
@@ -39,14 +31,14 @@ export default function Navbar() {
   }, [isMobileOpen]);
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-white/[0.06] bg-[rgba(6,6,15,0.92)] backdrop-blur-[12px]">
+    <nav className="sticky top-0 z-50 border-b border-white/[0.06] bg-[rgba(8,8,8,0.92)] backdrop-blur-[12px]">
       <div className="flex w-full items-center justify-between px-6 py-3">
         <Link href="/" className="flex items-center gap-[7px]">
           <Image
             src="/icon.png"
             alt="LCKD logo"
-            width={26}
-            height={26}
+            width={28}
+            height={28}
             className="rounded-md"
             priority
           />
@@ -72,7 +64,7 @@ export default function Navbar() {
           })}
           <span className="h-3.5 w-px bg-white/[0.08]" />
           <a
-            href="https://x.com/lckdtech"
+            href="https://x.com/lckdtechx"
             target="_blank"
             rel="noopener noreferrer"
             className="text-[#555] transition-colors hover:text-accent"
@@ -128,7 +120,7 @@ export default function Navbar() {
             onClick={() => setIsMobileOpen(false)}
             aria-hidden="true"
           />
-          <div className="relative z-50 border-t border-white/[0.06] bg-[rgba(6,6,15,0.98)] px-4 pb-4 md:hidden">
+          <div className="relative z-50 border-t border-white/[0.06] bg-[rgba(8,8,8,0.98)] px-4 pb-4 md:hidden">
             {NAV_LINKS.map((link) => {
               const isActive = pathname === link.href || pathname.startsWith(link.href + "/");
               return (
@@ -146,7 +138,7 @@ export default function Navbar() {
             })}
             <div className="border-t border-white/[0.06] pt-3">
               <a
-                href="https://x.com/lckdtech"
+                href="https://x.com/lckdtechx"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[#555] transition-colors hover:text-accent"

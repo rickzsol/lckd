@@ -63,7 +63,7 @@ export function tokenToDisplay(t: Token, market?: DexMarketData | null): Display
     d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   return {
-    id: t.mint_address as unknown as number,
+    id: t.mint_address,
     name: t.name,
     ticker: `$${t.ticker}`,
     tier: t.trust_tier,
@@ -96,39 +96,109 @@ export function tokenToDisplay(t: Token, market?: DexMarketData | null): Display
 
 export async function getTokens(): Promise<DisplayToken[]> {
   const { FEATURED_TOKEN } = await import("./mock-data");
-  return [FEATURED_TOKEN];
-}
 
-export async function getTokenByIdOrMint(
-  id: string,
-): Promise<DisplayToken | null> {
-  if (!hasSupabaseConfig()) return null;
+  if (!hasSupabaseConfig()) {
+    return [FEATURED_TOKEN];
+  }
 
   try {
     const { getSupabase } = await import("./supabase");
     const supabase = getSupabase();
 
-    // Single query with OR filter instead of two sequential queries
     const { data, error } = await supabase
       .from("tokens")
       .select(TOKEN_COLUMNS)
-      .or(`mint_address.eq.${id},id.eq.${id}`)
-      .limit(1)
-      .single();
+      .order("created_at", { ascending: false })
+      .limit(50);
 
-    if (error || !data) return null;
+    if (error || !data || data.length === 0) {
+      return [FEATURED_TOKEN];
+    }
 
-    const token = data as Token;
-    const [market, resolvedImage] = await Promise.all([
-      import("./dexscreener").then((m) => m.fetchMarketData(token.mint_address)),
-      token.image_uri ? resolveImageUri(token.image_uri) : Promise.resolve(""),
+    const tokens = data as Token[];
+    const mintAddresses = tokens.map((t) => t.mint_address);
+
+    // Batch fetch market data + resolve images in parallel
+    const [marketMap, resolvedImages] = await Promise.all([
+      import("./dexscreener").then((m) => m.fetchMarketDataBatch(mintAddresses)),
+      Promise.all(
+        tokens.map((t) =>
+          t.image_uri ? resolveImageUri(t.image_uri) : Promise.resolve(""),
+        ),
+      ),
     ]);
 
-    return tokenToDisplay(
-      { ...token, image_uri: resolvedImage || token.image_uri },
-      market,
+    const displayTokens = tokens.map((t, i) =>
+      tokenToDisplay(
+        { ...t, image_uri: resolvedImages[i] || t.image_uri },
+        marketMap.get(t.mint_address) ?? null,
+      ),
     );
-  } catch {
-    return null;
+
+    const hasFeatured = displayTokens.some(
+      (dt) => dt.mintAddress === FEATURED_TOKEN.mintAddress,
+    );
+    if (!hasFeatured) {
+      displayTokens.unshift(FEATURED_TOKEN);
+    }
+
+    return displayTokens;
+  } catch (err) {
+    console.error("[getTokens] Error:", err instanceof Error ? err.message : err);
+    return [FEATURED_TOKEN];
   }
+}
+
+export async function getTokenByIdOrMint(
+  id: string,
+): Promise<DisplayToken | null> {
+  // Check Supabase first
+  if (hasSupabaseConfig()) {
+    try {
+      const { getSupabase } = await import("./supabase");
+      const supabase = getSupabase();
+
+      const { data, error } = await supabase
+        .from("tokens")
+        .select(TOKEN_COLUMNS)
+        .or(`mint_address.eq.${id},id.eq.${id}`)
+        .limit(1)
+        .single();
+
+      if (!error && data) {
+        const token = data as Token;
+        const [market, resolvedImage] = await Promise.all([
+          import("./dexscreener").then((m) => m.fetchMarketData(token.mint_address)),
+          token.image_uri ? resolveImageUri(token.image_uri) : Promise.resolve(""),
+        ]);
+
+        return tokenToDisplay(
+          { ...token, image_uri: resolvedImage || token.image_uri },
+          market,
+        );
+      }
+    } catch {
+      // Fall through to featured token check
+    }
+  }
+
+  // Fallback: check featured token
+  const { FEATURED_TOKEN } = await import("./mock-data");
+  if (FEATURED_TOKEN.id === id || FEATURED_TOKEN.mintAddress === id) {
+    // Enrich with live market data if mint address exists
+    if (FEATURED_TOKEN.mintAddress) {
+      try {
+        const { fetchMarketData } = await import("./dexscreener");
+        const market = await fetchMarketData(FEATURED_TOKEN.mintAddress);
+        if (market) {
+          return { ...FEATURED_TOKEN, ...market, mcap: market.mcap, vol: market.volume, price: market.price, chg: market.change24h, liquidity: market.liquidity };
+        }
+      } catch {
+        // Return without market data
+      }
+    }
+    return FEATURED_TOKEN;
+  }
+
+  return null;
 }
