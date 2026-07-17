@@ -16,40 +16,50 @@ export function shouldDeadLetter(attempts: number): boolean {
   return attempts >= MAX_ATTEMPTS;
 }
 
+/**
+ * Marks a row processed via the fenced definer RPC. The update only applies when
+ * the caller's `leaseId` still owns the row and it is not already processed, so a
+ * worker whose lease expired cannot clobber a newer owner's result (finding 8).
+ * Returns true when this worker actually committed the completion.
+ */
 export async function markProcessed(
   supabase: SupabaseClient,
   id: string,
+  leaseId: string | null,
   processedAtIso: string,
-): Promise<void> {
-  const { error } = await supabase
-    .from("webhook_inbox")
-    .update({ processed_at: processedAtIso, locked_until: null })
-    .eq("id", id);
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("complete_inbox_row", {
+    p_id: id,
+    p_lease_id: leaseId,
+    p_processed_at: processedAtIso,
+  });
   if (error) throw new Error(error.message);
+  return (data ?? 0) > 0;
 }
 
 /**
- * Records a failed attempt: dead-letter once the budget is spent, otherwise
- * schedule the next retry with backoff and release the lease.
+ * Records a failed attempt through the fenced definer RPC: dead-letter once the
+ * budget is spent, otherwise schedule the next retry with backoff. The fence
+ * (lease + not-yet-processed) prevents a stale worker from resetting a row a
+ * newer worker already owns (finding 8). Returns true when the update applied.
  */
 export async function recordFailure(
   supabase: SupabaseClient,
   id: string,
+  leaseId: string | null,
   attempts: number,
   now: number,
-): Promise<void> {
-  if (shouldDeadLetter(attempts)) {
-    const { error } = await supabase
-      .from("webhook_inbox")
-      .update({ dead_lettered: true, locked_until: null })
-      .eq("id", id);
-    if (error) throw new Error(error.message);
-    return;
-  }
-  const nextRetry = new Date(now + backoffSeconds(attempts) * 1_000).toISOString();
-  const { error } = await supabase
-    .from("webhook_inbox")
-    .update({ next_retry_at: nextRetry, locked_until: null })
-    .eq("id", id);
+): Promise<boolean> {
+  const deadLetter = shouldDeadLetter(attempts);
+  const nextRetry = deadLetter
+    ? null
+    : new Date(now + backoffSeconds(attempts) * 1_000).toISOString();
+  const { data, error } = await supabase.rpc("fail_inbox_row", {
+    p_id: id,
+    p_lease_id: leaseId,
+    p_dead_letter: deadLetter,
+    p_next_retry_at: nextRetry,
+  });
   if (error) throw new Error(error.message);
+  return (data ?? 0) > 0;
 }

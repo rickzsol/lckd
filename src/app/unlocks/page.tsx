@@ -76,8 +76,9 @@ function groupByDate(rows: UnlockCalendarRow[]): Array<{ key: string; label: str
 }
 
 export default async function UnlocksPage() {
-  const rows = await getUpcomingUnlocks();
-  const groups = groupByDate(rows);
+  const result = await getUpcomingUnlocks();
+  const isDegraded = result.status === "degraded";
+  const groups = groupByDate(result.rows);
 
   return (
     <div className="mx-auto max-w-[1152px] px-4 pt-28 pb-16 sm:px-6">
@@ -92,7 +93,15 @@ export default async function UnlocksPage() {
         </p>
       </div>
 
-      {groups.length === 0 ? (
+      {isDegraded ? (
+        <div className="flex flex-col items-center py-20 text-center">
+          <div className="font-mono text-[48px] text-text-4">{"!"}</div>
+          <p className="mt-3 font-mono text-sm text-text-3">
+            unlock data is temporarily unavailable. this does not mean nothing is
+            unlocking. refresh in a moment.
+          </p>
+        </div>
+      ) : groups.length === 0 ? (
         <div className="flex flex-col items-center py-20 text-center">
           <div className="font-mono text-[48px] text-text-4">{"{ }"}</div>
           <p className="mt-3 font-mono text-sm text-text-3">

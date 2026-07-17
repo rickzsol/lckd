@@ -54,7 +54,15 @@ export async function POST(request: NextRequest) {
     return json({ error: "Batch too large" }, 413);
   }
 
-  const events = normalizeHeliusBatch(batch);
+  const { events, rejected } = normalizeHeliusBatch(batch);
+
+  // A nonempty batch that contained malformed or unusable entries is rejected
+  // wholesale rather than acked 200 after silently dropping them (finding 7).
+  // Returning 400 makes Helius retry the corrected delivery; a partial ack would
+  // permanently lose the dropped subevents.
+  if (batch.length > 0 && rejected > 0) {
+    return json({ error: "Batch contained malformed or unusable events", rejected }, 400);
+  }
 
   if (!hasServerSupabaseConfig()) {
     // Fail closed: without durable storage we cannot guarantee at-least-once.

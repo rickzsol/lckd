@@ -66,7 +66,19 @@ async function collectTrackedAddresses(
     if (rows.length < pageSize) break;
     from += pageSize;
   }
-  return [...addresses].slice(0, MAX_ADDRESSES);
+  const all = [...addresses];
+  if (all.length > MAX_ADDRESSES) {
+    // Never silently truncate: a slice would report success while leaving the
+    // remainder unmonitored (finding 14). Fail loudly so the operator shards the
+    // address set across multiple webhooks instead.
+    throw new Error(
+      `Tracked address count ${all.length} exceeds the Helius per-webhook ceiling ` +
+        `of ${MAX_ADDRESSES}. Shard the addresses across multiple webhooks; refusing ` +
+        `to register a partial set that would leave ${all.length - MAX_ADDRESSES} ` +
+        `addresses unmonitored.`,
+    );
+  }
+  return all;
 }
 
 async function main(): Promise<void> {

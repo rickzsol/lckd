@@ -57,14 +57,23 @@ function toRow(row: RawRow, now: number): UnlockCalendarRow {
 }
 
 /**
- * Reads the `locks_public` view directly for the calendar page. Fail-soft:
- * returns [] whenever Supabase is unconfigured or the query errors, so the
- * page renders its degraded/empty state rather than an error page. Bounds the
- * result to a trailing 30d / forward 90d cliff window, canonical + active
- * locks only, ordered by cliff ascending, capped at 200 rows.
+ * Result of a calendar read. `status` distinguishes a genuine empty board
+ * ("ok" with no rows) from a degraded read (unconfigured or query failure), so
+ * the page can say "temporarily unavailable" instead of "nothing is unlocking",
+ * which would be a false statement built from a failure (finding 11).
  */
-export async function getUpcomingUnlocks(): Promise<UnlockCalendarRow[]> {
-  if (!hasSupabaseConfig()) return [];
+export type UnlockCalendarResult =
+  | { status: "ok"; rows: UnlockCalendarRow[] }
+  | { status: "degraded"; rows: [] };
+
+/**
+ * Reads the `locks_public` view directly for the calendar page. Bounds the
+ * result to a trailing 30d / forward 90d cliff window, canonical + active locks
+ * only, ordered by cliff ascending, capped at 200 rows. Returns a degraded
+ * result on missing config or a query error rather than an empty success.
+ */
+export async function getUpcomingUnlocks(): Promise<UnlockCalendarResult> {
+  if (!hasSupabaseConfig()) return { status: "degraded", rows: [] };
 
   try {
     const { getSupabase } = await import("@/lib/supabase");
@@ -85,16 +94,21 @@ export async function getUpcomingUnlocks(): Promise<UnlockCalendarRow[]> {
       .order("mint", { ascending: true })
       .limit(PAGE_CAP);
 
-    if (error || !data) return [];
-    return (data as unknown as RawRow[]).map((row) => toRow(row, now));
+    if (error || !data) {
+      if (error) console.error("[getUpcomingUnlocks] query failed:", error.message);
+      return { status: "degraded", rows: [] };
+    }
+    return { status: "ok", rows: (data as unknown as RawRow[]).map((row) => toRow(row, now)) };
   } catch (err) {
     console.error("[getUpcomingUnlocks]", err instanceof Error ? err.message : err);
-    return [];
+    return { status: "degraded", rows: [] };
   }
 }
 
-/** Soonest upcoming (or overdue-eligible) unlock, or null. Used by the feed strip. */
+/** Soonest upcoming (or overdue-eligible) unlock, or null when empty/degraded.
+ * The feed strip treats a degraded read as "no data to show" rather than an
+ * error surface, but never as a positive "nothing is unlocking" claim. */
 export async function getNextUnlock(): Promise<UnlockCalendarRow | null> {
-  const rows = await getUpcomingUnlocks();
-  return rows[0] ?? null;
+  const result = await getUpcomingUnlocks();
+  return result.status === "ok" ? (result.rows[0] ?? null) : null;
 }

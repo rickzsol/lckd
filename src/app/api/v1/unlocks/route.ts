@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { guardPublic, publicJson, publicError, publicOptions, runPublic } from "@/lib/api/publicCors";
+import { guardPublic, publicJson, publicError, publicOptions, publicMethodNotAllowed, runPublic } from "@/lib/api/publicCors";
 import { envelope, unlocksSource } from "@/lib/api/envelope";
 import { decodeCursor, encodeCursor, keysetFilter, type UnlockCursor } from "@/lib/api/keyset";
 import { getSupabase, hasSupabaseConfig } from "@/lib/supabase";
@@ -12,6 +12,13 @@ export const dynamic = "force-dynamic";
 export function OPTIONS() {
   return publicOptions();
 }
+
+// Explicit non-GET handlers so unsupported methods return a public-CORS 405
+// rather than an absent-CORS Next.js default (finding 13).
+export const POST = publicMethodNotAllowed;
+export const PUT = publicMethodNotAllowed;
+export const PATCH = publicMethodNotAllowed;
+export const DELETE = publicMethodNotAllowed;
 
 const MAX_DAYS = 90;
 const DEFAULT_DAYS = 30;

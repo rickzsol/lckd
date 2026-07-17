@@ -6,11 +6,18 @@ import type { WebhookInboxPayload } from "@/types/trust";
 export interface NormalizedEvent {
   provider: "helius";
   signature: string;
-  event_index: number;
   event_type: string;
   slot: number | null;
   payload_hash: string;
   payload: WebhookInboxPayload;
+}
+
+/** Outcome of normalizing a batch. `rejected` entries are malformed items in an
+ * otherwise nonempty batch; the caller fails the batch rather than acking 200
+ * after silently dropping them (finding 7). */
+export interface NormalizeResult {
+  events: NormalizedEvent[];
+  rejected: number;
 }
 
 interface RawHeliusEvent {
@@ -59,19 +66,47 @@ function extractAccountKeys(event: RawHeliusEvent): string[] {
 }
 
 /**
- * Normalizes a bounded Helius batch into idempotent inbox rows. Invalid entries
- * (missing signature) are skipped, not fatal. event_index disambiguates multiple
- * events sharing a signature so the unique constraint stays idempotent.
+ * Normalizes a bounded Helius batch into idempotent inbox rows.
+ *
+ * Dedup identity is (provider, signature, event_type): stable across Helius
+ * retries. event_index (batch position) is NOT used because Helius can regroup
+ * or reorder retried deliveries, which would mint a fresh key for the same
+ * transaction (finding 7).
+ *
+ * A malformed entry (not an object, or missing a signature) is counted in
+ * `rejected` so the caller can fail a nonempty batch that contained garbage
+ * instead of acking 200 after silently dropping it. Entries with no usable
+ * account keys are also rejected: nothing downstream can act on them, so they
+ * must not be persisted and marked processed.
  */
-export function normalizeHeliusBatch(batch: unknown[]): NormalizedEvent[] {
+export function normalizeHeliusBatch(batch: unknown[]): NormalizeResult {
   const events: NormalizedEvent[] = [];
-  batch.forEach((raw, index) => {
-    if (!raw || typeof raw !== "object") return;
+  const seen = new Set<string>();
+  let rejected = 0;
+  for (const raw of batch) {
+    if (!raw || typeof raw !== "object") {
+      rejected += 1;
+      continue;
+    }
     const event = raw as RawHeliusEvent;
     const signature = asString(event.signature);
-    if (!signature) return;
+    if (!signature) {
+      rejected += 1;
+      continue;
+    }
 
     const accountKeys = extractAccountKeys(event);
+    if (accountKeys.length === 0) {
+      // No addresses to correlate to a lock; acting on it is impossible.
+      rejected += 1;
+      continue;
+    }
+
+    const eventType = asString(event.type) ?? "UNKNOWN";
+    const dedupKey = `${signature}|${eventType}`;
+    if (seen.has(dedupKey)) continue; // in-batch duplicate of the same subevent.
+    seen.add(dedupKey);
+
     const payload: WebhookInboxPayload = {
       signature,
       slot: asSlot(event.slot),
@@ -80,14 +115,13 @@ export function normalizeHeliusBatch(batch: unknown[]): NormalizedEvent[] {
     events.push({
       provider: "helius",
       signature,
-      event_index: index,
-      event_type: asString(event.type) ?? "UNKNOWN",
+      event_type: eventType,
       slot: payload.slot,
       payload_hash: hashPayload(payload),
       payload,
     });
-  });
-  return events;
+  }
+  return { events, rejected };
 }
 
 function hashPayload(payload: WebhookInboxPayload): string {
@@ -107,7 +141,7 @@ export async function insertInboxEvents(
   const { data, error } = await supabase
     .from("webhook_inbox")
     .upsert(events, {
-      onConflict: "provider,signature,event_index,event_type",
+      onConflict: "provider,signature,event_type",
       ignoreDuplicates: true,
     })
     .select("id");

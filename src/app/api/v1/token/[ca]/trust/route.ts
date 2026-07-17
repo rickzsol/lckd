@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { guardPublic, publicJson, publicError, publicOptions, runPublic } from "@/lib/api/publicCors";
+import { guardPublic, publicJson, publicError, publicOptions, publicMethodNotAllowed, runPublic } from "@/lib/api/publicCors";
 import { isValidSolanaAddress, isValidTokenIdentifier } from "@/lib/api/validation";
 import { envelope, tokenSource } from "@/lib/api/envelope";
 import { getSupabase, hasSupabaseConfig } from "@/lib/supabase";
@@ -12,6 +12,13 @@ export const dynamic = "force-dynamic";
 export function OPTIONS() {
   return publicOptions();
 }
+
+// Explicit non-GET handlers so unsupported methods return a public-CORS 405
+// rather than an absent-CORS Next.js default (finding 13).
+export const POST = publicMethodNotAllowed;
+export const PUT = publicMethodNotAllowed;
+export const PATCH = publicMethodNotAllowed;
+export const DELETE = publicMethodNotAllowed;
 
 const TOKEN_COLUMNS =
   "id, mint_address, trust_tier, tier_computed_at, github_username, github_repo";
@@ -76,22 +83,56 @@ export async function GET(
 
     const github = await loadGithub(supabase, token.github_username, token.github_repo);
 
+    const tierComputedAt = (token.tier_computed_at as string | null) ?? null;
     const data: TrustResponseData = {
       mint,
       tier: tierSlug((token.trust_tier as TrustTier) ?? TrustTier.LOCKED),
-      tierComputedAt: (token.tier_computed_at as string | null) ?? null,
+      tierComputedAt,
       lock,
       github,
       // Attestation block shape is wired later by the SAS branch; null for now.
       attestation: null,
     };
 
+    // stale reflects real verification freshness, not a hardcoded false: a tier
+    // computed long ago or a lock whose on-chain state was last verified beyond
+    // the freshness window is served with stale=true so consumers know to treat
+    // it with caution (finding 11).
+    const stale = isTrustStale(tierComputedAt, canonicalLock?.last_verified_at ?? null, now);
+
     return publicJson(
-      envelope(data, { source: tokenSource(mint), stale: false }),
+      envelope(data, { source: tokenSource(mint), stale }),
       200,
       { "Cache-Control": "public, s-maxage=15, stale-while-revalidate=45" },
     );
   });
+}
+
+// Trust data is stale when the projected tier or the lock's finalized
+// verification is older than these windows. A missing timestamp is treated as
+// stale (never-verified is not fresh).
+const TIER_FRESH_MS = 26 * 60 * 60 * 1000; // GitHub cron runs hourly; 26h grace.
+const LOCK_FRESH_MS = 48 * 60 * 60 * 1000; // reconcile sweep runs daily; 48h grace.
+
+export function isTrustStale(
+  tierComputedAt: string | null,
+  lockVerifiedAt: string | null,
+  now: number,
+): boolean {
+  if (isOlderThan(tierComputedAt, TIER_FRESH_MS, now)) return true;
+  // A lock block is only present when there is a canonical lock; when present its
+  // finalized verification must be within the window.
+  if (lockVerifiedAt !== null && isOlderThan(lockVerifiedAt, LOCK_FRESH_MS, now)) {
+    return true;
+  }
+  return false;
+}
+
+function isOlderThan(iso: string | null, windowMs: number, now: number): boolean {
+  if (!iso) return true;
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return true;
+  return now - ts > windowMs;
 }
 
 async function loadGithub(

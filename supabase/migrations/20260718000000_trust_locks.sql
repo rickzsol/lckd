@@ -17,7 +17,12 @@ begin;
 -- ---------------------------------------------------------------------------
 alter table public.tokens
   add column if not exists tier_computed_at timestamptz,
-  add column if not exists policy_version int;
+  add column if not exists policy_version int,
+  -- Independent GitHub-evidence tier, persisted separately from the projected
+  -- trust_tier. The projection floors trust_tier to LOCKED for an expired lock;
+  -- if we re-read trust_tier as GitHub evidence we would permanently lose the
+  -- original GitHub tier (finding 5). github_tier is the durable GitHub input.
+  add column if not exists github_tier int;
 
 -- ---------------------------------------------------------------------------
 -- locks: canonical on-chain lock evidence per token.
@@ -55,7 +60,11 @@ create table if not exists public.locks (
     check (status in ('locked', 'unlock_eligible', 'withdrawn', 'anomalous')),
   constraint locks_deposited_nonneg check (deposited_amount >= 0),
   constraint locks_withdrawn_nonneg check (withdrawn_amount >= 0),
-  constraint locks_withdrawn_le_deposited check (withdrawn_amount <= deposited_amount),
+  -- Only non-anomalous rows must satisfy withdrawn <= deposited. An anomalous
+  -- observation (withdrawn exceeding deposited, or dropping below stored) must be
+  -- persisted verbatim as evidence, not rejected by the constraint (finding 4).
+  constraint locks_withdrawn_le_deposited
+    check (status = 'anomalous' or withdrawn_amount <= deposited_amount),
   constraint locks_cliff_raw_nonneg check (cliff_ts_raw >= 0),
   constraint locks_supply_nonneg check (total_supply_raw is null or total_supply_raw >= 0),
   constraint locks_decimals_range check (decimals is null or (decimals >= 0 and decimals <= 18)),
@@ -78,6 +87,31 @@ create index if not exists locks_cliff_idx
   where status in ('locked', 'unlock_eligible');
 
 -- ---------------------------------------------------------------------------
+-- trust_kv: tiny durable key/value for cron sweep state and backfill gating.
+--   reconcile_cursor      -> persisted keyset cursor so the daily sweep resumes
+--                            where it stopped instead of re-scanning the first
+--                            page every run (finding 6).
+--   backfill_complete     -> 'true' once tools/backfill-locks.ts records a full
+--                            pass with every canonical lock denominator filled.
+--                            The public view returns rows only after this flips,
+--                            so partially-backfilled locks are never exposed
+--                            (finding 10).
+-- RLS enabled, no anon grants; server (service_role) reads/writes only.
+-- ---------------------------------------------------------------------------
+create table if not exists public.trust_kv (
+  key text primary key,
+  value text not null,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.trust_kv (key, value)
+values ('backfill_complete', 'false')
+on conflict (key) do nothing;
+
+alter table public.trust_kv enable row level security;
+revoke all on public.trust_kv from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
 -- webhook_inbox: durable idempotent landing zone for Helius deliveries.
 -- Lease columns drive the cron consumer: claim with locked_until, back off via
 -- next_retry_at/attempts, dead-letter after N attempts.
@@ -86,20 +120,26 @@ create table if not exists public.webhook_inbox (
   id uuid primary key default gen_random_uuid(),
   provider text not null,
   signature text not null,
-  event_index int not null default 0,
   event_type text not null,
   slot bigint,
   payload_hash text not null,
   payload jsonb not null,                 -- bounded, normalized subset only
   attempts int not null default 0,
+  -- Random fencing token stamped by claim_webhook_inbox. Every completion,
+  -- failure, and reconciliation commit is conditioned on this so a stale worker
+  -- whose lease expired cannot overwrite a newer worker's result (finding 8).
+  lease_id uuid,
   locked_until timestamptz,
   next_retry_at timestamptz,
   processed_at timestamptz,
   dead_lettered boolean not null default false,
   received_at timestamptz not null default now(),
   constraint webhook_inbox_attempts_nonneg check (attempts >= 0),
-  constraint webhook_inbox_event_index_nonneg check (event_index >= 0),
-  unique (provider, signature, event_index, event_type)
+  -- Dedup by (provider, signature, event_type): stable across Helius retries.
+  -- event_index (batch position) is NOT stable because Helius can regroup or
+  -- reorder retried deliveries, so it must never be part of the identity
+  -- (finding 7). One enhanced transaction is one (signature, type) subevent.
+  unique (provider, signature, event_type)
 );
 
 -- Consumer claim scan: unprocessed, not dead-lettered, past its retry gate.
@@ -122,8 +162,14 @@ alter table public.webhook_inbox enable row level security;
 revoke all on public.webhook_inbox from public, anon, authenticated;
 
 -- Safe public view: only lock rows whose token is publicly visible (matches the
--- tokens_select policy: launch + lock verified). No signatures, no slots, no
--- escrow/recipient internals beyond what the trust API already exposes.
+-- tokens_select policy: launch + lock verified). Exposes ONLY the columns the
+-- trust API and unlock calendar consume; `recipient`, escrow, signatures, and
+-- slots are intentionally omitted so anon sees no internal not already in the
+-- documented trust response (finding 12).
+--
+-- Gated on trust_kv.backfill_complete = 'true': until the staged backfill records
+-- a complete pass, the view returns nothing, so partially-backfilled locks with
+-- null denominators are never exposed as public trust data (finding 10).
 --
 -- Intentionally a SECURITY DEFINER view (the default; no security_invoker): the
 -- view is owned by the migration role, which reads the RLS-locked `locks` table
@@ -138,10 +184,12 @@ select
   l.mint,
   l.stream_program,
   l.stream_id,
-  l.recipient,
-  l.deposited_amount,
-  l.withdrawn_amount,
-  l.total_supply_raw,
+  -- Raw u64/u128 token amounts as decimal strings. numeric/bigint exceed the
+  -- safe JS integer range, so cast to text at the view boundary and keep them
+  -- strings end to end; ratio math is done with BigInt, never Number (finding 9).
+  l.deposited_amount::text as deposited_amount,
+  l.withdrawn_amount::text as withdrawn_amount,
+  l.total_supply_raw::text as total_supply_raw,
   l.decimals,
   l.lock_bps,
   l.cliff_ts,
@@ -151,7 +199,11 @@ select
 from public.locks l
 join public.tokens t on t.id = l.token_id
 where t.launch_verified_at is not null
-  and t.lock_verified_at is not null;
+  and t.lock_verified_at is not null
+  and exists (
+    select 1 from public.trust_kv k
+    where k.key = 'backfill_complete' and k.value = 'true'
+  );
 
 grant select on public.locks_public to anon, authenticated;
 
@@ -171,6 +223,7 @@ set search_path = pg_catalog, public
 as $$
 declare
   now_ts timestamptz := clock_timestamp();
+  lease uuid := gen_random_uuid();
 begin
   if p_limit < 1 or p_limit > 500 then
     raise exception 'Invalid claim limit' using errcode = '22023';
@@ -179,6 +232,8 @@ begin
     raise exception 'Invalid lease window' using errcode = '22023';
   end if;
 
+  -- One fencing token per claim batch. Completion/failure updates below must
+  -- carry it back so an expired-lease worker cannot clobber a fresher lease.
   return query
   with claimable as (
     select id
@@ -193,11 +248,133 @@ begin
   )
   update public.webhook_inbox w
   set locked_until = now_ts + make_interval(secs => p_lease_seconds),
+      lease_id = lease,
       attempts = w.attempts + 1
   from claimable c
   where w.id = c.id
   returning w.*;
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- complete_inbox_row / fail_inbox_row: fenced lease completions. Every write is
+-- conditioned on the caller's lease_id AND processed_at IS NULL, so a worker
+-- whose lease expired (and was reclaimed by another run) cannot overwrite the
+-- new owner's result (finding 8). Returns the number of rows actually updated.
+-- ---------------------------------------------------------------------------
+create or replace function public.complete_inbox_row(
+  p_id uuid,
+  p_lease_id uuid,
+  p_processed_at timestamptz
+)
+returns integer
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  updated integer;
+begin
+  update public.webhook_inbox
+  set processed_at = p_processed_at, locked_until = null
+  where id = p_id
+    and lease_id = p_lease_id
+    and processed_at is null;
+  get diagnostics updated = row_count;
+  return updated;
+end;
+$$;
+
+create or replace function public.fail_inbox_row(
+  p_id uuid,
+  p_lease_id uuid,
+  p_dead_letter boolean,
+  p_next_retry_at timestamptz
+)
+returns integer
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  updated integer;
+begin
+  update public.webhook_inbox
+  set dead_lettered = case when p_dead_letter then true else dead_lettered end,
+      next_retry_at = case when p_dead_letter then next_retry_at else p_next_retry_at end,
+      locked_until = null
+  where id = p_id
+    and lease_id = p_lease_id
+    and processed_at is null;
+  get diagnostics updated = row_count;
+  return updated;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- commit_lock_reconciliation: the single atomic lock+token authority (finding 5).
+-- Updates locks.status/withdrawn_amount AND the projected tokens.trust_tier +
+-- tier_computed_at + policy_version in ONE transaction, so lock state and token
+-- tier can never diverge between two separate round-trips. The projection is
+-- computed by the caller from the canonical lock + persisted github_tier and
+-- passed in; this function only commits it transactionally.
+-- ---------------------------------------------------------------------------
+create or replace function public.commit_lock_reconciliation(
+  p_lock_id uuid,
+  p_token_id uuid,
+  p_status text,
+  p_withdrawn_amount numeric,
+  p_verified_at timestamptz,
+  p_verified_signature text,
+  p_verified_slot bigint,
+  p_trust_tier int,
+  p_policy_version int
+)
+returns void
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  update public.locks
+  set status = p_status,
+      withdrawn_amount = p_withdrawn_amount,
+      last_verified_at = p_verified_at,
+      last_verified_signature = coalesce(p_verified_signature, last_verified_signature),
+      last_verified_slot = coalesce(p_verified_slot, last_verified_slot)
+  where id = p_lock_id;
+
+  update public.tokens
+  set trust_tier = p_trust_tier,
+      tier_computed_at = p_verified_at,
+      policy_version = p_policy_version
+  where id = p_token_id;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Function grants: definer functions run as owner, so they must NOT be callable
+-- by PUBLIC/anon/authenticated (Postgres grants execute to PUBLIC by default).
+-- Only the server's service_role may invoke them (finding 1).
+-- ---------------------------------------------------------------------------
+revoke all on function public.claim_webhook_inbox(integer, integer)
+  from public, anon, authenticated;
+revoke all on function public.complete_inbox_row(uuid, uuid, timestamptz)
+  from public, anon, authenticated;
+revoke all on function public.fail_inbox_row(uuid, uuid, boolean, timestamptz)
+  from public, anon, authenticated;
+revoke all on function public.commit_lock_reconciliation(
+  uuid, uuid, text, numeric, timestamptz, text, bigint, int, int
+) from public, anon, authenticated;
+
+grant execute on function public.claim_webhook_inbox(integer, integer)
+  to service_role;
+grant execute on function public.complete_inbox_row(uuid, uuid, timestamptz)
+  to service_role;
+grant execute on function public.fail_inbox_row(uuid, uuid, boolean, timestamptz)
+  to service_role;
+grant execute on function public.commit_lock_reconciliation(
+  uuid, uuid, text, numeric, timestamptz, text, bigint, int, int
+) to service_role;
 
 commit;

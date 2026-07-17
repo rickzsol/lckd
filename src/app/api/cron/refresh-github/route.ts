@@ -6,6 +6,7 @@ import { calculateTrustTier } from "@/lib/github/tierCalculator";
 import { verifyLiveUrl } from "@/lib/github/urlVerifier";
 import { projectTrust, TRUST_POLICY_VERSION } from "@/lib/trust/projection";
 import { type Token, type GitHubProfile } from "@/types";
+import type { LockStatus } from "@/types/trust";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -26,7 +27,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Cron service unavailable" }, { status: 503 });
   }
   const githubToken = process.env.GITHUB_PAT;
-  const now = new Date();
   // The standalone wall-clock downgrade is retired: tier flooring for expired
   // locks is a property of the single trust projection (see refreshToken), which
   // the reconcile-locks sweep and this GitHub refresh both compute.
@@ -52,10 +52,13 @@ export async function GET(req: Request) {
 
     if (!tokens || tokens.length === 0) break;
 
-    // Filter to tokens with active locks
-    const activeTokens = (
-      tokens as Array<Token & { lock_verified_at: string | null; lock_unlock_at: string | null }>
-    ).filter((token) => token.lock_unlock_at && new Date(token.lock_unlock_at) > now);
+    // Every launch + lock verified token is re-projected, including ones past
+    // their cliff: the projection floors an expired lock to LOCKED, so skipping
+    // expired tokens would leave a stale high tier standing (finding 5). The
+    // canonical lock row (read per token) is the authority for withdrawn/anomalous.
+    const activeTokens = tokens as Array<
+      Token & { lock_verified_at: string | null; lock_unlock_at: string | null }
+    >;
 
     // Process in batches of BATCH_CONCURRENCY
     for (let i = 0; i < activeTokens.length; i += BATCH_CONCURRENCY) {
@@ -146,29 +149,51 @@ async function refreshToken(
     isLockVerified: true,
   });
 
-  // Single projection: the GitHub-derived tier only holds while the lock is
-  // genuinely locked. An eligible-but-unwithdrawn lock (cliff passed) floors to
-  // LOCKED here rather than in a separate wall-clock downgrade pass.
-  const lockUnlockAt = (token as Token & { lock_unlock_at: string | null }).lock_unlock_at;
   const nowMs = Date.now();
   const nowIso = new Date(nowMs).toISOString();
-  const lockEvidence = lockUnlockAt
+
+  // Lock evidence comes from the CANONICAL lock row when one exists (the single
+  // authority the reconcile sweep also uses), not the legacy lock_unlock_at.
+  // That prevents restoring a high tier onto an already withdrawn/anomalous lock
+  // before its cliff (finding 5). Only when no canonical lock row has been
+  // backfilled yet do we fall back to lock_unlock_at as a coarse locked/eligible
+  // signal, which can never manufacture a withdrawn/anomalous state on its own.
+  const { data: lockRow, error: lockError } = await supabase
+    .from("locks")
+    .select("status, cliff_ts")
+    .eq("token_id", token.id)
+    .eq("canonical", true)
+    .maybeSingle();
+  if (lockError) throw new Error(`Lock lookup failed: ${lockError.message}`);
+
+  const lockUnlockAt = (token as Token & { lock_unlock_at: string | null }).lock_unlock_at;
+  const lockEvidence = lockRow
     ? {
-        status: (nowMs >= new Date(lockUnlockAt).getTime()
-          ? "unlock_eligible"
-          : "locked") as "locked" | "unlock_eligible",
-        cliffTs: lockUnlockAt,
+        status: lockRow.status as LockStatus,
+        cliffTs: lockRow.cliff_ts as string,
         lastVerifiedAt: null,
       }
-    : null;
+    : lockUnlockAt
+      ? {
+          status: (nowMs >= new Date(lockUnlockAt).getTime()
+            ? "unlock_eligible"
+            : "locked") as LockStatus,
+          cliffTs: lockUnlockAt,
+          lastVerifiedAt: null,
+        }
+      : null;
   const projection = projectTrust(lockEvidence, { githubTier }, nowMs, nowIso);
 
   const isChanged = projection.tier !== token.trust_tier;
 
+  // Persist github_tier as INDEPENDENT evidence alongside the projected tier, so
+  // the original GitHub tier survives the projection's flooring and is never
+  // reconstructed from the already-floored trust_tier (finding 5).
   const { error: updateError } = await supabase
     .from("tokens")
     .update({
       trust_tier: projection.tier,
+      github_tier: githubTier,
       tier_computed_at: projection.tierComputedAt,
       policy_version: TRUST_POLICY_VERSION,
     })

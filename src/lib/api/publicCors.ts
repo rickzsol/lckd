@@ -37,6 +37,17 @@ export function publicOptions(): NextResponse {
 }
 
 /**
+ * 405 for unsupported methods on a public route, carrying the same `*` CORS and
+ * an `Allow` header. Without an explicit handler Next.js answers unsupported
+ * methods itself with no CORS, so a browser sees an opaque cross-origin failure
+ * instead of a well-formed 405 (finding 13). Wire this to every non-GET method
+ * on the public routes.
+ */
+export function publicMethodNotAllowed(): NextResponse {
+  return publicError("Method not allowed", 405, { Allow: "GET, HEAD, OPTIONS" });
+}
+
+/**
  * Rate-limit guard for public routes. Returns a `*`-CORS 429/503 when limited or
  * when the limiter is unavailable; null when the request may proceed. The shared
  * limiter emits static single-origin CORS, so we re-clothe its response and copy

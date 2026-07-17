@@ -29,15 +29,30 @@ export interface LockResponseBlock {
 
 /**
  * Basis-point supply share derived from the finalized denominator persisted on
- * the lock (raw supply + decimals), never from tokens.lock_percentage. Null when
- * the denominator has not been backfilled yet, so callers render "unknown"
- * rather than a wrong number.
+ * the lock (raw supply + decimals), never from tokens.lock_percentage. Both
+ * inputs are raw decimal strings (u64/u128); the ratio is computed with BigInt
+ * so no operand is ever narrowed through a JS number (finding 9). Null when the
+ * denominator has not been backfilled yet or an input is not a valid integer, so
+ * callers render "unknown" rather than a wrong number.
  */
-export function pctOfSupply(depositedAmount: string, totalSupplyRaw: number | null): number | null {
-  if (totalSupplyRaw === null || totalSupplyRaw <= 0) return null;
-  const deposited = Number(depositedAmount);
-  if (!Number.isFinite(deposited)) return null;
-  return (deposited / totalSupplyRaw) * 100;
+export function pctOfSupply(
+  depositedAmount: string,
+  totalSupplyRaw: string | null,
+): number | null {
+  if (totalSupplyRaw === null) return null;
+  let deposited: bigint;
+  let supply: bigint;
+  try {
+    deposited = BigInt(depositedAmount);
+    supply = BigInt(totalSupplyRaw);
+  } catch {
+    return null;
+  }
+  if (supply <= BigInt(0) || deposited < BigInt(0)) return null;
+  // Scale by 1e6 for sub-percent precision, then divide back to a percentage.
+  const SCALE = BigInt(1_000_000);
+  const scaled = (deposited * BigInt(100) * SCALE) / supply;
+  return Number(scaled) / Number(SCALE);
 }
 
 export function buildLockBlock(row: LockPublicRow, now: number): LockResponseBlock {

@@ -7,20 +7,29 @@
  * and only then does a follow-up migration enforce NOT NULL. Never enforce
  * NOT NULL before a verified backfill.
  *
- * Stages:
- *   1. Read verified tokens (launch_verified_at + lock_verified_at not null)
- *      joined to launch_intents for the stream metadata id / escrow / recipient.
- *   2. For each, read the finalized Streamflow stream + mint supply/decimals via
- *      RPC and compute lock_bps = deposited * 10000 / total_supply_raw.
- *   3. Insert a canonical lock row (nullable-first: denominator may be null if
- *      RPC verification fails, flagged for a later re-run).
+ * Correctness properties (findings 9 & 10):
+ *  - Keyset pagination over tokens.id: every verified token is reachable across
+ *    runs, not just the first `--limit` rows.
+ *  - On conflict it UPDATES nullable denominator fields (and status), so a rerun
+ *    fills rows whose denominator was missing on a previous pass instead of
+ *    ignoring them.
+ *  - Raw amounts (deposited, withdrawn, total_supply) are written as decimal
+ *    STRINGS; the u64/u128 supply is never narrowed through Number().
+ *  - Status is DERIVED from finalized on-chain state (locked / unlock_eligible /
+ *    withdrawn / anomalous), not hardcoded to "locked".
+ *  - Missing provenance (no stream metadata id, or no creation signature/slot)
+ *    is rejected for that row rather than substituted with placeholders like
+ *    creation_slot 0.
+ *  - Public availability is gated: locks_public returns nothing until this script
+ *    records trust_kv.backfill_complete = 'true', which it only does when a full
+ *    pass leaves ZERO canonical locks with a null denominator. So `lock: null`
+ *    is never exposed to the public between migration and a verified backfill.
  *
  * This is a TOOL, not a route. Run manually with tsx once production Supabase is
- * restored. It is idempotent via the locks_stream_unique constraint (upsert
- * ignore). It does NOT mutate tokens or tiers.
+ * restored.
  *
  * Usage: SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... HELIUS_RPC_URL=... \
- *        npx tsx tools/backfill-locks.ts [--dry-run] [--limit N]
+ *        npx tsx tools/backfill-locks.ts [--dry-run] [--page-size N]
  *
  * BLOCKER NOTE: production Supabase is offline in this environment, so this
  * script is written against the same client/RPC types the app uses and is not
@@ -29,19 +38,19 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import { getMint, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { createClient } from "@supabase/supabase-js";
-import { ICluster, PROGRAM_ID, SolanaStreamClient } from "@streamflow/stream";
+import { ICluster, PROGRAM_ID, SolanaStreamClient, StreamType } from "@streamflow/stream";
 
 interface CliArgs {
   dryRun: boolean;
-  limit: number;
+  pageSize: number;
 }
 
 function parseArgs(argv: string[]): CliArgs {
-  const limitFlag = argv.indexOf("--limit");
-  const limit = limitFlag >= 0 ? Number.parseInt(argv[limitFlag + 1] ?? "", 10) : 500;
+  const flag = argv.indexOf("--page-size");
+  const pageSize = flag >= 0 ? Number.parseInt(argv[flag + 1] ?? "", 10) : 200;
   return {
     dryRun: argv.includes("--dry-run"),
-    limit: Number.isFinite(limit) && limit > 0 ? limit : 500,
+    pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 1_000) : 200,
   };
 }
 
@@ -80,6 +89,7 @@ async function readFinalizedSupply(
   return { totalSupplyRaw: mintData.supply, decimals: mintData.decimals };
 }
 
+/** lock_bps = deposited * 10000 / totalSupply, computed with BigInt only. */
 function computeLockBps(deposited: bigint, totalSupplyRaw: bigint): number | null {
   if (totalSupplyRaw <= BigInt(0)) return null;
   const bps = (deposited * BigInt(10_000)) / totalSupplyRaw;
@@ -87,11 +97,29 @@ function computeLockBps(deposited: bigint, totalSupplyRaw: bigint): number | nul
   return Number.isFinite(value) && value >= 0 && value <= 10_000 ? value : null;
 }
 
+/** Derives lock status from finalized amounts + cliff, mirroring the runtime
+ * derivation: pre-cliff movement is anomalous, full/closed withdrawal is
+ * withdrawn, partial or time-eligible is unlock_eligible, else locked. */
+function deriveBackfillStatus(
+  deposited: bigint,
+  withdrawn: bigint,
+  closed: boolean,
+  cliffRawSeconds: number,
+  nowSeconds: number,
+): "locked" | "unlock_eligible" | "withdrawn" | "anomalous" {
+  if (withdrawn > deposited) return "anomalous";
+  const beforeCliff = nowSeconds < cliffRawSeconds;
+  if (beforeCliff && (withdrawn > BigInt(0) || closed)) return "anomalous";
+  if (closed || (deposited > BigInt(0) && withdrawn >= deposited)) return "withdrawn";
+  if (withdrawn > BigInt(0)) return "unlock_eligible";
+  return nowSeconds >= cliffRawSeconds ? "unlock_eligible" : "locked";
+}
+
 interface VerifiedTokenRow {
   id: string;
   mint_address: string;
   creator_wallet: string;
-  lock_tx: string;
+  lock_tx: string | null;
   lock_amount: string;
   lock_verified_at: string;
   lock_unlock_at: string;
@@ -121,97 +149,164 @@ async function main(): Promise<void> {
   const clusterName = cluster.toString();
   const streamProgram = PROGRAM_ID[cluster];
 
-  const { data: tokens, error } = await supabase
-    .from("tokens")
-    .select("id, mint_address, creator_wallet, lock_tx, lock_amount, lock_verified_at, lock_unlock_at")
-    .not("launch_verified_at", "is", null)
-    .not("lock_verified_at", "is", null)
-    .limit(args.limit);
-  if (error) throw new Error(`token read failed: ${error.message}`);
-
   let inserted = 0;
   let skipped = 0;
   let denominatorMissing = 0;
+  let afterId: string | null = null;
 
-  for (const token of (tokens ?? []) as VerifiedTokenRow[]) {
-    try {
-      const { data: intent } = await supabase
-        .from("launch_intents")
-        .select("token_id, stream_metadata_id, escrow_ata, recipient, creation_signature, creation_slot")
-        .eq("token_id", token.id)
-        .maybeSingle();
-      const launchIntent = intent as LaunchIntentRow | null;
+  // Keyset pagination over id ascending: every verified token is reachable.
+  for (;;) {
+    let query = supabase
+      .from("tokens")
+      .select("id, mint_address, creator_wallet, lock_tx, lock_amount, lock_verified_at, lock_unlock_at")
+      .not("launch_verified_at", "is", null)
+      .not("lock_verified_at", "is", null)
+      .order("id", { ascending: true })
+      .limit(args.pageSize);
+    if (afterId) query = query.gt("id", afterId);
 
-      const streamId = launchIntent?.stream_metadata_id;
-      if (!streamId) {
-        console.warn(`[backfill] no stream metadata for token ${token.id}, skipping`);
-        skipped += 1;
-        continue;
-      }
+    const { data, error } = await query;
+    if (error) throw new Error(`token read failed: ${error.message}`);
+    const tokens = (data ?? []) as VerifiedTokenRow[];
+    if (tokens.length === 0) break;
+    afterId = tokens[tokens.length - 1].id;
 
-      const stream = await streamClient.getOne({ id: streamId });
-      const deposited = BigInt(stream.depositedAmount.toString());
-      const withdrawn = BigInt(stream.withdrawnAmount.toString());
-      const cliffRaw = stream.cliff;
-
-      let totalSupplyRaw: bigint | null = null;
-      let decimals: number | null = null;
-      let lockBps: number | null = null;
+    for (const token of tokens) {
       try {
-        const denom = await readFinalizedSupply(connection, token.mint_address);
-        totalSupplyRaw = denom.totalSupplyRaw;
-        decimals = denom.decimals;
-        lockBps = computeLockBps(deposited, denom.totalSupplyRaw);
-      } catch (denomError) {
-        denominatorMissing += 1;
-        console.warn(`[backfill] denominator unresolved for ${token.mint_address}:`, denomError);
+        const { data: intent } = await supabase
+          .from("launch_intents")
+          .select("token_id, stream_metadata_id, escrow_ata, recipient, creation_signature, creation_slot")
+          .eq("token_id", token.id)
+          .maybeSingle();
+        const launchIntent = intent as LaunchIntentRow | null;
+
+        const streamId = launchIntent?.stream_metadata_id;
+        if (!streamId) {
+          console.warn(`[backfill] no stream metadata for token ${token.id}, skipping`);
+          skipped += 1;
+          continue;
+        }
+
+        // Reject missing provenance rather than substituting placeholders. The
+        // creation signature/slot must come from the launch intent or lock_tx;
+        // there is no valid "slot 0" fallback (finding 10).
+        const creationSignature = launchIntent?.creation_signature ?? token.lock_tx ?? null;
+        const creationSlot = launchIntent?.creation_slot ?? null;
+        if (!creationSignature || creationSlot === null) {
+          console.warn(
+            `[backfill] missing provenance (sig/slot) for token ${token.id}, skipping`,
+          );
+          skipped += 1;
+          continue;
+        }
+
+        const stream = await streamClient.getOne({ id: streamId });
+        if (stream.type !== StreamType.Lock) {
+          console.warn(`[backfill] stream ${streamId} is not a lock, skipping ${token.id}`);
+          skipped += 1;
+          continue;
+        }
+        const deposited = BigInt(stream.depositedAmount.toString());
+        const withdrawn = BigInt(stream.withdrawnAmount.toString());
+        const cliffRaw = stream.cliff;
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        const status = deriveBackfillStatus(
+          deposited,
+          withdrawn,
+          stream.closed === true,
+          cliffRaw,
+          nowSeconds,
+        );
+
+        let totalSupplyRaw: bigint | null = null;
+        let decimals: number | null = null;
+        let lockBps: number | null = null;
+        try {
+          const denom = await readFinalizedSupply(connection, token.mint_address);
+          totalSupplyRaw = denom.totalSupplyRaw;
+          decimals = denom.decimals;
+          lockBps = computeLockBps(deposited, denom.totalSupplyRaw);
+        } catch (denomError) {
+          denominatorMissing += 1;
+          console.warn(`[backfill] denominator unresolved for ${token.mint_address}:`, denomError);
+        }
+
+        const row = {
+          token_id: token.id,
+          cluster: clusterName,
+          mint: token.mint_address,
+          stream_program: streamProgram,
+          stream_id: streamId,
+          escrow_ata: launchIntent?.escrow_ata ?? stream.escrowTokens ?? "",
+          recipient: launchIntent?.recipient ?? stream.recipient,
+          // Raw amounts as decimal strings; never Number(u64).
+          deposited_amount: deposited.toString(),
+          cliff_ts: new Date(cliffRaw * 1000).toISOString(),
+          cliff_ts_raw: cliffRaw,
+          withdrawn_amount: withdrawn.toString(),
+          total_supply_raw: totalSupplyRaw !== null ? totalSupplyRaw.toString() : null,
+          decimals,
+          lock_bps: lockBps,
+          status,
+          canonical: true,
+          creation_signature: creationSignature,
+          creation_slot: creationSlot,
+        };
+
+        if (args.dryRun) {
+          console.log(`[backfill] would upsert lock for ${token.mint_address}`, {
+            status,
+            lockBps,
+            hasDenominator: totalSupplyRaw !== null,
+          });
+          continue;
+        }
+
+        // Update-on-conflict: a rerun fills a previously-null denominator and
+        // refreshes the derived status instead of ignoring the existing row.
+        const { error: insertError } = await supabase
+          .from("locks")
+          .upsert(row, { onConflict: "cluster,stream_program,stream_id", ignoreDuplicates: false });
+        if (insertError) throw new Error(insertError.message);
+        inserted += 1;
+      } catch (rowError) {
+        skipped += 1;
+        console.error(`[backfill] failed for token ${token.id}:`, rowError);
       }
-
-      const row = {
-        token_id: token.id,
-        cluster: clusterName,
-        mint: token.mint_address,
-        stream_program: streamProgram,
-        stream_id: streamId,
-        escrow_ata: launchIntent?.escrow_ata ?? stream.escrowTokens ?? "",
-        recipient: launchIntent?.recipient ?? stream.recipient,
-        deposited_amount: deposited.toString(),
-        cliff_ts: new Date(cliffRaw * 1000).toISOString(),
-        cliff_ts_raw: cliffRaw,
-        withdrawn_amount: withdrawn.toString(),
-        total_supply_raw: totalSupplyRaw !== null ? Number(totalSupplyRaw) : null,
-        decimals,
-        lock_bps: lockBps,
-        status: "locked" as const,
-        canonical: true,
-        creation_signature: launchIntent?.creation_signature ?? token.lock_tx,
-        creation_slot: launchIntent?.creation_slot ?? 0,
-      };
-
-      if (args.dryRun) {
-        console.log(`[backfill] would insert lock for ${token.mint_address}`, {
-          lockBps,
-          hasDenominator: totalSupplyRaw !== null,
-        });
-        continue;
-      }
-
-      const { error: insertError } = await supabase
-        .from("locks")
-        .upsert(row, { onConflict: "cluster,stream_program,stream_id", ignoreDuplicates: true });
-      if (insertError) throw new Error(insertError.message);
-      inserted += 1;
-    } catch (rowError) {
-      skipped += 1;
-      console.error(`[backfill] failed for token ${token.id}:`, rowError);
     }
+
+    if (tokens.length < args.pageSize) break;
+  }
+
+  // Gate public availability on a verified complete pass: flip backfill_complete
+  // only when ZERO canonical locks still have a null denominator (finding 10).
+  let backfillComplete = false;
+  if (!args.dryRun) {
+    const { count, error: countError } = await supabase
+      .from("locks")
+      .select("id", { count: "exact", head: true })
+      .eq("canonical", true)
+      .or("total_supply_raw.is.null,decimals.is.null,lock_bps.is.null");
+    if (countError) throw new Error(`completion check failed: ${countError.message}`);
+    backfillComplete = (count ?? 0) === 0;
+    const { error: kvError } = await supabase
+      .from("trust_kv")
+      .upsert(
+        { key: "backfill_complete", value: backfillComplete ? "true" : "false", updated_at: new Date().toISOString() },
+        { onConflict: "key" },
+      );
+    if (kvError) throw new Error(`backfill_complete update failed: ${kvError.message}`);
   }
 
   console.log(
-    `[backfill] done. inserted=${inserted} skipped=${skipped} denominatorMissing=${denominatorMissing} dryRun=${args.dryRun}`,
+    `[backfill] done. inserted=${inserted} skipped=${skipped} ` +
+      `denominatorMissing=${denominatorMissing} backfillComplete=${backfillComplete} dryRun=${args.dryRun}`,
   );
   if (denominatorMissing > 0) {
-    console.log("[backfill] re-run once RPC is stable to fill missing denominators BEFORE enforcing NOT NULL.");
+    console.log(
+      "[backfill] re-run once RPC is stable to fill missing denominators. " +
+        "locks_public stays gated (empty) until backfill_complete flips to true.",
+    );
   }
 }
 
