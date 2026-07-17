@@ -76,13 +76,13 @@ function ReviewForm({ w }: { w: WizardContext }) {
         {[
           {
             n: "1",
-            label: "Create + Buy",
-            detail: `${w.config.name} ($${w.config.ticker}) on pump.fun, ${w.config.buyAmountSol} SOL buy`,
+            label: "Prepare Lookup Table",
+            detail: "Creates the temporary address lookup table for the atomic transaction",
           },
           {
             n: "2",
-            label: "Time Lock Tokens",
-            detail: `${w.config.lockPercentage}% locked for ${w.config.lockDurationDays} days via Streamflow`,
+            label: "Create + Buy + Lock",
+            detail: `${w.config.buyAmountSol} SOL buy with ${w.config.lockPercentage}% locked for ${w.config.lockDurationDays} days`,
           },
         ].map((item) => (
           <div
@@ -122,9 +122,8 @@ function ReviewForm({ w }: { w: WizardContext }) {
       {/* Info box */}
       <div className="warning-box mb-4">
         <span className="callout-title">before you sign</span>
-        Two transactions and two wallet approvals. Create and buy confirms first. The
-        Streamflow time lock is built and submitted second. A failure in the second transaction
-        does not reverse token creation.
+        Two wallet approvals. The first prepares the lookup table. The second atomically creates,
+        buys, and locks the token. No token is created unless the atomic transaction executes.
       </div>
 
       {/* Actions */}
@@ -199,7 +198,7 @@ function LaunchingView({ w }: { w: WizardContext }) {
       </div>
 
       {/* Wallet hint for signature phases */}
-      {(w.launchPhase === 2 || w.launchPhase === 6) && (
+      {(w.launchPhase === 2 || w.launchPhase === 5) && (
         <div className="mt-6 rounded-control border border-accent/20 bg-accent-dim px-4 py-2.5 font-mono text-[11px] text-accent">
           Check your wallet for a signature request
         </div>
@@ -250,13 +249,19 @@ function ErrorView({ w }: { w: WizardContext }) {
   );
 }
 
-// Partial view (create succeeded, lock failed)───────────────────────────
+// Recovery view──────────────────────────────────────────────────────────
 
 function PartialView({ w }: { w: WizardContext }) {
   const { publicKey, signTransaction } = useWallet();
   const { connection } = useConnection();
+  const isAtomicSubmitted = w.recoveryStatus === "atomic_submitted";
+  const isRecoveryUnknown = !w.recoveryStatus;
 
-  const handleRetryLock = () => {
+  const handleRecovery = () => {
+    if (isRecoveryUnknown) {
+      window.location.reload();
+      return;
+    }
     if (!publicKey || !signTransaction) return;
     w.retryLock({ publicKey, signTransaction, connection });
   };
@@ -273,9 +278,11 @@ function PartialView({ w }: { w: WizardContext }) {
         Launch needs attention
       </div>
       <div className="mb-4 max-w-[360px] text-center font-mono text-xs text-text-3">
-        A transaction signature was submitted. This page will not create another token or
-        lock while that signature is stored. Check the receipts before retrying, and do not
-        treat the tokens as locked until the Streamflow account verifies.
+        {isRecoveryUnknown
+          ? "Recovery state could not be loaded. Do not start another launch until it is rechecked."
+          : isAtomicSubmitted
+            ? "The atomic launch is paused until its issued transaction is reconciled. The app will not issue another launch while this recovery state exists."
+            : "No token was created by the atomic transaction. Lookup-table recovery must be reconciled and any created table safely closed before another launch can begin."}
       </div>
 
       {w.launchResult?.createTxSignature && (
@@ -285,11 +292,12 @@ function PartialView({ w }: { w: WizardContext }) {
           rel="noopener noreferrer"
           className="mb-4 font-mono text-[10px] text-accent-400 underline underline-offset-2 hover:text-accent-300"
         >
-          View create tx on Solscan
+          View atomic launch on Solscan
         </a>
       )}
 
-      {w.launchResult?.lockTxSignature && (
+      {w.launchResult?.lockTxSignature &&
+        w.launchResult.lockTxSignature !== w.launchResult.createTxSignature && (
         <a
           href={`${SOLSCAN_BASE}/tx/${w.launchResult.lockTxSignature}`}
           target="_blank"
@@ -307,8 +315,12 @@ function PartialView({ w }: { w: WizardContext }) {
         </div>
       )}
 
-      <button type="button" onClick={handleRetryLock} className="btn-launch w-full max-w-[320px]">
-        VERIFY / RETRY LOCK
+      <button type="button" onClick={handleRecovery} className="btn-launch w-full max-w-[320px]">
+        {isRecoveryUnknown
+          ? "RECHECK RECOVERY STATE"
+          : isAtomicSubmitted
+            ? "RECHECK ATOMIC RECEIPT"
+            : "RECHECK / CLEAN UP LOOKUP TABLE"}
       </button>
     </div>
   );
@@ -337,7 +349,6 @@ const CONFETTI = Array.from({ length: 20 }, (_, i) => {
 function SuccessView({ w }: { w: WizardContext }) {
   const mintAddr = w.launchResult?.mintAddress;
   const createSig = w.launchResult?.createTxSignature;
-  const lockSig = w.launchResult?.lockTxSignature;
 
   return (
     <div className="flex flex-col items-center py-10">
@@ -411,16 +422,6 @@ function SuccessView({ w }: { w: WizardContext }) {
               className="btn-secondary flex-1 py-2.5 text-center text-[10px]"
             >
               pump.fun
-            </a>
-          )}
-          {lockSig && (
-            <a
-              href={`${SOLSCAN_BASE}/tx/${lockSig}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-secondary flex-1 py-2.5 text-center text-[10px]"
-            >
-              Lock receipt
             </a>
           )}
           {createSig && (

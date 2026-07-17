@@ -66,9 +66,9 @@ export default function LaunchPage() {
           You will connect a Solana wallet separately when it is time to sign.
         </p>
         <div className="warning-box mt-6">
-          <span className="callout-title">two transactions</span>
-          The workflow requires two transactions. The create and buy transaction confirms
-          first. The Streamflow time lock requires a second approval and can fail independently.
+          <span className="callout-title">two approvals</span>
+          The first approval creates the address lookup table. The second atomically creates,
+          buys, and locks the token in one transaction.
         </div>
         <button
           type="button"

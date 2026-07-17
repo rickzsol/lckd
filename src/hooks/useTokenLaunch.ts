@@ -357,6 +357,7 @@ export function useTokenLaunch(config: LaunchConfig) {
     let isSetupCheckpointed = false;
     let setupLanded = false;
     let atomicSignature = "";
+    let isAtomicCheckpointed = false;
     try {
       const requiredSol = config.buyAmountSol + CREATE_TX_SOL_OVERHEAD + LOCK_TX_SOL_OVERHEAD;
       const walletSol = (await connection.getBalance(publicKey, "confirmed")) / LAMPORTS_PER_SOL;
@@ -583,6 +584,7 @@ export function useTokenLaunch(config: LaunchConfig) {
       });
       stateVersion = atomicCheckpoint.stateVersion;
       applyRecoveryState(atomicCheckpoint);
+      isAtomicCheckpointed = true;
       setLaunchResult({
         mintAddress,
         createTxSignature: atomicSignature,
@@ -632,7 +634,7 @@ export function useTokenLaunch(config: LaunchConfig) {
         config.buyAmountSol,
       );
       if (stateVersion !== null) setRecoveryStateVersion(stateVersion);
-      if (atomicSignature) {
+      if (isAtomicCheckpointed) {
         setLaunchStatus("partial");
         setErrorMessage(`Atomic launch submitted; receipt reconciliation is pending: ${message}`);
       } else if (setupLanded || isSetupCheckpointed) {

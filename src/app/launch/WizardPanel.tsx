@@ -21,14 +21,13 @@ export default function WizardPanel({ wizard }: { wizard: WizardContext }) {
         )}
       </div>
       <p className="mb-6 font-mono text-xs text-text-3">
-        Create on pump.fun &middot; confirm &middot; lock separately with Streamflow
+        Prepare lookup table &middot; create, buy, and lock atomically
       </p>
 
       <div className="warning-box mb-6">
-        <span className="callout-title">lock is a separate signature</span>
-        Locking requires a second wallet signature. If token creation succeeds and the lock
-        fails, the token remains created and the purchased tokens remain in your wallet until
-        you retry the lock.
+        <span className="callout-title">two wallet approvals</span>
+        Launch requires two wallet signatures. The first prepares the lookup table. The second
+        creates, buys, and locks the token atomically with Streamflow.
       </div>
 
       <div className="relative overflow-hidden rounded-modal border border-line-default bg-surface p-5 sm:p-8">

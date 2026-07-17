@@ -172,17 +172,18 @@ function useDemoWizard(): WizardContext {
       launchStatus: status,
       launchPhase: 2,
       launchPhases: [...LAUNCH_PHASES_WITH_LOCK],
+      recoveryStatus: status === "partial" ? "atomic_submitted" : null,
       launchResult:
         status === "success"
           ? DEMO_RESULT
           : status === "partial"
-            ? { ...DEMO_RESULT, lockTxSignature: null, lockMetadataId: null }
+            ? { ...DEMO_RESULT, lockTxSignature: DEMO_RESULT.createTxSignature }
             : null,
       errorMessage:
         status === "error"
-          ? "Demo error: the create transaction was rejected in the wallet."
+          ? "Demo error: the atomic transaction was rejected in the wallet."
           : status === "partial"
-            ? "Demo state: the token was created but the Streamflow lock signature was rejected."
+            ? "Demo state: the atomic transaction is awaiting receipt reconciliation."
             : null,
       computedTier: TrustTier.SHIPPED,
       tierLabel: "SHIPPED",
