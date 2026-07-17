@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "./authOptions";
 import { getServerClient } from "@/lib/supabase";
 import { apiError } from "./helpers";
 
