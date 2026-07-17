@@ -1,7 +1,6 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import {
   ICluster,
-  PROGRAM_ID,
   SolanaStreamClient,
   StreamType,
 } from "@streamflow/stream";
@@ -54,12 +53,17 @@ export interface DecodedStream {
   closed: boolean;
 }
 
-/** Discriminated read outcome. `closed` requires PROVEN account absence under
- * the pinned program; `rpc_error` and `not_lock` never imply a withdrawal. */
+/**
+ * Discriminated read outcome. Withdrawal evidence lives ONLY in the `ok` stream
+ * (an existing account whose withdrawnAmount reached the deposit, or a decoded
+ * closed flag observed at/after the cliff). A bare absent account is `not_found`,
+ * never a withdrawal (finding 2): a wrong stream id, wrong cluster, or an
+ * unindexed account all read as null, and absence alone is not proof the deposit
+ * left the escrow. `rpc_error` likewise never implies a withdrawal.
+ */
 export type StreamReadResult =
   | { kind: "ok"; stream: DecodedStream }
-  | { kind: "closed" } // account provably gone under the pinned program
-  | { kind: "not_found" } // account absent but closure not confirmed (owner unknown)
+  | { kind: "not_found" } // account absent: not proof of withdrawal
   | { kind: "rpc_error"; message: string };
 
 export interface LockVerificationResult {
@@ -97,39 +101,11 @@ function isAccountNotFound(error: unknown): boolean {
 }
 
 /**
- * Confirms an account is truly gone (closed after withdrawal) rather than
- * transiently unreadable. Returns "closed" only when the RPC positively reports
- * a null account (finalized) AND the pinned program is a valid pubkey; any RPC
- * throw is surfaced as an error so absence-from-failure is never "withdrawn".
- */
-async function confirmClosed(
-  connection: Connection,
-  streamId: string,
-): Promise<StreamReadResult> {
-  let streamPk: PublicKey;
-  try {
-    streamPk = new PublicKey(streamId);
-  } catch {
-    return { kind: "rpc_error", message: `Invalid stream id ${streamId}` };
-  }
-  try {
-    const info = await connection.getAccountInfo(streamPk, "finalized");
-    // A finalized null means the metadata account no longer exists on chain.
-    // Streamflow closes the metadata account only after a full withdrawal.
-    return info === null ? { kind: "closed" } : { kind: "not_found" };
-  } catch (error) {
-    return {
-      kind: "rpc_error",
-      message: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-/**
  * Reads a stream at finalized commitment and returns a discriminated outcome.
- * A getOne "not found" is re-checked against the raw finalized account so we can
- * distinguish a confirmed closure from an RPC hiccup. Any other error is
- * `rpc_error`, never silently mapped to a withdrawal.
+ * The account owner is read first from raw finalized state: a null account is an
+ * unconfirmed absence (`not_found`), never a withdrawal (finding 2), and any RPC
+ * throw is `rpc_error`, never silently mapped to a withdrawal. Withdrawal is
+ * derived only from a decoded stream's amounts/closed flag.
  */
 export async function readFinalizedStreamState(
   connection: Connection,
@@ -141,13 +117,39 @@ export async function readFinalizedStreamState(
     commitment: "finalized",
   });
 
+  // Read the ACTUAL account owner from finalized state instead of assuming the
+  // decoder's pinned program (finding 3). getOne would happily decode bytes even
+  // if the account were owned by an impostor program; the on-chain owner is the
+  // ground truth we carry into binding so a spoofed account under a different
+  // program can never pass the streamProgram check.
+  let ownerProgram: string;
+  try {
+    const info = await connection.getAccountInfo(new PublicKey(streamId), "finalized");
+    if (info === null) {
+      // Absent account: not proof of anything. Never a confirmed withdrawal
+      // (finding 2); surfaced as an unconfirmed absence so the caller aborts.
+      return { kind: "not_found" };
+    }
+    ownerProgram = info.owner.toBase58();
+  } catch (error) {
+    return {
+      kind: "rpc_error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
   let stream: Awaited<ReturnType<SolanaStreamClient["getOne"]>>;
   try {
     stream = await client.getOne({ id: streamId });
   } catch (error) {
     if (isAccountNotFound(error)) {
-      // getOne could not decode the account. Confirm it is genuinely gone.
-      return confirmClosed(connection, streamId);
+      // The owner read above already saw a live account, so a getOne decode miss
+      // here is an RPC hiccup or an undecodable (foreign-program) account, not a
+      // confirmed closure. Never map it to a withdrawal (finding 2).
+      return {
+        kind: "rpc_error",
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
     return {
       kind: "rpc_error",
@@ -158,9 +160,9 @@ export async function readFinalizedStreamState(
   return {
     kind: "ok",
     stream: {
-      // The SolanaStreamClient decodes only its own program's accounts; the
-      // Streamflow program id is pinned in the client. Carry it for binding.
-      streamProgram: streamProgramFor(connection),
+      // The account's on-chain owner, read above from finalized state. Binding
+      // compares this against the stored (pinned) program (finding 3).
+      streamProgram: ownerProgram,
       mint: stream.mint,
       sender: stream.sender,
       recipient: stream.recipient,
@@ -177,12 +179,6 @@ export async function readFinalizedStreamState(
       closed: stream.closed === true,
     },
   };
-}
-
-function streamProgramFor(connection: Connection): string {
-  // Program id is resolved by the SDK from the cluster; mirror that here so the
-  // binding check can compare it against the stored stream_program.
-  return PROGRAM_ID[inferCluster(connection.rpcEndpoint)];
 }
 
 /**
@@ -213,28 +209,54 @@ export function bindStreamToLock(
   if (String(stream.cliff) !== String(identity.cliffTsRaw)) {
     return "cliff timestamp mismatch";
   }
-  // Cliff-only schedule: start === cliff, the full deposit releases at the cliff,
-  // and there is no linear tail (single one-second period).
+  // Canonical full-cliff schedule per the Streamflow SDK. Nothing is unlockable
+  // before the cliff (calculateUnlockedAmount returns 0 while now < cliff), which
+  // start === cliff guarantees. The SDK's own isCliffCloseToDepositedAmount treats
+  // cliffAmount >= depositedAmount - 1 as a full cliff, and buildLockParams emits a
+  // one-unit residual tail (amountPerPeriod 1, period 1) rather than an exact
+  // cliffAmount === depositedAmount. Requiring strict equality wrongly rejects the
+  // documented pattern, so accept the SDK's range instead (finding 3-new).
   if (stream.start !== stream.cliff) return "start does not equal cliff";
-  if (stream.cliffAmount !== stream.depositedAmount) {
+  if (!isFullCliff(stream.cliffAmount, stream.depositedAmount)) {
     return "cliff does not release the full deposit";
   }
-  if (stream.period !== 1 || stream.amountPerPeriod !== BigInt(1)) {
-    return "not a single-period cliff schedule";
+  if (stream.end - stream.cliff > MAX_CLIFF_END_GAP_SECONDS) {
+    return "schedule has a post-cliff tail";
   }
-  if (stream.end - stream.cliff > 1) return "schedule has a post-cliff tail";
   return null;
+}
+
+/** The Streamflow SDK's MAX_CLIFF_END_GAP_SECONDS: a full-cliff lock unlocks the
+ * residual within one second of the cliff. Mirrored here so the bind check tracks
+ * the same tolerance the SDK's isTokenLock uses. */
+export const MAX_CLIFF_END_GAP_SECONDS = 1;
+
+/**
+ * Full-cliff acceptance mirroring the SDK's isCliffCloseToDepositedAmount:
+ * cliffAmount within [depositedAmount - 1, depositedAmount]. The canonical lock
+ * releases the whole deposit at the cliff except for at most a one-unit residual
+ * that unlocks in the same one-second window, so strict equality is wrong
+ * (finding 3-new). cliffAmount above the deposit is impossible on-chain and
+ * treated as not-a-full-cliff.
+ */
+export function isFullCliff(cliffAmount: bigint, depositedAmount: bigint): boolean {
+  if (cliffAmount > depositedAmount) return false;
+  return cliffAmount >= depositedAmount - BigInt(1);
 }
 
 /**
  * Pure derivation from stored + finalized on-chain state, over a bound stream.
+ *
+ * Withdrawal is PROVEN only from positive evidence on an existing stream account:
+ * withdrawnAmount reaching the deposit, or the decoded `closed` flag, both AT/AFTER
+ * the cliff (finding 2). A bare absent account never reaches here as a withdrawal:
+ * `not_found` and `rpc_error` throw so the caller aborts without inventing one.
  *
  * Pre-cliff movement is an EARLY BREACH of a cliff lock and is `anomalous`, never
  * `unlock_eligible`/`withdrawn` (finding 4):
  *  - any withdrawal observed before the cliff is anomalous,
  *  - a closed/fully-withdrawn escrow before the cliff is anomalous.
  * withdrawn exceeding deposited, or dropping below stored, is also `anomalous`.
- * A confirmed closure or full withdrawal AT/AFTER the cliff is `withdrawn`.
  */
 export function deriveWithdrawalStatus(
   storedWithdrawn: bigint,
@@ -247,19 +269,14 @@ export function deriveWithdrawalStatus(
   const beforeCliff = cliffKnown && now < cliffMs;
 
   if (read.kind === "rpc_error" || read.kind === "not_found") {
-    // Never invent a withdrawal from a read failure or unconfirmed absence.
+    // Never invent a withdrawal from a read failure or an unconfirmed absence.
+    // An absent account is not proof the deposit ever left the escrow: a wrong
+    // stream id or wrong cluster reads null too (finding 2).
     throw new StreamUnavailableError(
-      read.kind === "rpc_error" ? read.message : "stream account not confirmed closed",
+      read.kind === "rpc_error"
+        ? read.message
+        : "stream account absent: no positive withdrawal evidence",
     );
-  }
-
-  if (read.kind === "closed") {
-    // Escrow provably gone => fully withdrawn. Before the cliff this is an early
-    // breach of a cliff lock, not a normal release.
-    return {
-      withdrawnAmount: storedWithdrawn.toString(),
-      status: beforeCliff ? "anomalous" : "withdrawn",
-    };
   }
 
   const { depositedAmount, withdrawnAmount, closed } = read.stream;

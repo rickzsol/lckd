@@ -39,6 +39,7 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { getMint, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { createClient } from "@supabase/supabase-js";
 import { ICluster, PROGRAM_ID, SolanaStreamClient, StreamType } from "@streamflow/stream";
+import type BN from "bn.js";
 
 interface CliArgs {
   dryRun: boolean;
@@ -66,6 +67,24 @@ function inferCluster(rpcEndpoint: string): ICluster {
   if (endpoint.includes("testnet")) return ICluster.Testnet;
   if (endpoint.includes("localhost") || endpoint.includes("127.0.0.1")) return ICluster.Local;
   return ICluster.Mainnet;
+}
+
+/** Reads the on-chain owner of an account at finalized commitment. Returns null
+ * for an absent account (never treated as evidence). Used to assert the stream
+ * account is genuinely owned by the pinned Streamflow program (finding 3). */
+async function readAccountOwner(
+  connection: Connection,
+  address: string,
+): Promise<string | null> {
+  const info = await connection.getAccountInfo(new PublicKey(address), "finalized");
+  return info === null ? null : info.owner.toBase58();
+}
+
+/** Full-cliff acceptance mirroring the SDK's isCliffCloseToDepositedAmount:
+ * cliffAmount within [depositedAmount - 1, depositedAmount] (finding 3-new). */
+function isFullCliffAmount(cliffAmount: BN, depositedAmount: BN): boolean {
+  if (cliffAmount.gt(depositedAmount)) return false;
+  return cliffAmount.gte(depositedAmount.subn(1));
 }
 
 interface FinalizedDenominator {
@@ -200,6 +219,23 @@ async function main(): Promise<void> {
           continue;
         }
 
+        // Read the ACTUAL account owner from finalized state and require it to be
+        // the pinned Streamflow program (finding 3). getOne would decode bytes even
+        // under an impostor program; the on-chain owner is the ground truth.
+        const ownerProgram = await readAccountOwner(connection, streamId);
+        if (ownerProgram === null) {
+          console.warn(`[backfill] stream ${streamId} account absent for ${token.id}, skipping`);
+          skipped += 1;
+          continue;
+        }
+        if (ownerProgram !== streamProgram) {
+          console.warn(
+            `[backfill] stream ${streamId} owner ${ownerProgram} != pinned ${streamProgram} for ${token.id}, skipping`,
+          );
+          skipped += 1;
+          continue;
+        }
+
         const stream = await streamClient.getOne({ id: streamId });
         if (stream.type !== StreamType.Lock) {
           console.warn(`[backfill] stream ${streamId} is not a lock, skipping ${token.id}`);
@@ -215,7 +251,10 @@ async function main(): Promise<void> {
           skipped += 1;
           continue;
         }
-        if (!stream.cliffAmount.eq(stream.depositedAmount)) {
+        // SDK full-cliff acceptance: cliffAmount within [deposited - 1, deposited].
+        // buildLockParams emits a one-unit residual tail, so strict equality wrongly
+        // rejects valid locks (finding 3-new).
+        if (!isFullCliffAmount(stream.cliffAmount, stream.depositedAmount)) {
           console.warn(`[backfill] stream ${streamId} is not a full-cliff lock, skipping ${token.id}`);
           skipped += 1;
           continue;
@@ -224,6 +263,26 @@ async function main(): Promise<void> {
           console.warn(
             `[backfill] stream ${streamId} deposit ${stream.depositedAmount.toString()} != recorded ` +
               `lock_amount ${token.lock_amount} for ${token.id}, skipping`,
+          );
+          skipped += 1;
+          continue;
+        }
+        // Compare recipient + escrow against the stored provenance rather than
+        // silently trusting the decoded stream (finding 3). When the launch intent
+        // recorded them, the decoded stream must match; a mismatch means this is not
+        // the lock we recorded and must not be credited to this token.
+        if (launchIntent?.recipient && stream.recipient !== launchIntent.recipient) {
+          console.warn(
+            `[backfill] stream ${streamId} recipient ${stream.recipient} != recorded ` +
+              `${launchIntent.recipient} for ${token.id}, skipping`,
+          );
+          skipped += 1;
+          continue;
+        }
+        if (launchIntent?.escrow_ata && stream.escrowTokens !== launchIntent.escrow_ata) {
+          console.warn(
+            `[backfill] stream ${streamId} escrow ${stream.escrowTokens} != recorded ` +
+              `${launchIntent.escrow_ata} for ${token.id}, skipping`,
           );
           skipped += 1;
           continue;

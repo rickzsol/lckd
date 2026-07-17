@@ -230,6 +230,13 @@ export function lockDaysToSeconds(days: number): number {
   return days * SECONDS_PER_DAY;
 }
 
+/** Full-cliff acceptance mirroring the SDK's isCliffCloseToDepositedAmount:
+ * cliffAmount within [depositedAmount - 1, depositedAmount] (finding 3-new). */
+function isFullCliffAmount(cliffAmount: BN, depositedAmount: BN): boolean {
+  if (cliffAmount.gt(depositedAmount)) return false;
+  return cliffAmount.gte(depositedAmount.subn(1));
+}
+
 function assertVerifiedLock(
   stream: Awaited<ReturnType<SolanaStreamClient["getOne"]>>,
   expected: Omit<VerifyStreamflowLockParams, "connection" | "metadataId">,
@@ -247,7 +254,12 @@ function assertVerifiedLock(
   if (stream.period !== 1 || !stream.amountPerPeriod.eqn(1)) {
     throw new Error("Lock release schedule mismatch");
   }
-  if (!stream.cliffAmount.eq(stream.depositedAmount)) {
+  // Canonical full cliff per the Streamflow SDK: cliffAmount within
+  // [depositedAmount - 1, depositedAmount]. buildLockParams emits a one-unit
+  // residual tail (amountPerPeriod 1), so the on-chain cliffAmount can be
+  // depositedAmount - 1. Requiring strict equality wrongly rejects valid locks
+  // (finding 3-new); the unlocked() assertions below prove the real schedule.
+  if (!isFullCliffAmount(stream.cliffAmount, stream.depositedAmount)) {
     throw new Error("Lock does not release the full deposit at its cliff");
   }
   if (!stream.unlocked(expected.unlockTimestamp - 1).isZero()) {

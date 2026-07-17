@@ -91,9 +91,36 @@ test("a non-lock stream type is rejected", () => {
   assert.match(bindStreamToLock(decoded({ isLock: false }), identity())!, /not a token lock/);
 });
 
-test("a partial-release schedule (cliffAmount < deposited) is rejected", () => {
+test("a partial-release schedule (cliffAmount < deposited-1) is rejected", () => {
   assert.match(
     bindStreamToLock(decoded({ cliffAmount: BigInt(50) }), identity())!,
+    /full deposit/,
+  );
+});
+
+test("the canonical cliffAmount === deposited full-cliff binds (finding 3-new)", () => {
+  assert.equal(
+    bindStreamToLock(decoded({ cliffAmount: BigInt(100), amountPerPeriod: BigInt(1) }), identity()),
+    null,
+  );
+});
+
+test("the SDK cliffAmount === deposited-1 with a one-unit tail binds (finding 3-new)", () => {
+  // buildLockParams emits amountPerPeriod 1; the on-chain full cliff can carry a
+  // one-unit residual so cliffAmount = depositedAmount - 1. Strict equality wrongly
+  // rejected this valid lock; the SDK's isCliffCloseToDepositedAmount accepts it.
+  assert.equal(
+    bindStreamToLock(
+      decoded({ cliffAmount: BigInt(99), amountPerPeriod: BigInt(1), end: CLIFF_RAW + 1 }),
+      identity(),
+    ),
+    null,
+  );
+});
+
+test("cliffAmount below deposited-1 is not a full cliff (finding 3-new)", () => {
+  assert.match(
+    bindStreamToLock(decoded({ cliffAmount: BigInt(98) }), identity())!,
     /full deposit/,
   );
 });
@@ -111,23 +138,43 @@ test("an rpc error never becomes a withdrawal: it throws", () => {
   );
 });
 
-test("an unconfirmed absence (not_found) never becomes a withdrawal: it throws", () => {
+test("an absent account (not_found) never becomes a withdrawal: it throws (finding 2)", () => {
+  // A bare null finalized account is not proof of withdrawal. A wrong stream id
+  // or wrong cluster reads null too, so absence must abort, never commit withdrawn.
   assert.throws(
     () => deriveWithdrawalStatus(BigInt(0), { kind: "not_found" }, CLIFF, AFTER),
     StreamUnavailableError,
   );
 });
 
-test("a confirmed closure after the cliff is withdrawn", () => {
-  const result = deriveWithdrawalStatus(BigInt(50), { kind: "closed" }, CLIFF, AFTER);
+test("an absent account after the cliff still throws, never withdrawn (finding 2)", () => {
+  // Even at/after the cliff, absence is not positive withdrawal evidence.
+  assert.throws(
+    () => deriveWithdrawalStatus(BigInt(50), { kind: "not_found" }, CLIFF, AFTER),
+    StreamUnavailableError,
+  );
+});
+
+test("a decoded closed stream after the cliff is withdrawn (positive evidence)", () => {
+  const result = deriveWithdrawalStatus(
+    BigInt(0),
+    ok({ withdrawnAmount: BigInt(100), closed: true }),
+    CLIFF,
+    AFTER,
+  );
   assert.equal(result.status, "withdrawn");
-  assert.equal(result.withdrawnAmount, "50");
+  assert.equal(result.withdrawnAmount, "100");
 });
 
 // --- pre-cliff breach (finding 4) ------------------------------------------
 
-test("a confirmed closure BEFORE the cliff is anomalous, not withdrawn", () => {
-  const result = deriveWithdrawalStatus(BigInt(0), { kind: "closed" }, CLIFF, BEFORE);
+test("a decoded closed stream BEFORE the cliff is anomalous, not withdrawn", () => {
+  const result = deriveWithdrawalStatus(
+    BigInt(0),
+    ok({ withdrawnAmount: BigInt(100), closed: true }),
+    CLIFF,
+    BEFORE,
+  );
   assert.equal(result.status, "anomalous");
 });
 

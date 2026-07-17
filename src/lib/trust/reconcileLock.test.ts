@@ -176,9 +176,26 @@ test("an rpc read failure aborts without any commit (finding 2)", async () => {
   assert.equal(captured.rpc, undefined); // never committed.
 });
 
-test("a confirmed closure after the cliff commits withdrawn and floors the tier", async () => {
+test("a decoded fully-withdrawn stream after the cliff commits withdrawn and floors the tier", async () => {
   const { client, captured } = supabaseMock({ trust_tier: TrustTier.BUILDER, github_tier: TrustTier.BUILDER });
-  await reconcileLock(client, conn, lockRow(), AFTER, null, null, reader({ kind: "closed" }));
+  await reconcileLock(
+    client,
+    conn,
+    lockRow(),
+    AFTER,
+    null,
+    null,
+    reader({ kind: "ok", stream: decoded({ withdrawnAmount: BigInt(100), closed: true }) }),
+  );
   assert.equal(captured.rpc?.args.p_status, "withdrawn");
   assert.equal(captured.rpc?.args.p_trust_tier, TrustTier.LOCKED);
+});
+
+test("an absent account never commits withdrawn: it aborts (finding 2)", async () => {
+  const { client, captured } = supabaseMock({ trust_tier: TrustTier.BUILDER, github_tier: TrustTier.BUILDER });
+  await assert.rejects(
+    () => reconcileLock(client, conn, lockRow(), AFTER, null, null, reader({ kind: "not_found" })),
+    /absent|unavailable/i,
+  );
+  assert.equal(captured.rpc, undefined); // never committed a withdrawal.
 });
