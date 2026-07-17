@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { flushSync } from "react-dom";
 
 export interface TocSection {
   id: string;
@@ -33,7 +34,9 @@ export default function Toc({ sections }: { sections: TocSection[] }) {
   }, [sections]);
 
   const handleClick = (id: string) => {
-    setIsOpen(false);
+    // Collapse the mobile dropdown before scrolling; it sits above the
+    // target in the flow, so scrolling first overshoots by its height.
+    flushSync(() => setIsOpen(false));
     const el = document.getElementById(id);
     if (el) {
       const isReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;

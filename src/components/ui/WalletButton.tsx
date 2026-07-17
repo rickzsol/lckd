@@ -16,6 +16,6 @@ export default function WalletButton() {
   const isConnected = connected && publicKey != null;
 
   return (
-    <WalletMultiButton>{isConnected ? undefined : "Connect Wallet"}</WalletMultiButton>
+    <WalletMultiButton>{isConnected ? undefined : "connect wallet"}</WalletMultiButton>
   );
 }
