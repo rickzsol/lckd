@@ -195,7 +195,7 @@ export default function ApiDocsPage() {
             <SectionHeading id="unlocks"><Method>GET</Method>/unlocks</SectionHeading>
             <Prose>
               Public, no auth. Upcoming and recently-overdue cliffs, keyset-paginated on
-              (cliffTs, mint, id). Overdue unlock_eligible rows stay visible for a trailing
+              (cliffTs, mint). Overdue unlock_eligible rows stay visible for a trailing
               30 day window.
             </Prose>
             <SubHeading>Query parameters</SubHeading>

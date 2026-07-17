@@ -43,12 +43,39 @@ Built the public trust API, unlock calendar, and live lock pipeline per plan sec
 - `/unlocks` page (date-grouped, mono countdowns, warn under 7d, unlockable danger + pulse dot, mascot empty state), navbar link, sitemap, OG image, feed next-unlock strip. Trust + unlocks sections added to `/api-docs`.
 - Tools: `tools/backfill-locks.ts` (staged, nullable-first, finalized RPC denominator, NOT NULL follow-up stub) and `tools/register-helius-webhook.ts` (tracked-address batched edits, never auto-run).
 
-Verification: 156 tests pass (all trust tests are now wired into the runner via a
-globstar; the prior explicit file list silently excluded every trust test, so the
-old "116 tests" figure never actually ran the lock pipeline). typecheck + lint +
-production build clean.
+Verification: 176 tests pass. typecheck + lint + production build clean.
 
-Round-3 review (BLOCKED) fully addressed across 3 commits on this branch:
+Round-3 confirmation review (BLOCKED) found several round-2 fixes did not fully
+land plus one new defect; all addressed across 4 more commits on this branch:
+- 2 (reopened): a null finalized account was still treated as a confirmed
+  closure -> withdrawn. Now the read reads the ACTUAL account owner first; a null
+  account is `not_found` (throws StreamUnavailableError), never withdrawn.
+  Withdrawal comes only from an existing stream whose withdrawnAmount reached the
+  deposit (or its decoded closed flag) at/after the cliff.
+- 3 (reopened): reconcile + backfill now read the account's real owner via
+  getAccountInfo and require it to equal the pinned Streamflow program; backfill
+  also compares recipient + escrow against the stored launch-intent provenance.
+- 3 (NEW defect): strict cliffAmount === deposited rejected valid SDK full-cliff
+  locks. Now accept cliffAmount within [deposited-1, deposited] (the SDK's
+  isCliffCloseToDepositedAmount), in bind, creation-verify, and backfill.
+- 5 (reopened): only the canonical lock projects the token tier (noncanonical
+  passes token_id NULL and cannot move trust_tier); github_tier is written only as
+  independent evidence; all trust_tier writes route through the single
+  commit_token_tier function, so refresh-github is no longer a second writer.
+- 6 (reopened): sweep orders by last_attempt_at (nulls first) and stamps an
+  attempt on EVERY try including failures (mark_lock_attempt), and tracks
+  processed ids within a run, so persistently-failing rows rotate out of page 1.
+- 8 (reopened): commit_lock_reconciliation now takes the inbox id + lease id and
+  gates the whole commit on the lease still being held and processed_at IS NULL.
+- 10 (reopened): backfill_complete now requires expected eligible tokens ==
+  verified canonical locks (a skipped token can no longer mark it done); the trust
+  route returns 503 while backfill is incomplete instead of lock:null.
+- 11 (reopened): a canonical lock with last_verified_at null is treated as
+  unverified -> stale, never fresh.
+- 12 (reopened): locks_public drops id and token_id (callers key off mint; token
+  display fields folded into the view); the keyset cursor is (cliff_ts, mint).
+
+Original round-3 items already resolved and not regressed:
 - 1 (critical): claim/complete/fail/commit RPCs revoked from PUBLIC/anon/auth,
   granted only to service_role.
 - 2: readFinalizedStreamState returns a discriminated outcome; a confirmed
@@ -59,18 +86,10 @@ Round-3 review (BLOCKED) fully addressed across 3 commits on this branch:
   is conditional so anomalous observations persist.
 - 5: single tier authority: project from the canonical lock + persisted
   github_tier evidence, commit lock+token atomically via commit_lock_reconciliation.
-- 6: reconcile sweep is recency-ordered (last_verified_at asc nulls first) with a
-  page/time budget, so later locks are never starved.
 - 7: inbox dedup on (provider, signature, event_type); malformed nonempty batches
   rejected; entries with no usable account keys dropped, not persisted.
-- 8: per-claim lease_id fences every completion/failure.
 - 9: raw amounts are decimal strings end to end (view casts to text); ratios use
   BigInt.
-- 10: backfill uses keyset pagination, update-on-conflict, derived status,
-  rejected missing provenance; locks_public is gated on trust_kv.backfill_complete.
-- 11: getUpcomingUnlocks returns degraded vs ok; trust stale computed from real
-  freshness; degraded github lookup flagged and marks stale.
-- 12: locks_public no longer exposes recipient.
 - 13: explicit 405 handlers with public CORS on the two public routes.
 - 14: register-helius-webhook fails instead of silently truncating addresses.
 
