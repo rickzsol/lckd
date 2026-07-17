@@ -163,10 +163,14 @@ grant select on public.attestations_public to anon, authenticated, service_role;
 --   * First enqueue races are resolved by an atomic INSERT ... ON CONFLICT on the
 --     partial unique index (one open job per token), so two concurrent first
 --     enqueues never both fail the index.
---   * A pending open job is updated in place with the newer snapshot.
+--   * A pending open job is updated in place with the newer snapshot, and any
+--     parked successor is cleared (the live columns now hold the latest state).
 --   * A leased/broadcast open job cannot be safely mutated (a worker holds it),
 --     so the newer snapshot is parked in the successor_* columns and promoted
---     once the current job completes. Nothing is silently lost.
+--     once the current job completes. The successor slot holds ONLY the latest
+--     desired state: a newer enqueue overwrites it, and an enqueue that returns
+--     the desired state to the in-flight claim clears it. Promotion therefore
+--     never resurrects a stale snapshot. Nothing is silently lost.
 -- Only callable by service_role; never accepts caller-supplied attestation data
 -- beyond the server-derived snapshot the trust projection passes in.
 create or replace function public.enqueue_attestation_job(
@@ -201,7 +205,13 @@ begin
 
   if found then
     if v_existing.status = 'pending' then
-      -- Safe to mutate in place: no worker holds a pending job.
+      -- Safe to mutate in place: no worker holds a pending job. Updating the live
+      -- desired columns makes THEM the latest desired state, so any previously
+      -- parked successor is now stale and MUST be cleared: otherwise a reissue
+      -- that parked an older successor, advanced its create phase to pending, then
+      -- had the create phase's desired columns overwritten here, would still
+      -- promote that stale successor on completion. The live columns always hold
+      -- the newest snapshot; the successor slot only ever holds something newer.
       if v_existing.evidence_hash <> p_evidence_hash then
         update public.attestation_outbox
         set desired_tier = p_tier,
@@ -211,14 +221,25 @@ begin
             desired_schema_version = p_schema_version,
             evidence_hash = p_evidence_hash,
             operation = p_operation,
+            successor_evidence_hash = null,
+            successor_tier = null,
+            successor_lock_bps = null,
+            successor_cliff_ts = null,
+            successor_policy_version = null,
+            successor_schema_version = null,
+            successor_operation = null,
             updated_at = now()
         where id = v_existing.id;
       end if;
       return v_existing.id;
     end if;
 
-    -- Leased or broadcast: park the newer desired state as a successor. Only
-    -- overwrite when it actually differs from what the in-flight job will emit.
+    -- Leased or broadcast: the in-flight job holds the current desired state; the
+    -- successor slot must hold the LATEST desired state that differs from it.
+    --   * differs from in-flight  -> overwrite successor with this newest snapshot
+    --     (a prior successor is stale and is replaced, not merged).
+    --   * equals in-flight        -> the desired state returned to what is already
+    --     being emitted, so any parked successor is stale: clear it.
     if v_existing.evidence_hash <> p_evidence_hash then
       update public.attestation_outbox
       set successor_evidence_hash = p_evidence_hash,
@@ -228,6 +249,17 @@ begin
           successor_policy_version = p_policy_version,
           successor_schema_version = p_schema_version,
           successor_operation = p_operation,
+          updated_at = now()
+      where id = v_existing.id;
+    elsif v_existing.successor_evidence_hash is not null then
+      update public.attestation_outbox
+      set successor_evidence_hash = null,
+          successor_tier = null,
+          successor_lock_bps = null,
+          successor_cliff_ts = null,
+          successor_policy_version = null,
+          successor_schema_version = null,
+          successor_operation = null,
           updated_at = now()
       where id = v_existing.id;
     end if;
@@ -263,7 +295,11 @@ begin
   limit 1;
 
   if not found then
-    -- The winner already advanced past the open states; re-enqueue fresh.
+    -- The winner already advanced past the open states; re-enqueue fresh. Guard
+    -- with ON CONFLICT on the partial open-job index: yet another concurrent
+    -- enqueue could have opened a job between the select above and this insert, so
+    -- a bare insert would 23505. On conflict, fall through and return the id of
+    -- whatever open job now exists rather than raising.
     insert into public.attestation_outbox (
       token_id, cluster, mint, operation,
       desired_tier, desired_lock_bps, desired_cliff_ts,
@@ -273,11 +309,31 @@ begin
       p_tier, p_lock_bps, p_cliff_ts,
       p_policy_version, p_schema_version, p_evidence_hash
     )
+    on conflict (token_id) where (status in ('pending', 'leased', 'broadcast'))
+    do nothing
     returning id into v_id;
-    return v_id;
+
+    if v_id is not null then
+      return v_id;
+    end if;
+
+    -- Lost this race too: the concurrent winner's open job exists now. Re-read it
+    -- and fall through to the shared refresh/park logic below.
+    select * into v_existing
+    from public.attestation_outbox
+    where token_id = p_token_id
+      and status in ('pending', 'leased', 'broadcast')
+    for update
+    limit 1;
+
+    if not found then
+      raise exception 'enqueue_attestation_job: open job vanished after conflict for token %', p_token_id;
+    end if;
   end if;
 
   if v_existing.status = 'pending' and v_existing.evidence_hash <> p_evidence_hash then
+    -- See the pending branch above: refreshing the live desired columns makes them
+    -- the latest snapshot, so a stale parked successor must be cleared here too.
     update public.attestation_outbox
     set desired_tier = p_tier,
         desired_lock_bps = p_lock_bps,
@@ -286,6 +342,13 @@ begin
         desired_schema_version = p_schema_version,
         evidence_hash = p_evidence_hash,
         operation = p_operation,
+        successor_evidence_hash = null,
+        successor_tier = null,
+        successor_lock_bps = null,
+        successor_cliff_ts = null,
+        successor_policy_version = null,
+        successor_schema_version = null,
+        successor_operation = null,
         updated_at = now()
     where id = v_existing.id;
   elsif v_existing.status in ('leased', 'broadcast') and v_existing.evidence_hash <> p_evidence_hash then
@@ -297,6 +360,21 @@ begin
         successor_policy_version = p_policy_version,
         successor_schema_version = p_schema_version,
         successor_operation = p_operation,
+        updated_at = now()
+    where id = v_existing.id;
+  elsif v_existing.status in ('leased', 'broadcast')
+    and v_existing.evidence_hash = p_evidence_hash
+    and v_existing.successor_evidence_hash is not null then
+    -- Desired state returned to what the in-flight job already emits: drop the
+    -- now-stale parked successor so completion does not promote it.
+    update public.attestation_outbox
+    set successor_evidence_hash = null,
+        successor_tier = null,
+        successor_lock_bps = null,
+        successor_cliff_ts = null,
+        successor_policy_version = null,
+        successor_schema_version = null,
+        successor_operation = null,
         updated_at = now()
     where id = v_existing.id;
   end if;
