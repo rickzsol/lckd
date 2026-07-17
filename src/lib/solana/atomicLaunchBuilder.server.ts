@@ -35,6 +35,7 @@ import {
   hashLookupAddresses,
   resolveExactLookupTable,
   validateExactLookupTable,
+  validateLookupTablePreparation,
   type LookupTablePreparation,
 } from "./lookupTable";
 import { validatePumpBuyInstruction } from "./pumpBuyValidation";
@@ -99,6 +100,26 @@ export interface AtomicLookupPreparationBundle extends LookupTablePreparation {
 }
 
 export interface IssuedLookupPreparation {
+  transaction: Uint8Array;
+  lookupTableAddress: PublicKey;
+  addresses: readonly PublicKey[];
+  recentSlot: number;
+  messageHash: string;
+  blockhash: string;
+  lastValidBlockHeight: number;
+  plan: AtomicLaunchPlanSnapshot;
+}
+
+export interface AtomicLaunchPlanSnapshot {
+  quotedTokenAmount: string;
+  maxQuoteAmount: string;
+  lockAmount: string;
+  unlockTimestamp: number;
+  streamflowFeePercent: number;
+}
+
+export interface IssuedAtomicLaunchTransaction {
+  transaction: Uint8Array;
   messageHash: string;
   blockhash: string;
   lastValidBlockHeight: number;
@@ -400,30 +421,82 @@ export async function buildAtomicLookupPreparation(
   });
 }
 
-export function rebuildIssuedAtomicLookupPreparation(
-  walletPublicKey: PublicKey,
-  fresh: AtomicLookupPreparationBundle,
+function assertUnsignedTransaction(transaction: VersionedTransaction, label: string): void {
+  if (transaction.signatures.some((signature) => signature.some((byte) => byte !== 0))) {
+    throw new Error(`${label} unexpectedly contains a signature`);
+  }
+}
+
+export async function buildAtomicLaunchInstructionsFromSnapshot(
+  identity: AtomicLaunchIdentity,
+  snapshot: AtomicLaunchPlanSnapshot,
+): Promise<AtomicInstructionPlan> {
+  if (
+    !/^\d+$/.test(snapshot.quotedTokenAmount) ||
+    !/^\d+$/.test(snapshot.maxQuoteAmount) ||
+    !/^\d+$/.test(snapshot.lockAmount) ||
+    !Number.isSafeInteger(snapshot.unlockTimestamp) || snapshot.unlockTimestamp < 1 ||
+    !Number.isFinite(snapshot.streamflowFeePercent) ||
+    snapshot.streamflowFeePercent < 0 || snapshot.streamflowFeePercent >= 100
+  ) {
+    throw new Error("Atomic launch plan snapshot is invalid");
+  }
+  const plan = await buildAtomicLaunchInstructions(identity, {
+    quotedTokenAmount: new BN(snapshot.quotedTokenAmount),
+    maxQuoteAmount: new BN(snapshot.maxQuoteAmount),
+    streamflowFeePercent: snapshot.streamflowFeePercent,
+    unlockTimestamp: snapshot.unlockTimestamp,
+  });
+  if (plan.lockAmount.toString() !== snapshot.lockAmount) {
+    throw new Error("Atomic launch plan lock amount changed");
+  }
+  return plan;
+}
+
+export async function rebuildIssuedAtomicLookupPreparation(
+  identity: AtomicLaunchIdentity,
   issued: IssuedLookupPreparation,
-): AtomicLookupPreparationBundle {
-  const preparation = buildLookupTablePreparation({
-    authority: walletPublicKey,
-    payer: walletPublicKey,
-    addresses: fresh.addresses,
-    recentSlot: fresh.recentSlot,
+): Promise<AtomicLookupPreparationBundle> {
+  const plan = await buildAtomicLaunchInstructionsFromSnapshot(identity, issued.plan);
+  const expectedAddresses = lookupAddressesForPlan(identity, plan);
+  if (
+    expectedAddresses.length !== issued.addresses.length ||
+    expectedAddresses.some((address, index) => !address.equals(issued.addresses[index]))
+  ) {
+    throw new Error("Replayed atomic setup address vector changed");
+  }
+  const params = {
+    authority: identity.walletPublicKey,
+    payer: identity.walletPublicKey,
+    addresses: issued.addresses,
+    recentSlot: issued.recentSlot,
     blockhash: issued.blockhash,
     lastValidBlockHeight: issued.lastValidBlockHeight,
-  });
-  const messageHash = hashAtomicTransactionMessage(preparation.transaction);
+  };
+  const lookupTableAddress = validateLookupTablePreparation(issued.transaction, params);
+  const transaction = VersionedTransaction.deserialize(issued.transaction);
+  assertUnsignedTransaction(transaction, "Replayed atomic setup");
+  const messageHash = hashAtomicTransactionMessage(issued.transaction);
   if (
     messageHash !== issued.messageHash ||
-    !preparation.lookupTableAddress.equals(fresh.lookupTableAddress) ||
-    preparation.addressHash !== fresh.addressHash
+    !lookupTableAddress.equals(issued.lookupTableAddress) ||
+    hashLookupAddresses(issued.addresses) !== hashLookupAddresses(expectedAddresses)
   ) {
     throw new Error("Replayed atomic setup does not match server issuance");
   }
   return Object.freeze({
-    ...fresh,
-    ...preparation,
+    lookupTableAddress,
+    addressHash: hashLookupAddresses(issued.addresses),
+    addresses: Object.freeze([...issued.addresses]),
+    transaction: Uint8Array.from(issued.transaction),
+    recentSlot: issued.recentSlot,
+    blockhash: issued.blockhash,
+    lastValidBlockHeight: issued.lastValidBlockHeight,
+    quotedTokenAmount: plan.quotedTokenAmount.toString(),
+    maxQuoteAmount: plan.maxQuoteAmount.toString(),
+    lockAmount: plan.lockAmount.toString(),
+    unlockTimestamp: plan.unlockTimestamp,
+    streamflowFeePercent: plan.streamflowFeePercent,
     messageHash,
   });
 }
@@ -580,9 +653,11 @@ export function validateAtomicLaunchTransaction(
 export async function buildAtomicLaunchTransaction(
   identity: AtomicLaunchIdentity,
   lookupTableAddress: PublicKey,
+  snapshot: AtomicLaunchPlanSnapshot,
+  issued?: IssuedAtomicLaunchTransaction,
 ): Promise<AtomicLaunchBundle> {
   const connection = await getConnection();
-  const plan = await buildQuotedPlan(connection, identity);
+  const plan = await buildAtomicLaunchInstructionsFromSnapshot(identity, snapshot);
   const lookupAddresses = lookupAddressesForPlan(identity, plan);
   const lookupTable = await resolveExactLookupTable(
     connection,
@@ -590,18 +665,19 @@ export async function buildAtomicLaunchTransaction(
     identity.walletPublicKey,
     lookupAddresses,
   );
-  const latestBlockhash = await connection.getLatestBlockhash("confirmed");
   const deactivate = AddressLookupTableProgram.deactivateLookupTable({
     lookupTable: lookupTableAddress,
     authority: identity.walletPublicKey,
   });
   const instructions = Object.freeze([...plan.instructions, deactivate]);
-  const message = new TransactionMessage({
+  const latestBlockhash = issued
+    ? { blockhash: issued.blockhash, lastValidBlockHeight: issued.lastValidBlockHeight }
+    : await connection.getLatestBlockhash("confirmed");
+  const txBytes = issued?.transaction ?? new VersionedTransaction(new TransactionMessage({
     payerKey: identity.walletPublicKey,
     recentBlockhash: latestBlockhash.blockhash,
     instructions: [...instructions],
-  }).compileToV0Message([lookupTable]);
-  const txBytes = new VersionedTransaction(message).serialize();
+  }).compileToV0Message([lookupTable])).serialize();
   validateAtomicLaunchTransaction(txBytes, {
     ...identity,
     lookupTable,
@@ -613,8 +689,13 @@ export async function buildAtomicLaunchTransaction(
     unlockTimestamp: plan.unlockTimestamp,
     blockhash: latestBlockhash.blockhash,
   });
+  assertUnsignedTransaction(VersionedTransaction.deserialize(txBytes), "Atomic launch transaction");
+  const messageHash = hashAtomicTransactionMessage(txBytes);
+  if (issued && messageHash !== issued.messageHash) {
+    throw new Error("Replayed atomic transaction does not match server issuance");
+  }
   return Object.freeze({
-    txBytes,
+    txBytes: Uint8Array.from(txBytes),
     blockhash: latestBlockhash.blockhash,
     lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
     lookupTableAddress,
@@ -624,6 +705,6 @@ export async function buildAtomicLaunchTransaction(
     lockAmount: plan.lockAmount.toString(),
     unlockTimestamp: plan.unlockTimestamp,
     streamflowFeePercent: plan.streamflowFeePercent,
-    messageHash: hashAtomicTransactionMessage(txBytes),
+    messageHash,
   });
 }

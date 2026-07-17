@@ -43,3 +43,8 @@ export {
   type AtomicTransactionExpectation,
   type LookupSetupExpectation,
 } from "./atomicLaunchValidation";
+
+export {
+  assertVersionedMessageUnchanged,
+  restoreLocalVersionedSignatures,
+} from "./walletSigningIntegrity";

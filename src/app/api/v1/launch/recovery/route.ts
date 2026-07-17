@@ -438,15 +438,23 @@ function validateSignedIssuedTransaction(
     const expectedLastValidBlockHeight = phase === "setup"
       ? intent.issuedSetupLastValidBlockHeight
       : intent.issuedAtomicLastValidBlockHeight;
-    if (
-      !expectedHash || !expectedBlockhash || expectedLastValidBlockHeight === null ||
-      hashAtomicTransactionMessage(bytes) !== expectedHash ||
-      transaction.message.recentBlockhash !== expectedBlockhash ||
-      claimedBlockhash !== expectedBlockhash ||
-      claimedLastValidBlockHeight !== expectedLastValidBlockHeight ||
-      bs58.encode(transaction.signatures[0]) !== claimedSignature
-    ) {
-      throw new Error("Issued transaction tuple changed");
+    if (!expectedHash || !expectedBlockhash || expectedLastValidBlockHeight === null) {
+      throw new Error("issued tuple is incomplete");
+    }
+    if (hashAtomicTransactionMessage(bytes) !== expectedHash) {
+      throw new Error("message hash changed after wallet signing");
+    }
+    if (transaction.message.recentBlockhash !== expectedBlockhash) {
+      throw new Error("message blockhash changed after wallet signing");
+    }
+    if (claimedBlockhash !== expectedBlockhash) {
+      throw new Error("claimed blockhash changed");
+    }
+    if (claimedLastValidBlockHeight !== expectedLastValidBlockHeight) {
+      throw new Error("claimed last-valid block height changed");
+    }
+    if (bs58.encode(transaction.signatures[0]) !== claimedSignature) {
+      throw new Error("claimed signature changed");
     }
     const signers = transaction.message.staticAccountKeys.slice(
       0,
@@ -471,8 +479,10 @@ function validateSignedIssuedTransaction(
         throw new Error("Issued transaction signature is invalid");
       }
     });
-  } catch {
-    throw new AtomicLaunchRecoveryError("Signed transaction changed from server issuance", 422);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "invalid signed transaction";
+    console.warn("[launch/recovery] Issued transaction rejected", { phase, reason });
+    throw new AtomicLaunchRecoveryError(`Signed ${phase} transaction rejected: ${reason}`, 422);
   }
 }
 

@@ -20,6 +20,8 @@ import {
   deriveReviewedAtomicEconomics,
   validateReviewedUnlockTimestamp,
   validateLookupSetupTransaction,
+  assertVersionedMessageUnchanged,
+  restoreLocalVersionedSignatures,
 } from "@/lib/solana";
 import { validateLookupCleanupTransaction } from "@/lib/solana/atomicLookupCleanup";
 import {
@@ -313,7 +315,6 @@ export function useTokenLaunch(config: LaunchConfig) {
         if (intent.status === "abandoned" && intent.altStatus === "closed") {
           setLaunchStatus("idle");
           setLaunchResult(null);
-          setRecoveredConfig(null);
           setErrorMessage(null);
           return;
         }
@@ -326,7 +327,6 @@ export function useTokenLaunch(config: LaunchConfig) {
         if (cleanup.status === "abandoned" && cleanup.altStatus === "closed") {
           setLaunchStatus("idle");
           setLaunchResult(null);
-          setRecoveredConfig(null);
           setErrorMessage(null);
           return;
         }
@@ -363,7 +363,8 @@ export function useTokenLaunch(config: LaunchConfig) {
       if (walletSol < requiredSol) {
         throw new Error(`Insufficient SOL. You have ${walletSol.toFixed(4)} SOL but need ~${requiredSol.toFixed(4)} SOL.`);
       }
-      let uploaded = !config.image && metadataDraft && metadataDraftMatchesConfig(metadataDraft, config)
+      let uploaded = !config.image && metadataDraft && config.imageUri === metadataDraft.imageUri &&
+          metadataDraftMatchesConfig(metadataDraft, config)
         ? metadataDraft
         : null;
       if (!uploaded) {
@@ -392,6 +393,9 @@ export function useTokenLaunch(config: LaunchConfig) {
         if (!uploaded) throw new Error("Metadata upload returned an invalid response");
         setMetadataDraft(uploaded);
         writeLaunchMetadataDraft(uploaded);
+        const { image: ignoredImage, ...storedConfig } = config;
+        void ignoredImage;
+        setRecoveredConfig({ ...storedConfig, imageUri: uploaded.imageUri });
       }
 
       setLaunchPhase(1);
@@ -430,6 +434,11 @@ export function useTokenLaunch(config: LaunchConfig) {
       ) {
         throw new Error("Atomic setup economics changed from the reviewed configuration");
       }
+      validateReviewedUnlockTimestamp(
+        setup.unlockTimestamp,
+        setupEconomics.clusterTimestamp,
+        config.lockDurationDays,
+      );
       if (setup.mintPublicKey !== mintAddress ||
           setup.metadataPublicKey !== metadataKeypair.publicKey.toBase58()) {
         throw new Error("Atomic setup signer identities changed");
@@ -459,7 +468,9 @@ export function useTokenLaunch(config: LaunchConfig) {
         blockhash: setup.blockhash,
         lastValidBlockHeight: setup.lastValidBlockHeight,
       });
+      const issuedSetupMessage = setupTransaction.message.serialize();
       setupTransaction = await signTransaction(setupTransaction);
+      assertVersionedMessageUnchanged(issuedSetupMessage, setupTransaction, "lookup setup");
       await simulateVersionedTransactionOrThrow(connection, setupTransaction, "Lookup setup", {
         wallet: publicKey,
         maxLamports: Math.ceil(0.02 * LAMPORTS_PER_SOL),
@@ -497,7 +508,6 @@ export function useTokenLaunch(config: LaunchConfig) {
       applyRecoveryState(ready);
 
       setLaunchPhase(4);
-      const reviewedEconomics = await deriveReviewedAtomicEconomics(connection, config);
       const atomic = await requestJson<AtomicResponse>("/api/v1/launch/atomic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -508,17 +518,13 @@ export function useTokenLaunch(config: LaunchConfig) {
       });
       assertAtomicResponse(atomic, mintKeypair.publicKey, metadataKeypair.publicKey, setup);
       if (
-        atomic.quotedTokenAmount !== reviewedEconomics.quotedTokenAmount ||
-        atomic.maxQuoteAmount !== reviewedEconomics.maxQuoteAmount ||
-        atomic.lockAmount !== reviewedEconomics.lockAmount
+        atomic.quotedTokenAmount !== setup.quotedTokenAmount ||
+        atomic.maxQuoteAmount !== setup.maxQuoteAmount ||
+        atomic.lockAmount !== setup.lockAmount ||
+        atomic.unlockTimestamp !== setup.unlockTimestamp
       ) {
-        throw new Error("Atomic launch economics changed from the reviewed configuration");
+        throw new Error("Atomic launch economics changed after setup approval");
       }
-      validateReviewedUnlockTimestamp(
-        atomic.unlockTimestamp,
-        reviewedEconomics.clusterTimestamp,
-        config.lockDurationDays,
-      );
       stateVersion = atomic.stateVersion;
       setRecoveryStateVersion(stateVersion);
       const lookupAddress = new PublicKey(atomic.lookupTableAddress);
@@ -547,7 +553,14 @@ export function useTokenLaunch(config: LaunchConfig) {
         unlockTimestamp: atomic.unlockTimestamp,
       });
       atomicTransaction.sign([mintKeypair, metadataKeypair]);
+      const issuedAtomicMessage = atomicTransaction.message.serialize();
       atomicTransaction = await signTransaction(atomicTransaction);
+      atomicTransaction = restoreLocalVersionedSignatures(
+        issuedAtomicMessage,
+        atomicTransaction,
+        [mintKeypair, metadataKeypair],
+        "atomic launch",
+      );
 
       setLaunchPhase(6);
       await simulateVersionedTransactionOrThrow(connection, atomicTransaction, "Atomic launch", {
@@ -764,11 +777,12 @@ export function useTokenLaunch(config: LaunchConfig) {
       const status = await connection.getSignatureStatus(submittedLaunch.createTxSignature, {
         searchTransactionHistory: true,
       });
-      if (status.value?.err) throw new Error("Atomic launch failed on-chain");
-      if (!status.value || status.value.confirmationStatus !== "finalized") {
+      if (status.value?.err || !status.value || status.value.confirmationStatus !== "finalized") {
         if (
-          submittedLaunch.lockLastValidBlockHeight !== null &&
-          await connection.getBlockHeight("finalized") > submittedLaunch.lockLastValidBlockHeight
+          status.value?.err || (
+            submittedLaunch.lockLastValidBlockHeight !== null &&
+            await connection.getBlockHeight("finalized") > submittedLaunch.lockLastValidBlockHeight
+          )
         ) {
           if (recoveryStateVersion === null) throw new Error("Recovery version is unavailable");
           const cleanup = await requestCleanup(
@@ -776,7 +790,7 @@ export function useTokenLaunch(config: LaunchConfig) {
             recoveryStateVersion,
           );
           applyRecoveryState(cleanup);
-          throw new Error("Atomic launch expired without creating a token; lookup cleanup is required");
+          throw new Error("Atomic launch failed or expired without creating a token; lookup cleanup is required");
         }
         throw new Error("Atomic launch is not finalized yet");
       }

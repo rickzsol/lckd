@@ -16,7 +16,9 @@ import {
   buildAtomicLookupPreparation,
   freezeAtomicLaunchConfig,
   rebuildIssuedAtomicLookupPreparation,
+  type AtomicLaunchIdentity,
 } from "@/lib/solana/atomicLaunchBuilder.server";
+import type { AtomicIntentSnapshot } from "@/lib/api/atomicLaunchRecoveryValidation";
 
 export { OPTIONS };
 
@@ -45,6 +47,37 @@ const launchSchema = z.object({
   telegramUrl: nullableHttpsUrl,
   websiteUrl: nullableHttpsUrl,
 }).strict();
+
+async function restorePersistedSetup(
+  identity: AtomicLaunchIdentity,
+  persisted: AtomicIntentSnapshot,
+) {
+  if (
+    persisted.issuedSetupTransaction === null ||
+    persisted.issuedSetupRecentSlot === null ||
+    persisted.plannedLockAmount === null ||
+    persisted.plannedUnlockTimestamp === null ||
+    persisted.plannedStreamflowFeePercent === null
+  ) {
+    throw new AtomicLaunchRecoveryError("Prepared launch issuance is incomplete", 422);
+  }
+  return rebuildIssuedAtomicLookupPreparation(identity, {
+    transaction: Buffer.from(persisted.issuedSetupTransaction, "base64"),
+    lookupTableAddress: new PublicKey(persisted.altAddress),
+    addresses: persisted.altAddresses.map((value) => new PublicKey(value)),
+    recentSlot: persisted.issuedSetupRecentSlot,
+    messageHash: persisted.issuedSetupMessageHash,
+    blockhash: persisted.issuedSetupBlockhash,
+    lastValidBlockHeight: persisted.issuedSetupLastValidBlockHeight,
+    plan: {
+      quotedTokenAmount: persisted.quotedTokenAmount,
+      maxQuoteAmount: persisted.maxQuoteAmount,
+      lockAmount: persisted.plannedLockAmount,
+      unlockTimestamp: persisted.plannedUnlockTimestamp,
+      streamflowFeePercent: persisted.plannedStreamflowFeePercent,
+    },
+  });
+}
 
 export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
@@ -89,7 +122,6 @@ export async function POST(request: NextRequest) {
       metadataUri: body.metadataUri,
       config: frozenConfig,
     };
-    const setup = await buildAtomicLookupPreparation(identity);
     const config = {
       name: body.name,
       ticker: body.ticker,
@@ -104,6 +136,17 @@ export async function POST(request: NextRequest) {
       telegramUrl: body.telegramUrl ?? null,
       websiteUrl: body.websiteUrl ?? null,
     };
+    const existing = await getOwnedAtomicLaunchIntent({
+      githubId: session.github_id,
+      creatorWallet: session.wallet_address,
+      mintAddress: body.mintPublicKey,
+    });
+    if (existing && existing.status !== "prepared") {
+      throw new AtomicLaunchRecoveryError("Atomic launch setup is already past preparation", 409);
+    }
+    const setup = existing
+      ? await restorePersistedSetup(identity, existing)
+      : await buildAtomicLookupPreparation(identity);
     const intent = await prepareAtomicLaunchIntent({
       githubId: session.github_id,
       creatorWallet: session.wallet_address,
@@ -127,25 +170,23 @@ export async function POST(request: NextRequest) {
       setupMessageHash: setup.messageHash,
       setupBlockhash: setup.blockhash,
       setupLastValidBlockHeight: setup.lastValidBlockHeight,
+      issuedSetupRecentSlot: setup.recentSlot,
+      issuedSetupTransaction: Buffer.from(setup.transaction).toString("base64"),
+      plannedLockAmount: setup.lockAmount,
+      plannedUnlockTimestamp: setup.unlockTimestamp,
+      plannedStreamflowFeePercent: setup.streamflowFeePercent,
       expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
     });
 
-    let responseSetup = setup;
-    if (intent.replayed) {
-      const persisted = await getOwnedAtomicLaunchIntent({
-        githubId: session.github_id,
-        creatorWallet: session.wallet_address,
-        mintAddress: body.mintPublicKey,
-      });
-      if (!persisted) {
-        throw new AtomicLaunchRecoveryError("Replayed launch state was not found", 409);
-      }
-      responseSetup = rebuildIssuedAtomicLookupPreparation(walletPublicKey, setup, {
-        messageHash: persisted.issuedSetupMessageHash,
-        blockhash: persisted.issuedSetupBlockhash,
-        lastValidBlockHeight: persisted.issuedSetupLastValidBlockHeight,
-      });
+    const persisted = await getOwnedAtomicLaunchIntent({
+      githubId: session.github_id,
+      creatorWallet: session.wallet_address,
+      mintAddress: body.mintPublicKey,
+    });
+    if (!persisted) {
+      throw new AtomicLaunchRecoveryError("Prepared launch state was not found", 409);
     }
+    const responseSetup = await restorePersistedSetup(identity, persisted);
 
     return apiResponse({
       transaction: Buffer.from(responseSetup.transaction).toString("base64"),

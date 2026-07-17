@@ -4,9 +4,9 @@ Updated: 2026-07-17
 
 ## Status
 
-Production release approved after independent security review and deployed at `https://lckd.tech` from commit `b0c216e` as Vercel deployment `dpl_31qvzg5rQKXHSfazajBFRNVgdDdB`. Production Supabase is migrated through `007_atomic_cleanup_races.sql`, required Vercel environment variables are configured, and the atomic launch path is live. No transaction has been signed or sent.
+The deterministic launch issuance fix is complete and verified locally. Staging Supabase is migrated through `20260717204559_exact_atomic_issuance.sql`; production Supabase and the production app have not received this release yet. No transaction has been signed or sent by the agent.
 
-The launch retry hotfix reconstructs the exact persisted ALT setup transaction on an idempotent API replay, retains recovered IPFS metadata and its image through cleanup, invalidates stale image metadata after edits, and prevents concurrent launch calls. The server still enforces the immutable issued message hash, blockhash, signer vector, and signature checks.
+Setup and atomic retries now return exact persisted unsigned transactions, including the original ALT recent slot, blockhash tuple, frozen quote, lock amount, Streamflow fee, and unlock time. Wallet signing must preserve message bytes; local mint/metadata signatures are restored without changing the wallet signature. Recovered IPFS metadata and its image survive cleanup, stale image drafts are rejected, and failed atomic receipts can enter guarded cleanup.
 
 On 2026-07-17, a dirty CLI deployment from `a142b1f` temporarily replaced production, removed the atomic route, and failed every Pump V2 launch because its non-ALT message exceeded Solana's transaction size limit. The reviewed atomic deployment was restored and its route, client bundle, and production alias were verified.
 
@@ -29,14 +29,16 @@ On 2026-07-17, a dirty CLI deployment from `a142b1f` temporarily replaced produc
 
 ## Verification
 
-- 65 tests passed.
+- 69 tests passed.
 - TypeScript, ESLint, production build, and `git diff --check` passed.
 - Independent atomic SQL, recovery, on-chain receipt, UI lifecycle, and deployment reviews passed.
-- Production and staging aggregate RPC checks passed; anonymous atomic mutations are denied.
+- Staging migration, schema lint, service-role access, and anonymous denial checks passed.
 - Live production home, feed, LCKD detail, image, stats, auth gates, and security headers passed.
 - Gitleaks found no committed or source/migration secrets.
 - `npm audit --omit=dev`: one underlying unpatched `bigint-buffer` advisory represented by 8 dependency nodes; 0 critical and 0 moderate.
 
-## Remaining operational check
+## Remaining release gates
 
-- Run one disposable-wallet mainnet launch only after the user supplies an explicit SOL spending cap. This is optional post-deploy validation and is the only step that spends funds.
+- Reconcile the clean atomic launch branch with the uncommitted production monitor candidate without removing `/token/lckd`.
+- Apply the exact issuance migration to production immediately before the coordinated app deployment.
+- Run one disposable-wallet mainnet launch only after the user supplies an explicit SOL spending cap.

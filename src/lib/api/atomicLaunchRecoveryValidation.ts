@@ -58,7 +58,12 @@ const address = z.string().refine(isValidSolanaAddress, "Invalid Solana address"
 const signature = z.string().min(64).max(90);
 const blockhash = z.string().min(32).max(64);
 const blockHeight = z.number().int().nonnegative().safe();
+const positiveSafeInteger = z.number().int().positive().safe();
 const stateVersion = z.number().int().nonnegative().safe();
+const serializedTransaction = z.string().min(100).max(2_000).regex(
+  /^[A-Za-z0-9+/]+={0,2}$/,
+  "Invalid serialized transaction",
+);
 
 export const atomicLaunchConfigSchema = z.object({
   name: z.string().trim().min(1).max(32),
@@ -100,9 +105,14 @@ export const prepareAtomicLaunchSchema = z.object({
   ),
   quotedTokenAmount: z.string().regex(/^\d+$/),
   maxQuoteAmount: z.string().regex(/^\d+$/),
+  plannedLockAmount: z.string().regex(/^\d+$/),
+  plannedUnlockTimestamp: positiveSafeInteger,
+  plannedStreamflowFeePercent: z.number().finite().min(0).lt(100),
   setupMessageHash: z.string().regex(/^[0-9a-f]{64}$/),
   setupBlockhash: blockhash,
   setupLastValidBlockHeight: blockHeight,
+  issuedSetupRecentSlot: positiveSafeInteger,
+  issuedSetupTransaction: serializedTransaction,
   expiresAt: z.string().datetime(),
 }).strict();
 
@@ -121,6 +131,7 @@ export const issueAtomicTransactionSchema = ownedIntentSchema.extend({
   lastValidBlockHeight: blockHeight,
   lockAmount: z.string().regex(/^\d+$/),
   unlockTimestamp: z.number().int().positive().safe(),
+  issuedAtomicTransaction: serializedTransaction,
 }).strict();
 
 export const transactionCheckpointSchema = ownedIntentSchema.extend({
@@ -232,11 +243,15 @@ export const atomicIntentSnapshotSchema = z.object({
   altAddressesHash: z.string().regex(/^[0-9a-f]{64}$/),
   quotedTokenAmount: z.string().regex(/^\d+$/),
   maxQuoteAmount: z.string().regex(/^\d+$/),
+  plannedLockAmount: z.string().regex(/^\d+$/).nullable(),
+  plannedUnlockTimestamp: nullableHeight,
+  plannedStreamflowFeePercent: z.number().finite().min(0).lt(100).nullable(),
   issuedAtomicMessageHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
   issuedAtomicBlockhash: nullableReceiptText,
   issuedAtomicLastValidBlockHeight: nullableHeight,
   issuedLockAmount: z.string().regex(/^\d+$/).nullable(),
   issuedUnlockTimestamp: nullableHeight,
+  issuedAtomicTransaction: serializedTransaction.nullable(),
   atomicTx: nullableReceiptText,
   atomicBlockhash: nullableReceiptText,
   atomicLastValidBlockHeight: nullableHeight,
@@ -259,6 +274,8 @@ export const atomicIntentSnapshotSchema = z.object({
   issuedSetupMessageHash: z.string().regex(/^[0-9a-f]{64}$/),
   issuedSetupBlockhash: blockhash,
   issuedSetupLastValidBlockHeight: blockHeight,
+  issuedSetupRecentSlot: positiveSafeInteger.nullable(),
+  issuedSetupTransaction: serializedTransaction.nullable(),
   issuedCleanupPhase: z.enum(["deactivate", "close"]).nullable(),
   issuedCleanupMessageHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
   issuedCleanupBlockhash: nullableReceiptText,

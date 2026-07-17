@@ -14,6 +14,10 @@
 - [x] Pass tests, typecheck, lint, production build, database lint/advisors, source secret scan, and independent review.
 - [x] Restore the reviewed atomic deployment after the dirty non-ALT CLI artifact caused deterministic transaction serialization failures.
 - [x] Make ALT setup retries byte-identical to server issuance and preserve uploaded token metadata through recovery cleanup.
+- [x] Persist exact setup and atomic transactions, original ALT slot, and frozen launch economics for delayed replay.
+- [x] Verify the exact issuance migration and RPC privileges on staging.
+- [ ] Reconcile and deploy the atomic fix without removing the production `/token/lckd` monitor route.
+- [ ] Apply `20260717204559_exact_atomic_issuance.sql` to production immediately before app rollout.
 - [ ] Run a disposable-wallet mainnet launch after explicit approval of a SOL spending cap.
 - [ ] Add the LCKD contract address after the manual token launch and finalized receipt review.
 - [ ] Monitor upstream remediation for the transitive `bigint-buffer` advisory.

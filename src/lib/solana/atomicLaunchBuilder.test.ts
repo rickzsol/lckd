@@ -11,6 +11,7 @@ import {
 import BN from "bn.js";
 import {
   buildAtomicLaunchInstructions,
+  buildAtomicLaunchInstructionsFromSnapshot,
   calculateAtomicUnlockTimestamp,
   freezeAtomicLaunchConfig,
   hashAtomicTransactionMessage,
@@ -206,26 +207,72 @@ test("rebuilds the exact persisted setup transaction on an API replay", async ()
     authority: fixture.wallet,
     payer: fixture.wallet,
     addresses: fixture.lookupAddresses,
-    recentSlot: 100,
+    recentSlot: 101,
     blockhash: freshBlockhash,
     lastValidBlockHeight: 201,
   });
-  const fresh = {
-    ...freshPreparation,
+  assert.notEqual(freshPreparation.lookupTableAddress.toBase58(), original.lookupTableAddress.toBase58());
+  const replay = await rebuildIssuedAtomicLookupPreparation({
+    config: fixture.config,
+    walletPublicKey: fixture.wallet,
+    mintPublicKey: fixture.mint,
+    metadataPublicKey: fixture.metadata,
+    metadataUri: fixture.metadataUri,
+  }, {
+    transaction: original.transaction,
+    lookupTableAddress: original.lookupTableAddress,
+    addresses: fixture.lookupAddresses,
+    recentSlot: 100,
+    messageHash: hashAtomicTransactionMessage(original.transaction),
+    blockhash: originalBlockhash,
+    lastValidBlockHeight: 200,
+    plan: {
+      quotedTokenAmount: fixture.plan.quotedTokenAmount.toString(),
+      maxQuoteAmount: fixture.plan.maxQuoteAmount.toString(),
+      lockAmount: fixture.plan.lockAmount.toString(),
+      unlockTimestamp: fixture.plan.unlockTimestamp,
+      streamflowFeePercent: fixture.plan.streamflowFeePercent,
+    },
+  });
+
+  assert.deepEqual(replay.transaction, original.transaction);
+  assert.equal(replay.recentSlot, 100);
+  assert.equal(replay.blockhash, originalBlockhash);
+  assert.equal(replay.lastValidBlockHeight, 200);
+  assert.equal(replay.lookupTableAddress.toBase58(), original.lookupTableAddress.toBase58());
+});
+
+test("rebuilds atomic instructions only from the frozen plan snapshot", async () => {
+  const fixture = await buildFixture();
+  const snapshot = {
     quotedTokenAmount: fixture.plan.quotedTokenAmount.toString(),
     maxQuoteAmount: fixture.plan.maxQuoteAmount.toString(),
     lockAmount: fixture.plan.lockAmount.toString(),
     unlockTimestamp: fixture.plan.unlockTimestamp,
     streamflowFeePercent: fixture.plan.streamflowFeePercent,
-    messageHash: hashAtomicTransactionMessage(freshPreparation.transaction),
   };
-  const replay = rebuildIssuedAtomicLookupPreparation(fixture.wallet, fresh, {
-    messageHash: hashAtomicTransactionMessage(original.transaction),
-    blockhash: originalBlockhash,
-    lastValidBlockHeight: 200,
-  });
+  const plan = await buildAtomicLaunchInstructionsFromSnapshot({
+    config: fixture.config,
+    walletPublicKey: fixture.wallet,
+    mintPublicKey: fixture.mint,
+    metadataPublicKey: fixture.metadata,
+    metadataUri: fixture.metadataUri,
+  }, snapshot);
 
-  assert.deepEqual(replay.transaction, original.transaction);
-  assert.equal(replay.blockhash, originalBlockhash);
-  assert.equal(replay.lastValidBlockHeight, 200);
+  assert.equal(plan.quotedTokenAmount.toString(), snapshot.quotedTokenAmount);
+  assert.equal(plan.maxQuoteAmount.toString(), snapshot.maxQuoteAmount);
+  assert.equal(plan.lockAmount.toString(), snapshot.lockAmount);
+  assert.equal(plan.unlockTimestamp, snapshot.unlockTimestamp);
+  assert.equal(plan.streamflowFeePercent, snapshot.streamflowFeePercent);
+
+  await assert.rejects(() => buildAtomicLaunchInstructionsFromSnapshot({
+    config: fixture.config,
+    walletPublicKey: fixture.wallet,
+    mintPublicKey: fixture.mint,
+    metadataPublicKey: fixture.metadata,
+    metadataUri: fixture.metadataUri,
+  }, {
+    ...snapshot,
+    lockAmount: new BN(snapshot.lockAmount).addn(1).toString(),
+  }), /lock amount changed/);
 });

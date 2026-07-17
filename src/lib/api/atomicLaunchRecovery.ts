@@ -91,7 +91,7 @@ export async function prepareAtomicLaunchIntent(
   const configHash = hashCanonicalJson(value.config as JsonValue);
   const metadataHash = hashCanonicalJson(value.metadata as JsonValue);
   const altAddressesHash = hashOrderedAddresses(value.altAddresses);
-  const { data, error } = await getServerClient().rpc("atomic_prepare_launch_intent", {
+  const { data, error } = await getServerClient().rpc("atomic_prepare_launch_intent_v2", {
     p_github_id: value.githubId,
     p_creator_wallet: value.creatorWallet,
     p_mint_address: value.mintAddress,
@@ -107,9 +107,14 @@ export async function prepareAtomicLaunchIntent(
     p_alt_addresses_hash: altAddressesHash,
     p_quoted_token_amount: value.quotedTokenAmount,
     p_max_quote_amount: value.maxQuoteAmount,
+    p_planned_lock_amount: value.plannedLockAmount,
+    p_planned_unlock_timestamp: value.plannedUnlockTimestamp,
+    p_planned_streamflow_fee_percent: value.plannedStreamflowFeePercent,
     p_issued_setup_message_hash: value.setupMessageHash,
     p_issued_setup_blockhash: value.setupBlockhash,
     p_issued_setup_last_valid_block_height: value.setupLastValidBlockHeight,
+    p_issued_setup_recent_slot: value.issuedSetupRecentSlot,
+    p_issued_setup_transaction: value.issuedSetupTransaction,
     p_expires_at: value.expiresAt,
   });
   if (error) rpcError(error);
@@ -122,7 +127,7 @@ export async function issueAtomicTransaction(
   const parsed = issueAtomicTransactionSchema.safeParse(input);
   if (!parsed.success) invalidInput();
   const value = parsed.data;
-  const { data, error } = await getServerClient().rpc("atomic_issue_transaction", {
+  const { data, error } = await getServerClient().rpc("atomic_issue_transaction_v2", {
     p_github_id: value.githubId,
     p_creator_wallet: value.creatorWallet,
     p_mint_address: value.mintAddress,
@@ -134,6 +139,7 @@ export async function issueAtomicTransaction(
     p_last_valid_block_height: value.lastValidBlockHeight,
     p_lock_amount: value.lockAmount,
     p_unlock_timestamp: value.unlockTimestamp,
+    p_issued_atomic_transaction: value.issuedAtomicTransaction,
   });
   if (error) rpcError(error);
   return parseResult(data);

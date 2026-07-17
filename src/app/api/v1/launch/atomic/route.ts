@@ -14,6 +14,8 @@ import {
 import {
   buildAtomicLaunchTransaction,
   freezeAtomicLaunchConfig,
+  type AtomicLaunchPlanSnapshot,
+  type IssuedAtomicLaunchTransaction,
 } from "@/lib/solana/atomicLaunchBuilder.server";
 
 export { OPTIONS };
@@ -56,7 +58,45 @@ const intentSchema = z.object({
   altAddressesHash: z.string().regex(/^[0-9a-f]{64}$/),
   quotedTokenAmount: z.string().regex(/^\d+$/),
   maxQuoteAmount: z.string().regex(/^\d+$/),
+  plannedLockAmount: z.string().regex(/^\d+$/),
+  plannedUnlockTimestamp: z.number().int().positive().safe(),
+  plannedStreamflowFeePercent: z.number().finite().min(0).lt(100),
+  issuedAtomicTransaction: z.string().min(100).max(2_000).nullable(),
+  issuedAtomicMessageHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
+  issuedAtomicBlockhash: z.string().min(32).max(64).nullable(),
+  issuedAtomicLastValidBlockHeight: z.number().int().positive().safe().nullable(),
 }).passthrough();
+
+function issuedAtomicTransaction(
+  intent: z.infer<typeof intentSchema>,
+): IssuedAtomicLaunchTransaction | undefined {
+  const fields = [
+    intent.issuedAtomicTransaction,
+    intent.issuedAtomicMessageHash,
+    intent.issuedAtomicBlockhash,
+    intent.issuedAtomicLastValidBlockHeight,
+  ];
+  if (fields.every((value) => value === null)) return undefined;
+  if (fields.some((value) => value === null)) {
+    throw new AtomicLaunchRecoveryError("Issued atomic transaction is incomplete", 422);
+  }
+  return {
+    transaction: Buffer.from(intent.issuedAtomicTransaction!, "base64"),
+    messageHash: intent.issuedAtomicMessageHash!,
+    blockhash: intent.issuedAtomicBlockhash!,
+    lastValidBlockHeight: intent.issuedAtomicLastValidBlockHeight!,
+  };
+}
+
+function frozenPlan(intent: z.infer<typeof intentSchema>): AtomicLaunchPlanSnapshot {
+  return {
+    quotedTokenAmount: intent.quotedTokenAmount,
+    maxQuoteAmount: intent.maxQuoteAmount,
+    lockAmount: intent.plannedLockAmount,
+    unlockTimestamp: intent.plannedUnlockTimestamp,
+    streamflowFeePercent: intent.plannedStreamflowFeePercent,
+  };
+}
 
 export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
@@ -93,13 +133,19 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const bundle = await buildAtomicLaunchTransaction({
+    const identity = {
       walletPublicKey: new PublicKey(intent.creatorWallet),
       mintPublicKey: new PublicKey(intent.mintAddress),
       metadataPublicKey: new PublicKey(intent.metadataAddress),
       metadataUri: intent.metadataUri,
       config: freezeAtomicLaunchConfig(intent.config),
-    }, new PublicKey(intent.altAddress));
+    };
+    const bundle = await buildAtomicLaunchTransaction(
+      identity,
+      new PublicKey(intent.altAddress),
+      frozenPlan(intent),
+      issuedAtomicTransaction(intent),
+    );
     if (
       bundle.addressHash !== intent.altAddressesHash ||
       bundle.lookupTableAddress.toBase58() !== intent.altAddress ||
@@ -108,7 +154,7 @@ export async function POST(request: NextRequest) {
     ) {
       return apiError("Atomic transaction does not match the immutable launch intent", 422);
     }
-    const issued = await issueAtomicTransaction({
+    await issueAtomicTransaction({
       githubId: session.github_id,
       creatorWallet: session.wallet_address,
       mintAddress: intent.mintAddress,
@@ -120,25 +166,44 @@ export async function POST(request: NextRequest) {
       lastValidBlockHeight: bundle.lastValidBlockHeight,
       lockAmount: bundle.lockAmount,
       unlockTimestamp: bundle.unlockTimestamp,
+      issuedAtomicTransaction: Buffer.from(bundle.txBytes).toString("base64"),
     });
+    const persistedResult = intentSchema.safeParse(await getOwnedAtomicLaunchIntent({
+      githubId: session.github_id,
+      creatorWallet: session.wallet_address,
+      mintAddress: intent.mintAddress,
+    }));
+    if (!persistedResult.success) {
+      throw new AtomicLaunchRecoveryError("Issued atomic transaction was not persisted", 409);
+    }
+    const persisted = persistedResult.data;
+    const responseBundle = await buildAtomicLaunchTransaction(
+      identity,
+      new PublicKey(persisted.altAddress),
+      frozenPlan(persisted),
+      issuedAtomicTransaction(persisted),
+    );
     return apiResponse({
-      transaction: Buffer.from(bundle.txBytes).toString("base64"),
+      transaction: Buffer.from(responseBundle.txBytes).toString("base64"),
       mintPublicKey: intent.mintAddress,
       metadataPublicKey: intent.metadataAddress,
-      lookupTableAddress: bundle.lookupTableAddress.toBase58(),
+      lookupTableAddress: responseBundle.lookupTableAddress.toBase58(),
       lookupAddresses: intent.altAddresses,
-      lookupAddressesHash: bundle.addressHash,
-      blockhash: bundle.blockhash,
-      lastValidBlockHeight: bundle.lastValidBlockHeight,
-      quotedTokenAmount: bundle.quotedTokenAmount,
-      maxQuoteAmount: bundle.maxQuoteAmount,
-      lockAmount: bundle.lockAmount,
-      unlockTimestamp: bundle.unlockTimestamp,
-      streamflowFeePercent: bundle.streamflowFeePercent,
-      stateVersion: issued.stateVersion,
-      altStateVersion: issued.altStateVersion,
+      lookupAddressesHash: responseBundle.addressHash,
+      blockhash: responseBundle.blockhash,
+      lastValidBlockHeight: responseBundle.lastValidBlockHeight,
+      quotedTokenAmount: responseBundle.quotedTokenAmount,
+      maxQuoteAmount: responseBundle.maxQuoteAmount,
+      lockAmount: responseBundle.lockAmount,
+      unlockTimestamp: responseBundle.unlockTimestamp,
+      streamflowFeePercent: responseBundle.streamflowFeePercent,
+      stateVersion: persisted.stateVersion,
+      altStateVersion: persisted.altStateVersion,
     });
   } catch (buildError) {
+    if (buildError instanceof AtomicLaunchRecoveryError) {
+      return apiError(buildError.message, buildError.status);
+    }
     console.error("[launch/atomic] Failed:", buildError);
     return apiError("Atomic launch construction is unavailable", 503);
   }
