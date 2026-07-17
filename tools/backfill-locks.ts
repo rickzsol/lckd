@@ -82,7 +82,7 @@ async function readAccountOwner(
 
 /** Full-cliff acceptance mirroring the SDK's isCliffCloseToDepositedAmount:
  * cliffAmount within [depositedAmount - 1, depositedAmount] (finding 3-new). */
-function isFullCliffAmount(cliffAmount: BN, depositedAmount: BN): boolean {
+export function isFullCliffAmount(cliffAmount: BN, depositedAmount: BN): boolean {
   if (cliffAmount.gt(depositedAmount)) return false;
   return cliffAmount.gte(depositedAmount.subn(1));
 }
@@ -119,7 +119,7 @@ function computeLockBps(deposited: bigint, totalSupplyRaw: bigint): number | nul
 /** Derives lock status from finalized amounts + cliff, mirroring the runtime
  * derivation: pre-cliff movement is anomalous, full/closed withdrawal is
  * withdrawn, partial or time-eligible is unlock_eligible, else locked. */
-function deriveBackfillStatus(
+export function deriveBackfillStatus(
   deposited: bigint,
   withdrawn: bigint,
   closed: boolean,
@@ -359,17 +359,35 @@ async function main(): Promise<void> {
     if (tokens.length < args.pageSize) break;
   }
 
-  // Gate public availability on a verified complete pass: flip backfill_complete
-  // only when ZERO canonical locks still have a null denominator (finding 10).
+  // Gate public availability on a verified complete pass. It is NOT enough that
+  // existing canonical locks have no null denominator: a token that was skipped
+  // (no stream metadata, missing provenance, mint/owner mismatch) has NO lock row
+  // at all, and counting only present rows would flip complete=true while eligible
+  // tokens are still unrepresented. Compare EXPECTED eligible tokens against DONE
+  // verified canonical locks and require full coverage (finding 10).
   let backfillComplete = false;
+  let expected = 0;
+  let done = 0;
   if (!args.dryRun) {
-    const { count, error: countError } = await supabase
+    const { count: expectedCount, error: expectedError } = await supabase
+      .from("tokens")
+      .select("id", { count: "exact", head: true })
+      .not("launch_verified_at", "is", null)
+      .not("lock_verified_at", "is", null);
+    if (expectedError) throw new Error(`expected-count check failed: ${expectedError.message}`);
+
+    const { count: doneCount, error: doneError } = await supabase
       .from("locks")
       .select("id", { count: "exact", head: true })
       .eq("canonical", true)
-      .or("total_supply_raw.is.null,decimals.is.null,lock_bps.is.null");
-    if (countError) throw new Error(`completion check failed: ${countError.message}`);
-    backfillComplete = (count ?? 0) === 0;
+      .not("total_supply_raw", "is", null)
+      .not("decimals", "is", null)
+      .not("lock_bps", "is", null);
+    if (doneError) throw new Error(`done-count check failed: ${doneError.message}`);
+
+    expected = expectedCount ?? 0;
+    done = doneCount ?? 0;
+    backfillComplete = isBackfillComplete(expected, done);
     const { error: kvError } = await supabase
       .from("trust_kv")
       .upsert(
@@ -381,14 +399,28 @@ async function main(): Promise<void> {
 
   console.log(
     `[backfill] done. inserted=${inserted} skipped=${skipped} ` +
-      `denominatorMissing=${denominatorMissing} backfillComplete=${backfillComplete} dryRun=${args.dryRun}`,
+      `denominatorMissing=${denominatorMissing} expected=${expected} done=${done} ` +
+      `backfillComplete=${backfillComplete} dryRun=${args.dryRun}`,
   );
-  if (denominatorMissing > 0) {
+  if (!backfillComplete && !args.dryRun && expected > done) {
     console.log(
-      "[backfill] re-run once RPC is stable to fill missing denominators. " +
-        "locks_public stays gated (empty) until backfill_complete flips to true.",
+      `[backfill] ${expected - done} eligible token(s) still lack a verified canonical lock. ` +
+        "Re-run once RPC is stable; locks_public stays gated (empty) until every eligible " +
+        "token has a verified lock and backfill_complete flips to true.",
     );
   }
+}
+
+/**
+ * Backfill is complete only when every eligible token is represented by a fully
+ * verified canonical lock: done must equal expected (finding 10). With no eligible
+ * tokens (expected 0) there is nothing to withhold, so it is trivially complete.
+ * done exceeding expected (stale extra rows) is not treated as complete; it means
+ * the counts are inconsistent and a human should look before exposing data.
+ */
+export function isBackfillComplete(expected: number, done: number): boolean {
+  if (expected === 0) return true;
+  return done === expected;
 }
 
 const entry = process.argv[1] ?? "";
