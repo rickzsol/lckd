@@ -29,7 +29,12 @@ import {
   STREAMFLOW_V13_PROGRAM_ID,
   validateStreamflowCreateInstruction,
 } from "./streamflowInstruction";
-import { getConfirmedClusterTimestamp, lockDaysToSeconds } from "./streamflow";
+import {
+  calculateLockAmount,
+  getConfirmedClusterTimestamp,
+  getStreamflowTotalFeePercent,
+  lockDaysToSeconds,
+} from "./streamflow";
 
 const ATOMIC_COMPUTE_UNIT_LIMIT = 400_000;
 const U64_MAX = BigInt("0xffffffffffffffff");
@@ -45,11 +50,13 @@ export interface ReviewedAtomicEconomics {
   maxQuoteAmount: string;
   lockAmount: string;
   clusterTimestamp: number;
+  streamflowFeePercent: number;
 }
 
 export async function deriveReviewedAtomicEconomics(
   connection: Connection,
   config: { buyAmountSol: number; lockPercentage: number },
+  wallet: PublicKey,
 ): Promise<ReviewedAtomicEconomics> {
   const buyLamports = Math.round(config.buyAmountSol * LAMPORTS_PER_SOL);
   if (!Number.isSafeInteger(buyLamports) || buyLamports < 1) {
@@ -59,10 +66,11 @@ export async function deriveReviewedAtomicEconomics(
     throw new Error("Reviewed atomic lock percentage is invalid");
   }
   const onlineSdk = new OnlinePumpSdk(connection);
-  const [global, feeConfig, clusterTimestamp] = await Promise.all([
+  const [global, feeConfig, clusterTimestamp, streamflowFeePercent] = await Promise.all([
     onlineSdk.fetchGlobal(),
     onlineSdk.fetchFeeConfig(),
     getConfirmedClusterTimestamp(connection),
+    getStreamflowTotalFeePercent(connection, wallet),
   ]);
   const amount = new BN(buyLamports);
   const quoted = getBuyTokenAmountFromSolAmount({
@@ -75,14 +83,17 @@ export async function deriveReviewedAtomicEconomics(
   });
   const maxQuote = amount.muln(10_000 + SLIPPAGE_BPS).addn(9_999).divn(10_000);
   const quotedValue = BigInt(quoted.toString());
-  const lockAmount = (
-    quotedValue * BigInt(config.lockPercentage) + BigInt(99)
-  ) / BigInt(100);
+  const lockAmount = calculateLockAmount(
+    quotedValue,
+    config.lockPercentage,
+    streamflowFeePercent,
+  );
   return {
     quotedTokenAmount: quoted.toString(),
     maxQuoteAmount: maxQuote.toString(),
     lockAmount: lockAmount.toString(),
     clusterTimestamp,
+    streamflowFeePercent,
   };
 }
 

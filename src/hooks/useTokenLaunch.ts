@@ -90,6 +90,7 @@ interface SetupResponse extends AtomicState {
   maxQuoteAmount: string;
   lockAmount: string;
   unlockTimestamp: number;
+  streamflowFeePercent: number;
 }
 
 interface AtomicResponse {
@@ -202,6 +203,9 @@ function assertSetupResponse(value: SetupResponse, wallet: PublicKey): void {
     !/^\d+$/.test(value.maxQuoteAmount) ||
     !/^\d+$/.test(value.lockAmount) ||
     !Number.isSafeInteger(value.unlockTimestamp) ||
+    !Number.isFinite(value.streamflowFeePercent) ||
+    value.streamflowFeePercent < 0 ||
+    value.streamflowFeePercent >= 100 ||
     value.status !== "prepared" ||
     value.mintPublicKey === wallet.toBase58() ||
     value.metadataPublicKey === wallet.toBase58() ||
@@ -403,7 +407,7 @@ export function useTokenLaunch(config: LaunchConfig) {
       const mintKeypair = Keypair.generate();
       const metadataKeypair = Keypair.generate();
       mintAddress = mintKeypair.publicKey.toBase58();
-      const setupEconomics = await deriveReviewedAtomicEconomics(connection, config);
+      const setupEconomics = await deriveReviewedAtomicEconomics(connection, config, publicKey);
       const setup = await requestJson<SetupResponse>("/api/v1/launch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -431,7 +435,8 @@ export function useTokenLaunch(config: LaunchConfig) {
       if (
         setup.quotedTokenAmount !== setupEconomics.quotedTokenAmount ||
         setup.maxQuoteAmount !== setupEconomics.maxQuoteAmount ||
-        setup.lockAmount !== setupEconomics.lockAmount
+        setup.lockAmount !== setupEconomics.lockAmount ||
+        setup.streamflowFeePercent !== setupEconomics.streamflowFeePercent
       ) {
         throw new Error("Atomic setup economics changed from the reviewed configuration");
       }
