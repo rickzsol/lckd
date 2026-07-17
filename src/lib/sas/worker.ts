@@ -14,12 +14,14 @@ import {
   type AttestationContext,
 } from "./issuer";
 import {
+  advanceReissueToCreate,
   claimAttestationJob,
   completeAttestationJob,
   completeCloseAttestationJob,
   failAttestationJob,
   finishAttestationJobNoop,
   markBroadcast,
+  markCloseBroadcast,
   type OutboxJob,
 } from "./outbox";
 import { decideIssuance } from "./issuer";
@@ -48,6 +50,8 @@ export interface WorkerResult {
   claimed: number;
   completed: number;
   reconciled: number;
+  /** Reissue close phase done; the create phase runs on a later claim. */
+  advanced: number;
   skipped: number;
   failed: number;
   deadLettered: number;
@@ -113,17 +117,41 @@ function expiryIso(cliffTs: bigint): string {
 }
 
 /**
- * Reconcile a job that already persisted a signature before an ambiguous send.
- * Runs whenever pending_signature exists, regardless of the claimed-from status.
- * A confirmed-or-finalized signature means the on-chain effect landed, so we
- * complete/close from the persisted signature instead of resending. A failed or
- * never-landed signature returns "reprocess" so the caller re-drives with a fresh
- * blockhash.
+ * Reconcile a job that persisted a signature before an ambiguous send. Runs
+ * whenever a signature is persisted, regardless of the claimed-from status.
+ *
+ * Two shapes exist:
+ *   * A reissue whose CLOSE phase persisted only pending_close_signature (create
+ *     not yet started): reconcile the close and, if it landed, advance the job to
+ *     its create phase. The create runs as its own later claim.
+ *   * A create (issue/reissue create phase) or a pure close whose
+ *     pending_signature is set: complete/close from that signature.
+ *
+ * A confirmed-or-finalized signature means the effect landed; a failed or
+ * never-landed signature returns "reprocess" so the caller re-drives afresh.
  */
 async function reconcilePendingJob(
   ctx: AttestationContext,
   job: OutboxJob,
-): Promise<"reconciled" | "reprocess"> {
+): Promise<"reconciled" | "advanced" | "reprocess"> {
+  // Reissue close phase in flight: only the close signature is persisted.
+  if (!job.pending_signature && job.operation === "reissue" && job.pending_close_signature) {
+    const closeSig = job.pending_close_signature;
+    const state = await reconcileSignature(ctx, closeSig);
+    if (state !== "confirmed" && state !== "finalized") return "reprocess";
+    const pda = (await buildCloseInstruction(ctx, job.mint)).attestationPda;
+    await advanceReissueToCreate({
+      id: job.id,
+      leaseToken: job.lease_token as string,
+      cluster: job.cluster,
+      mint: job.mint,
+      schemaVersion: job.desired_schema_version ?? SCHEMA_VERSION,
+      attestationPda: pda.toString(),
+      closeSignature: closeSig,
+    });
+    return "advanced";
+  }
+
   const signature = job.pending_signature;
   if (!signature) return "reprocess";
   const state = await reconcileSignature(ctx, signature);
@@ -132,7 +160,9 @@ async function reconcilePendingJob(
     return "reprocess";
   }
 
-  // The landed transaction is the CREATE half (issue/reissue) or a pure close.
+  // The landed transaction is a CREATE (issue / reissue create phase) or a pure
+  // close. A reissue whose create landed carries operation 'issue' by now (the
+  // close phase already advanced it), so only a genuine 'close' job closes here.
   if (job.operation === "close") {
     const pda = (await buildCloseInstruction(ctx, job.mint)).attestationPda;
     await completeCloseAttestationJob({
@@ -170,22 +200,23 @@ async function reconcilePendingJob(
 }
 
 /**
- * Broadcast a single-instruction transaction with the persist-before-broadcast
- * fence. The signature is persisted first (as pending_signature or, for a close
- * phase, pending_close_signature). markBroadcast MUST return true; a false result
- * means the lease was lost and we abort WITHOUT broadcasting so a stale worker
- * never lands an effect it can no longer commit.
+ * Broadcast a create/pure-close transaction with the persist-before-broadcast
+ * fence: the signature is stored as pending_signature first. markBroadcast MUST
+ * return true; a false result means the lease was lost and we abort WITHOUT
+ * broadcasting, so a stale worker never lands an effect it can no longer commit.
  */
 async function broadcastFenced(
   ctx: AttestationContext,
   job: OutboxJob,
   instruction: Awaited<ReturnType<typeof buildCreateInstruction>>["instruction"],
-  isClosePhase: boolean,
 ): Promise<string> {
   const { signature, signed } = await prepareInstructions(ctx, [instruction]);
-  const persisted = isClosePhase
-    ? await markBroadcast(job.id, job.lease_token as string, signature, signature)
-    : await markBroadcast(job.id, job.lease_token as string, signature, job.pending_close_signature);
+  const persisted = await markBroadcast(
+    job.id,
+    job.lease_token as string,
+    signature,
+    job.pending_close_signature,
+  );
   if (!persisted) {
     throw new SasIssuerError("Lost lease before broadcast; aborting", false);
   }
@@ -193,19 +224,20 @@ async function broadcastFenced(
   return signature;
 }
 
-type ProcessOutcome = "completed" | "reconciled" | "skipped";
+type ProcessOutcome = "completed" | "reconciled" | "advanced" | "skipped";
 
 async function processJob(
   ctx: AttestationContext,
   job: OutboxJob,
   claimedFromStatus: string,
 ): Promise<ProcessOutcome> {
-  // Any job carrying a persisted signature is reconciled from chain first,
-  // regardless of the status it was claimed from. Only reprocess when the
-  // signature did not land.
-  if (job.pending_signature) {
+  // A job carrying ANY persisted signature (create or reissue-close phase) is
+  // reconciled from chain first, regardless of the status it was claimed from.
+  // Only fall through to fresh processing when nothing landed.
+  if (job.pending_signature || job.pending_close_signature) {
     const outcome = await reconcilePendingJob(ctx, job);
     if (outcome === "reconciled") return "reconciled";
+    if (outcome === "advanced") return "advanced";
   }
   void claimedFromStatus;
 
@@ -235,21 +267,32 @@ async function processJob(
     return "skipped";
   }
 
-  if (decision === "reissue") {
-    // Phase 1: close the stale account if it still exists, as its own durable
-    // broadcast with its own persisted signature and reconciliation.
-    if (await attestationExists(ctx, job.mint)) {
-      const { instruction } = await buildCloseInstruction(ctx, job.mint);
-      await broadcastFenced(ctx, job, instruction, true);
-      // Clear the phase-1 signatures; the create phase persists its own.
-      job.pending_close_signature = null;
-      job.pending_signature = null;
-    }
-    // Phase 2: create fresh.
-    return processCreate(ctx, job, evidence, null);
+  if (decision === "reissue" && (await attestationExists(ctx, job.mint))) {
+    // Reissue with the stale account still present: run the CLOSE phase as its
+    // own durable step. Persist only the close signature, broadcast, then advance
+    // the job to its create phase, which runs on the next claim with its own
+    // lease, signature, and reconciliation. (If the account is already absent we
+    // fall through and create directly.)
+    const { signature, signed } = await prepareInstructions(ctx, [
+      (await buildCloseInstruction(ctx, job.mint)).instruction,
+    ]);
+    const persisted = await markCloseBroadcast(job.id, job.lease_token as string, signature);
+    if (!persisted) throw new SasIssuerError("Lost lease before close broadcast; aborting", false);
+    await broadcastPrepared(ctx, signed);
+    const pda = (await buildCloseInstruction(ctx, job.mint)).attestationPda;
+    await advanceReissueToCreate({
+      id: job.id,
+      leaseToken: job.lease_token as string,
+      cluster: job.cluster,
+      mint: job.mint,
+      schemaVersion: evidence.schemaVersion,
+      attestationPda: pda.toString(),
+      closeSignature: signature,
+    });
+    return "advanced";
   }
 
-  // Fresh issue.
+  // Fresh issue, or a reissue whose account is already absent: create directly.
   return processCreate(ctx, job, evidence, null);
 }
 
@@ -272,7 +315,7 @@ async function processClose(ctx: AttestationContext, job: OutboxJob): Promise<Pr
     return "skipped";
   }
   const { instruction } = await buildCloseInstruction(ctx, job.mint);
-  const signature = await broadcastFenced(ctx, job, instruction, true);
+  const signature = await broadcastFenced(ctx, job, instruction);
   await completeCloseAttestationJob({
     id: job.id,
     leaseToken: job.lease_token as string,
@@ -293,7 +336,7 @@ async function processCreate(
   closeSignature: string | null,
 ): Promise<ProcessOutcome> {
   const { instruction, attestationPda } = await buildCreateInstruction(ctx, evidence);
-  const signature = await broadcastFenced(ctx, job, instruction, false);
+  const signature = await broadcastFenced(ctx, job, instruction);
   await completeAttestationJob({
     id: job.id,
     leaseToken: job.lease_token as string,
@@ -320,6 +363,7 @@ export async function runOutboxWorker(maxJobs = 5): Promise<WorkerResult> {
     claimed: 0,
     completed: 0,
     reconciled: 0,
+    advanced: 0,
     skipped: 0,
     failed: 0,
     deadLettered: 0,
@@ -334,6 +378,7 @@ export async function runOutboxWorker(maxJobs = 5): Promise<WorkerResult> {
     try {
       const outcome = await processJob(ctx, job, claimedFromStatus);
       if (outcome === "reconciled") result.reconciled++;
+      else if (outcome === "advanced") result.advanced++;
       else if (outcome === "skipped") result.skipped++;
       else result.completed++;
     } catch (error) {

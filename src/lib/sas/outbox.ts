@@ -103,6 +103,49 @@ export async function markBroadcast(
   return data === true;
 }
 
+/** Persist a reissue close-phase signature before its broadcast: sets only
+ * pending_close_signature, leaving pending_signature null. Returns false if the
+ * lease was lost. */
+export async function markCloseBroadcast(
+  id: string,
+  leaseToken: string,
+  closeSignature: string,
+  leaseSeconds = 120,
+): Promise<boolean> {
+  const { data, error } = await getServerClient().rpc("mark_attestation_close_broadcast", {
+    p_id: id,
+    p_lease_token: leaseToken,
+    p_close_signature: closeSignature,
+    p_lease_seconds: leaseSeconds,
+  });
+  if (error) fail(`Failed to mark close broadcast: ${error.message}`);
+  return data === true;
+}
+
+export interface AdvanceReissueInput {
+  id: string;
+  leaseToken: string;
+  cluster: string;
+  mint: string;
+  schemaVersion: number;
+  attestationPda: string;
+  closeSignature: string;
+}
+
+/** Complete the reissue close phase and flip the job to its create phase. */
+export async function advanceReissueToCreate(input: AdvanceReissueInput): Promise<void> {
+  const { error } = await getServerClient().rpc("advance_reissue_to_create", {
+    p_id: input.id,
+    p_lease_token: input.leaseToken,
+    p_cluster: input.cluster,
+    p_mint: input.mint,
+    p_schema_version: input.schemaVersion,
+    p_attestation_pda: input.attestationPda,
+    p_close_signature: input.closeSignature,
+  });
+  if (error) fail(`Failed to advance reissue to create: ${error.message}`);
+}
+
 export interface CompleteInput {
   id: string;
   leaseToken: string;

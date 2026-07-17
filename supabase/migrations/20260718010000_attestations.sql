@@ -381,6 +381,104 @@ begin
 end;
 $$;
 
+-- Persist the reissue CLOSE-phase signature before its broadcast. Unlike
+-- mark_attestation_broadcast this stores ONLY pending_close_signature and leaves
+-- pending_signature null, so reconciliation can tell the create half has not yet
+-- landed and never mistakes a close signature for a create.
+create or replace function public.mark_attestation_close_broadcast(
+  p_id uuid,
+  p_lease_token uuid,
+  p_close_signature text,
+  p_lease_seconds integer default 120
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_updated integer;
+begin
+  update public.attestation_outbox
+  set status = 'broadcast',
+      pending_signature = null,
+      pending_close_signature = p_close_signature,
+      locked_until = now() + make_interval(secs => p_lease_seconds),
+      updated_at = now()
+  where id = p_id
+    and lease_token = p_lease_token
+    and status = 'leased';
+  get diagnostics v_updated = row_count;
+  return v_updated = 1;
+end;
+$$;
+
+-- Complete the reissue CLOSE phase: close the live DB row (no generation) and
+-- flip the SAME job to its CREATE phase (operation 'issue', status 'pending',
+-- signatures cleared, attempts reset). The create then runs as its own durable
+-- claim with its own lease, signature, and reconciliation. Lease/status/close-
+-- signature fenced against a stale worker.
+create or replace function public.advance_reissue_to_create(
+  p_id uuid,
+  p_lease_token uuid,
+  p_cluster text,
+  p_mint text,
+  p_schema_version integer,
+  p_attestation_pda text,
+  p_close_signature text
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_row public.attestation_outbox%rowtype;
+begin
+  select * into v_row
+  from public.attestation_outbox
+  where id = p_id
+  for update;
+
+  if not found then
+    raise exception 'attestation job % not found', p_id;
+  end if;
+  if v_row.lease_token is distinct from p_lease_token then
+    raise exception 'attestation job % lease mismatch (stale worker)', p_id;
+  end if;
+  if v_row.status <> 'broadcast' then
+    raise exception 'attestation job % not in broadcast status (was %)', p_id, v_row.status;
+  end if;
+  if v_row.pending_close_signature is distinct from p_close_signature then
+    raise exception 'attestation job % close signature mismatch', p_id;
+  end if;
+
+  update public.attestations
+  set status = 'closed',
+      close_signature = coalesce(p_close_signature, close_signature),
+      closed_at = now(),
+      updated_at = now()
+  where cluster = p_cluster
+    and mint = p_mint
+    and schema_version = p_schema_version
+    and status in ('pending', 'submitted', 'finalized')
+    and attestation_pda = p_attestation_pda;
+
+  update public.attestation_outbox
+  set operation = 'issue',
+      status = 'pending',
+      attempts = 0,
+      next_retry_at = now(),
+      locked_until = null,
+      lease_token = null,
+      pending_signature = null,
+      -- Retain the close signature so the eventual create completion can record
+      -- which close preceded this generation.
+      updated_at = now()
+  where id = p_id;
+end;
+$$;
+
 -- Promote any parked successor snapshot into the live desired columns and reopen
 -- the job as 'pending' for the next processing pass. Returns true when a
 -- successor was promoted (the job stays open), false when there was none (the
@@ -764,6 +862,10 @@ revoke all on function public.claim_attestation_job(integer) from public, anon, 
 grant execute on function public.claim_attestation_job(integer) to service_role;
 revoke all on function public.mark_attestation_broadcast(uuid, uuid, text, text, integer) from public, anon, authenticated;
 grant execute on function public.mark_attestation_broadcast(uuid, uuid, text, text, integer) to service_role;
+revoke all on function public.mark_attestation_close_broadcast(uuid, uuid, text, integer) from public, anon, authenticated;
+grant execute on function public.mark_attestation_close_broadcast(uuid, uuid, text, integer) to service_role;
+revoke all on function public.advance_reissue_to_create(uuid, uuid, text, text, integer, text, text) from public, anon, authenticated;
+grant execute on function public.advance_reissue_to_create(uuid, uuid, text, text, integer, text, text) to service_role;
 revoke all on function public.promote_successor_or_done(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.promote_successor_or_done(uuid, uuid) to service_role;
 revoke all on function public.complete_attestation_job(uuid, uuid, uuid, text, text, text, integer, integer, integer, integer, bigint, text, timestamptz, text, text) from public, anon, authenticated;
