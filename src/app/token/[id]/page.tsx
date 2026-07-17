@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getTokenByIdOrMint } from "@/lib/queries";
+import { getPendingManualLaunch } from "@/lib/pendingLaunches";
 import TokenDetailClient from "./TokenDetailClient";
+import PendingLaunchDetail from "./PendingLaunchDetail";
 
 export const revalidate = 60;
 
@@ -11,6 +13,24 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
+  const pendingLaunch = getPendingManualLaunch(id);
+
+  if (pendingLaunch) {
+    return {
+      title: `${pendingLaunch.name} (${pendingLaunch.ticker})`,
+      description: pendingLaunch.description,
+      alternates: { canonical: `/token/${pendingLaunch.id}` },
+      openGraph: {
+        title: `${pendingLaunch.name} (${pendingLaunch.ticker})`,
+        description: pendingLaunch.description,
+        siteName: "LCKD",
+        type: "website",
+        url: `/token/${pendingLaunch.id}`,
+        images: [{ url: pendingLaunch.image, width: 400, height: 400, alt: pendingLaunch.name }],
+      },
+    };
+  }
+
   const token = await getTokenByIdOrMint(id);
 
   if (!token) {
@@ -47,6 +67,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function TokenDetailPage({ params }: Props) {
   const { id } = await params;
+  const pendingLaunch = getPendingManualLaunch(id);
+
+  if (pendingLaunch) {
+    return <PendingLaunchDetail launch={pendingLaunch} />;
+  }
+
   const token = await getTokenByIdOrMint(id);
 
   if (!token) {

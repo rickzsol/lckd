@@ -38,3 +38,7 @@ export const PENDING_MANUAL_LAUNCHES: readonly PendingManualLaunch[] = [
     },
   },
 ];
+
+export function getPendingManualLaunch(id: string): PendingManualLaunch | null {
+  return PENDING_MANUAL_LAUNCHES.find((launch) => launch.id === id) ?? null;
+}
