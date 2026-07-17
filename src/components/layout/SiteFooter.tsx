@@ -1,11 +1,4 @@
-"use client";
-
-import { usePathname } from "next/navigation";
-
 export default function SiteFooter() {
-  const pathname = usePathname();
-  if (pathname === "/coming-soon") return null;
-
   return (
     <footer className="relative z-[1] border-t border-line">
       <div className="mx-auto flex max-w-[1152px] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-[22px] font-mono text-[11px] font-medium text-text-3 sm:px-6">

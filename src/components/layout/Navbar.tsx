@@ -18,7 +18,6 @@ export default function Navbar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const isGateRoute = pathname === "/coming-soon";
 
   useEffect(() => {
     if (isMobileOpen) {
@@ -30,8 +29,6 @@ export default function Navbar() {
       document.body.style.overflow = "";
     };
   }, [isMobileOpen]);
-
-  if (isGateRoute) return null;
 
   return (
     <nav aria-label="Primary" className="fixed inset-x-0 top-0 z-50 px-[10px] pt-[10px]">
