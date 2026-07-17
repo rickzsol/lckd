@@ -18,6 +18,15 @@
 
 begin;
 
+-- Finalized supply basis (raw base units) that trust attestations use as the
+-- lock basis-point denominator. Persisted at record time so BOTH the record
+-- trigger and the tier-recompute cron derive the SAME lock_bps, keeping the
+-- enqueued evidence hash and the worker's reconstruction in agreement.
+-- TODO(trust-api): superseded by the canonical finalized total supply once
+-- feature/trust-api lands.
+alter table public.tokens
+  add column if not exists sas_supply_basis text;
+
 create table if not exists public.attestations (
   id uuid primary key default gen_random_uuid(),
   token_id uuid not null references public.tokens(id) on delete cascade,

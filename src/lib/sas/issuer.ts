@@ -20,6 +20,7 @@ import {
 } from "gill";
 
 import {
+  assertRpcMatchesCluster,
   createSasClient,
   loadFeePayerSigner,
   loadSasConfig,
@@ -102,16 +103,15 @@ export interface AttestationContext {
 /** Build the RPC client, pinned config, and hot signers for issuance work. */
 export async function buildAttestationContext(): Promise<AttestationContext> {
   const config = loadSasConfig();
+  const client = createSasClient(config.cluster);
+  // Bind the RPC to the cluster before loading signers: refuse to touch keys if
+  // the RPC serves a different chain than SAS_CLUSTER claims.
+  await assertRpcMatchesCluster(client, config.cluster);
   const [signer, feePayer] = await Promise.all([
     loadSignerSigner(),
     loadFeePayerSigner(),
   ]);
-  return {
-    client: createSasClient(config.cluster),
-    config,
-    signer,
-    feePayer,
-  };
+  return { client, config, signer, feePayer };
 }
 
 export async function deriveTrustAttestationPda(

@@ -226,8 +226,62 @@ async function main() {
   if (!result.verified) throw new Error(`verification failed: ${result.reason}`);
   console.log("    - verified: true");
 
-  console.log("6. Closing attestation...");
+  // Two-phase reissue: close the current generation, then recreate a fresh one
+  // with an upgraded tier. Each phase is its OWN transaction with its OWN
+  // signature, mirroring the durable outbox worker. A single close+create
+  // transaction is deliberately NOT used: an ambiguous send could not be
+  // reconciled by a single signature, and devnet verification of that combined
+  // path is unavailable here.
+  console.log("6. Reissue phase 1 - closing the current generation...");
   const eventAuthority = await deriveEventAuthorityAddress();
+  const closePhaseSig = await send(client, payer, [
+    getCloseAttestationInstruction({
+      payer,
+      attestation: attestationPda,
+      authority: signer,
+      credential: credentialPda,
+      eventAuthority,
+      attestationProgram: SOLANA_ATTESTATION_SERVICE_PROGRAM_ADDRESS,
+    }),
+  ], "reissue-close");
+  const afterReissueClose = await fetchMaybeAttestation(client.rpc, attestationPda);
+  if (afterReissueClose.exists) throw new Error("attestation still exists after reissue close");
+  console.log(`    - reissue close signature: ${closePhaseSig}`);
+
+  console.log("7. Reissue phase 2 - recreating at an upgraded tier...");
+  const reissueData = { ...data, tier: TRUST_TIER.SHIPPED };
+  const createPhaseSig = await send(client, payer, [
+    getCreateAttestationInstruction({
+      payer,
+      authority: signer,
+      credential: credentialPda,
+      schema: schemaPda,
+      attestation: attestationPda,
+      nonce: tokenMint.address,
+      expiry: cliffTs,
+      data: serializeTrustData(reissueData),
+    }),
+  ], "reissue-create");
+  if (createPhaseSig === closePhaseSig) throw new Error("reissue phases must have distinct signatures");
+
+  const reissued = await fetchMaybeAttestation(client.rpc, attestationPda);
+  if (!reissued.exists) throw new Error("attestation not found after reissue create");
+  const reissuedDecoded = deserializeTrustData(reissued.data.data as Uint8Array);
+  if (reissuedDecoded.tier !== TRUST_TIER.SHIPPED) {
+    throw new Error(`reissue did not upgrade tier: got ${reissuedDecoded.tier}`);
+  }
+  const reissueVerify = await verifyTrustAttestation(
+    client.rpc,
+    { credentialPda, schemaPda },
+    tokenMint.address.toString(),
+  );
+  if (!reissueVerify.verified) throw new Error(`reissue verification failed: ${reissueVerify.reason}`);
+  if (reissueVerify.verified && reissueVerify.data.tier !== TRUST_TIER.SHIPPED) {
+    throw new Error("reissue verify returned the stale tier");
+  }
+  console.log("    - reissued + verified at upgraded tier");
+
+  console.log("8. Closing attestation...");
   await send(client, payer, [
     getCloseAttestationInstruction({
       payer,

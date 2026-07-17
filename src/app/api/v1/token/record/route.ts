@@ -11,6 +11,7 @@ import {
   verifyFinalizedAtomicLaunchTransaction,
 } from "@/lib/api/onchain";
 import { fetchApprovedMetadata } from "@/lib/api/finalizedMetadata";
+import { triggerFinalizedLockAttestation } from "@/lib/sas/lockTrigger";
 
 export { OPTIONS };
 
@@ -198,6 +199,19 @@ async function recordAtomicLaunch(
   if (error) return persistenceError(error);
   const result = atomicRecordResultSchema.safeParse(wasUpdated);
   if (!result.success) return apiError("Atomic launch persistence returned an invalid state", 503);
+
+  // Finalized lock is now persisted: enqueue a trust attestation (SAS_ENABLED
+  // gated, non-blocking). Never fails the record request.
+  await triggerFinalizedLockAttestation({
+    mint: body.mintAddress,
+    creator: session.wallet_address,
+    streamId: verified.metadataAddress,
+    lockedAmount: BigInt(verified.lock.amount),
+    supplyBasis: verified.purchasedAmount,
+    cliffTs: BigInt(Math.floor(new Date(verified.lock.unlockAt).getTime() / 1000)),
+    github: session.github_username ?? "",
+  });
+
   const responseStatus = result.data.replayed || result.data.updated ? 200 : 201;
   return apiResponse(
     {

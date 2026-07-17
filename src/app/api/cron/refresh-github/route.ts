@@ -4,6 +4,8 @@ import { getServerClient } from "@/lib/supabase";
 import { getGitHubRepoDetails, getRecentCommits, getCommitCountSinceLaunch } from "@/lib/github/api";
 import { calculateTrustTier } from "@/lib/github/tierCalculator";
 import { verifyLiveUrl } from "@/lib/github/urlVerifier";
+import { triggerTierTransitionAttestation } from "@/lib/sas/lockTrigger";
+import { type TrustTierValue } from "@/lib/sas/schema";
 import { type Token, type GitHubProfile } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +55,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Failed to downgrade expired locks" }, { status: 500 });
   }
   const expiredDowngrades = downgradedTokens?.length ?? 0;
+
+  // Expired-lock downgrades are a tier transition too: reissue the attestation at
+  // the new tier (SAS_ENABLED gated, non-blocking).
+  for (const row of (downgradedTokens as Array<{ id: string }> | null) ?? []) {
+    await triggerTierTransitionAttestation({ tokenId: row.id, newTier: 1 as TrustTierValue });
+  }
 
   let refreshed = 0;
   let tierChanges = 0;
@@ -177,6 +185,15 @@ async function refreshToken(
     .not("lock_verified_at", "is", null);
 
   if (updateError) throw new Error(`Tier update failed: ${updateError.message}`);
+
+  // A tier change is an evidence transition: reissue the on-chain attestation at
+  // the new tier (SAS_ENABLED gated, non-blocking).
+  if (isChanged) {
+    await triggerTierTransitionAttestation({
+      tokenId: token.id,
+      newTier: newTier as TrustTierValue,
+    });
+  }
 
   return isChanged;
 }

@@ -51,20 +51,56 @@ export function loadSasConfig(): SasConfig {
 }
 
 /**
- * Resolve the RPC url. Prefers the repo's Helius RPC (private, high limits) and
- * falls back to public monikers only on devnet, never in production.
+ * Genesis hashes pin an RPC to a cluster. A mismatch means the configured RPC
+ * serves a different chain than SAS_CLUSTER claims, so we refuse to sign against
+ * it. Values are the canonical Solana cluster genesis hashes.
+ */
+const GENESIS_HASH: Record<SasCluster, string> = {
+  mainnet: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
+  devnet: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+};
+
+/**
+ * Resolve the RPC url for a cluster. Each cluster reads its OWN variable so a
+ * single shared URL can never point devnet issuance at mainnet:
+ *   mainnet -> SAS_MAINNET_RPC_URL (required)
+ *   devnet  -> SAS_DEVNET_RPC_URL, else the public devnet moniker
+ * HELIUS_RPC_URL is accepted only as a legacy fallback for the ACTIVE cluster
+ * and is validated by the genesis-hash check before any signing.
  */
 function resolveRpcUrl(cluster: SasCluster): string {
-  const heliusUrl = process.env.HELIUS_RPC_URL?.trim();
-  if (heliusUrl) return heliusUrl;
   if (cluster === "mainnet") {
-    throw new SasConfigError("HELIUS_RPC_URL is required for mainnet SAS");
+    const url = process.env.SAS_MAINNET_RPC_URL?.trim() || process.env.HELIUS_RPC_URL?.trim();
+    if (!url) throw new SasConfigError("SAS_MAINNET_RPC_URL is required for mainnet SAS");
+    return url;
   }
+  const devUrl = process.env.SAS_DEVNET_RPC_URL?.trim();
+  if (devUrl) return devUrl;
+  const legacy = process.env.HELIUS_RPC_URL?.trim();
+  if (legacy && legacy.includes("devnet")) return legacy;
   return "devnet";
 }
 
 export function createSasClient(cluster: SasCluster): SolanaClient {
   return createSolanaClient({ urlOrMoniker: resolveRpcUrl(cluster) });
+}
+
+/**
+ * Verify the RPC actually serves the cluster it is configured for. Called before
+ * any signing so a misconfigured RPC can never persist a false cluster label or
+ * issue against the wrong chain. Throws SasConfigError on a mismatch.
+ */
+export async function assertRpcMatchesCluster(
+  client: SolanaClient,
+  cluster: SasCluster,
+): Promise<void> {
+  const genesis = await client.rpc.getGenesisHash().send();
+  const expected = GENESIS_HASH[cluster];
+  if (genesis !== expected) {
+    throw new SasConfigError(
+      `RPC genesis hash ${genesis} does not match SAS_CLUSTER=${cluster} (${expected})`,
+    );
+  }
 }
 
 /**
