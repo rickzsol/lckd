@@ -149,14 +149,23 @@ function assertSemanticCleanupMessage(
   message: MessageV0,
   expectation: LookupCleanupExpectation,
 ): void {
+  const hasExpectedBlockhash = message.recentBlockhash === expectation.blockhash;
+  const hasExpectedPayer = message.staticAccountKeys[0]?.equals(expectation.wallet) ?? false;
   if (
-    message.recentBlockhash !== expectation.blockhash ||
+    !hasExpectedBlockhash ||
     message.addressTableLookups.length !== 0 ||
     message.header.numRequiredSignatures !== 1 ||
-    !message.staticAccountKeys[0]?.equals(expectation.wallet) ||
+    !hasExpectedPayer ||
     ![1, 3, 4].includes(message.compiledInstructions.length)
   ) {
-    throw new Error("Lookup table cleanup instruction set is invalid");
+    throw new Error([
+      "Lookup table cleanup instruction set is invalid",
+      `instructions=${message.compiledInstructions.length}`,
+      `signers=${message.header.numRequiredSignatures}`,
+      `lookups=${message.addressTableLookups.length}`,
+      `payer=${hasExpectedPayer}`,
+      `blockhash=${hasExpectedBlockhash}`,
+    ].join("; "));
   }
   const instructions = message.compiledInstructions.map((_, index) =>
     resolveInstruction(message, index));
