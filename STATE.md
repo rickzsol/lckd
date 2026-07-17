@@ -43,7 +43,36 @@ Built the public trust API, unlock calendar, and live lock pipeline per plan sec
 - `/unlocks` page (date-grouped, mono countdowns, warn under 7d, unlockable danger + pulse dot, mascot empty state), navbar link, sitemap, OG image, feed next-unlock strip. Trust + unlocks sections added to `/api-docs`.
 - Tools: `tools/backfill-locks.ts` (staged, nullable-first, finalized RPC denominator, NOT NULL follow-up stub) and `tools/register-helius-webhook.ts` (tracked-address batched edits, never auto-run).
 
-Verification: 116 tests pass (62 existing + 54 new), typecheck + lint + production build clean. Internal adversarial review passed after one blocking fix (definer view). External Codex review is a remaining gate: the Windows Codex CLI has no linux binary in this WSL environment, so run the blocking Codex diff review before merge.
+Verification: 156 tests pass (all trust tests are now wired into the runner via a
+globstar; the prior explicit file list silently excluded every trust test, so the
+old "116 tests" figure never actually ran the lock pipeline). typecheck + lint +
+production build clean.
+
+Round-3 review (BLOCKED) fully addressed across 3 commits on this branch:
+- 1 (critical): claim/complete/fail/commit RPCs revoked from PUBLIC/anon/auth,
+  granted only to service_role.
+- 2: readFinalizedStreamState returns a discriminated outcome; a confirmed
+  closure is distinguished from RPC/lookup failure; absence never = withdrawn.
+- 3: decoded stream is bound to the stored lock identity + cliff-only schedule
+  before it is trusted (reconcile + backfill).
+- 4: pre-cliff movement classified anomalous; the withdrawn<=deposited constraint
+  is conditional so anomalous observations persist.
+- 5: single tier authority: project from the canonical lock + persisted
+  github_tier evidence, commit lock+token atomically via commit_lock_reconciliation.
+- 6: reconcile sweep is recency-ordered (last_verified_at asc nulls first) with a
+  page/time budget, so later locks are never starved.
+- 7: inbox dedup on (provider, signature, event_type); malformed nonempty batches
+  rejected; entries with no usable account keys dropped, not persisted.
+- 8: per-claim lease_id fences every completion/failure.
+- 9: raw amounts are decimal strings end to end (view casts to text); ratios use
+  BigInt.
+- 10: backfill uses keyset pagination, update-on-conflict, derived status,
+  rejected missing provenance; locks_public is gated on trust_kv.backfill_complete.
+- 11: getUpcomingUnlocks returns degraded vs ok; trust stale computed from real
+  freshness; degraded github lookup flagged and marks stale.
+- 12: locks_public no longer exposes recipient.
+- 13: explicit 405 handlers with public CORS on the two public routes.
+- 14: register-helius-webhook fails instead of silently truncating addresses.
 
 Open items:
 - Attestation block in the trust response is shape-only (null); the SAS branch wires program id, credential PDA, schema PDA, expiry.
