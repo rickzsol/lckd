@@ -1,5 +1,6 @@
 import "server-only";
 
+import { PublicKey } from "@solana/web3.js";
 import type { RicomapsResult } from "@/lib/ricomaps.client";
 
 export const FIXTURE_MINTS = {
@@ -11,7 +12,7 @@ export const FIXTURE_MINTS = {
 } as const;
 
 const FIXTURE_HOLDERS = Array.from({ length: 20 }, (_, i) => ({
-  address: `Fixture${String(i).padStart(2, "0")}WalletAddr${String(i).padStart(4, "0")}xyz`,
+  address: new PublicKey(Uint8Array.from({ length: 32 }, () => i + 1)).toBase58(),
   pct: Math.max(0.5, 12 - i * 0.6),
   isSniper: i < 3,
   isBundled: i >= 3 && i < 6,

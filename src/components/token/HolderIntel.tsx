@@ -10,6 +10,7 @@ import TopHoldersTable from "@/components/token/holder-intel/TopHoldersTable";
 type LoadState =
   | { phase: "loading" }
   | { phase: "loaded"; result: RicomapsResult }
+  | { phase: "timedOut" }
   | { phase: "failed" };
 
 const POLL_DELAYS_MS = [5_000, 10_000, 20_000];
@@ -65,13 +66,19 @@ export default function HolderIntel({ mintAddress }: { mintAddress: string }) {
         const result = (await response.json()) as RicomapsResult;
         if (controller.signal.aborted) return;
 
-        setState({ phase: "loaded", result });
-
-        if (result.status !== "pending") return;
+        if (result.status !== "pending") {
+          setState({ phase: "loaded", result });
+          return;
+        }
 
         if (pollStartedAtRef.current === null) pollStartedAtRef.current = Date.now();
         const elapsed = Date.now() - pollStartedAtRef.current;
-        if (elapsed >= POLL_TIMEOUT_MS) return;
+        if (elapsed >= POLL_TIMEOUT_MS) {
+          controller.abort();
+          setState({ phase: "timedOut" });
+          return;
+        }
+        setState({ phase: "loaded", result });
 
         const delay = POLL_DELAYS_MS[Math.min(pollAttemptRef.current, POLL_DELAYS_MS.length - 1)];
         pollAttemptRef.current += 1;
@@ -98,7 +105,17 @@ export default function HolderIntel({ mintAddress }: { mintAddress: string }) {
     );
   }
 
-  if (state.phase === "failed" || state.result.status === "unavailable") {
+  if (state.phase === "timedOut") {
+    return (
+      <SectionShell>
+        <div className="warning-box !block leading-[1.6]">
+          scan did not complete. refresh to retry.
+        </div>
+      </SectionShell>
+    );
+  }
+
+  if (state.phase === "failed" || state.result.status === "unavailable" || (state.result.status !== "pending" && !state.result.data)) {
     return (
       <SectionShell>
         <div className="warning-box !block leading-[1.6]">analytics unavailable</div>

@@ -140,11 +140,27 @@ export async function fetchHolderIntel(mintAddress: string): Promise<RicomapsRes
     return unavailable();
   }
 
+  const scannedAt = parseIsoTimestamp(envelope.data.scannedAt);
+  const expiresAt = parseIsoTimestamp(envelope.data.expiresAt);
+  const isStale = envelope.data.stale === true;
+
+  if (isStale && !scannedAt) {
+    console.error("[ricomaps] stale response missing a valid scannedAt");
+    return unavailable();
+  }
+
   return {
-    status: envelope.data.stale ? "stale" : "fresh",
-    scannedAt: envelope.data.scannedAt ?? null,
-    expiresAt: envelope.data.expiresAt ?? null,
+    status: isStale ? "stale" : "fresh",
+    scannedAt,
+    expiresAt,
     retryAfterSeconds: null,
     data: { ...parsed.data, topHolders: dedupeValidHolders(parsed.data.topHolders) },
   };
+}
+
+function parseIsoTimestamp(value: string | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
 }
