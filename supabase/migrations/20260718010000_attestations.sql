@@ -307,8 +307,14 @@ $$;
 -- Atomically claim one due outbox row with a lease. Returns the leased row and
 -- the status it was claimed FROM (so the worker reconciles a prior broadcast
 -- instead of blindly resending). Uses skip-locked so concurrent workers never
--- claim the same row. A row claimed from 'broadcast' keeps its pending_signature
--- and is reported via claimed_from_status = 'broadcast'.
+-- claim the same row.
+--
+-- A row recovered from 'broadcast' KEEPS status 'broadcast' (only pending/failed/
+-- leased rows move to 'leased'). The reconciliation completion RPCs require
+-- status = 'broadcast', so forcing every claim to 'leased' would make a recovered
+-- broadcast row fail reconciliation. Preserving the claimed-from status lets a
+-- recovered broadcast reconcile against its persisted signature; the lease token
+-- and locked_until still fence a stale worker either way.
 create or replace function public.claim_attestation_job(
   p_lease_seconds integer default 120
 )
@@ -340,7 +346,7 @@ begin
 
   return query
   update public.attestation_outbox
-  set status = 'leased',
+  set status = case when v_from = 'broadcast' then 'broadcast' else 'leased' end,
       lease_token = v_lease,
       locked_until = now() + make_interval(secs => p_lease_seconds),
       attempts = attempts + 1,
@@ -351,7 +357,11 @@ end;
 $$;
 
 -- Persist a broadcast intent: signatures stored BEFORE the worker broadcasts, so
--- an ambiguous send reconciles from chain. Guarded by the lease token.
+-- an ambiguous send reconciles from chain. Guarded by the lease token. Accepts a
+-- row in 'leased' (normal first broadcast) OR 'broadcast' (a recovered broadcast
+-- whose prior signature never landed and is being re-driven with a fresh one):
+-- the lease token still fences a stale worker, and overwriting pending_signature
+-- with the new attempt is exactly what a re-drive needs.
 create or replace function public.mark_attestation_broadcast(
   p_id uuid,
   p_lease_token uuid,
@@ -375,7 +385,7 @@ begin
       updated_at = now()
   where id = p_id
     and lease_token = p_lease_token
-    and status = 'leased';
+    and status in ('leased', 'broadcast');
   get diagnostics v_updated = row_count;
   return v_updated = 1;
 end;
@@ -384,7 +394,8 @@ $$;
 -- Persist the reissue CLOSE-phase signature before its broadcast. Unlike
 -- mark_attestation_broadcast this stores ONLY pending_close_signature and leaves
 -- pending_signature null, so reconciliation can tell the create half has not yet
--- landed and never mistakes a close signature for a create.
+-- landed and never mistakes a close signature for a create. Accepts 'leased' or
+-- 'broadcast' (a recovered close being re-driven with a fresh signature).
 create or replace function public.mark_attestation_close_broadcast(
   p_id uuid,
   p_lease_token uuid,
@@ -407,7 +418,7 @@ begin
       updated_at = now()
   where id = p_id
     and lease_token = p_lease_token
-    and status = 'leased';
+    and status in ('leased', 'broadcast');
   get diagnostics v_updated = row_count;
   return v_updated = 1;
 end;
