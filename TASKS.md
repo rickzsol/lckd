@@ -9,6 +9,7 @@
 
 ## Completed
 
+- [x] Stage privacy-safe Sentry runtime error instrumentation for browser, Node.js, and edge runtimes and pass the full local quality gates.
 - [x] Reset and harden the LCKD Discord server with gated channels, private alerts, repaired AutoMod, controlled invites, and Double Counter role hierarchy.
 - [x] Install and verify the project-local Discord administration MCP for the LCKD guild.
 - [x] Upgrade the application stack and regenerate the lockfile.
@@ -43,6 +44,7 @@
 
 ## Release
 
+- [ ] Merge and deploy the Sentry instrumentation draft PR, add a scoped source-map upload token, and verify the Sentry-to-Discord incident path with a controlled error.
 - [ ] Authorize and configure the Double Counter dashboard, publish the verification panel, and test role assignment with a new account.
 - [ ] Restore/provision production Supabase and verify connectivity.
 - [ ] Review production data for duplicate receipt signatures and apply migration 002.

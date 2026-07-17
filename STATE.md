@@ -41,6 +41,7 @@ The official launch monitor and token page are deployed to production. The broad
 
 ## Verification completed
 
+- Sentry runtime error instrumentation is staged for browser, Node.js, and edge runtimes with PII, request-body capture, tracing, replay, and log forwarding disabled. The Vercel DSN is configured; activation awaits human merge and deployment.
 - LCKD Discord was reset and hardened: fresh gated channels, private security logs, Medium verification, full media filtering, four repaired AutoMod rules, expiring invites only, and Double Counter above `Verified`. The owner-authorized Double Counter panel is still pending.
 - Project-local `discord_admin` MCP is pinned to `@quadslab.io/discord-mcp@2.1.1`, scoped to guild `1519763437738135632`, and verified with an authenticated guild read.
 - `npm test`: 58 passed
@@ -65,6 +66,7 @@ The official launch monitor and token page are deployed to production. The broad
 
 ## Known release gates
 
+- Merge and deploy the Sentry instrumentation draft PR, add a scoped `SENTRY_AUTH_TOKEN` for source-map uploads, then verify a controlled error reaches Sentry and the private Discord incident channel.
 - Authorize the Double Counter dashboard, bind `#verify`, `@Verified`, and `#verification-logs`, then publish and test its verification panel.
 - Restore or provision the production Supabase project. The configured host no longer resolves; live stats/feed return `available: false` and cron cannot refresh data.
 - Configure and validate `PINATA_JWT`, `HELIUS_RPC_URL`, `ALLOWED_ORIGIN`, Supabase, OAuth, and cron production values. Do not reuse credentials from another project without an explicit rotation decision.
