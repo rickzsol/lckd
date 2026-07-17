@@ -644,18 +644,18 @@ async function cleanupTransactionResponse(
     lookupTable: new PublicKey(intent.altAddress),
     blockhash,
   };
-  let transaction = buildLookupCleanupTransaction(expectation);
+  let transaction = buildLegacyLookupCleanupTransaction(expectation);
   if (
     isReplayingIssuedCleanup &&
     intent.issuedCleanupPhase === phase &&
     intent.issuedCleanupMessageHash &&
     hashAtomicTransactionMessage(transaction.serialize()) !== intent.issuedCleanupMessageHash
   ) {
-    const legacyTransaction = buildLegacyLookupCleanupTransaction(expectation);
-    if (hashAtomicTransactionMessage(legacyTransaction.serialize()) !== intent.issuedCleanupMessageHash) {
+    const feePinnedTransaction = buildLookupCleanupTransaction(expectation);
+    if (hashAtomicTransactionMessage(feePinnedTransaction.serialize()) !== intent.issuedCleanupMessageHash) {
       throw new AtomicLaunchRecoveryError("ALT cleanup issuance changed", 422);
     }
-    transaction = legacyTransaction;
+    transaction = feePinnedTransaction;
   }
   await issueAtomicAltCleanup({
     githubId: intent.githubId,

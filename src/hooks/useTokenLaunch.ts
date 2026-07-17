@@ -708,6 +708,12 @@ export function useTokenLaunch(config: LaunchConfig) {
       blockhash: action.blockhash,
     });
     transaction = await signTransaction(transaction);
+    validateLookupCleanupTransaction(transactionBase64(transaction), {
+      phase: action.action,
+      wallet: publicKey,
+      lookupTable: new PublicKey(action.lookupTableAddress),
+      blockhash: action.blockhash,
+    }, true);
     await simulateVersionedTransactionOrThrow(connection, transaction, "Lookup cleanup", {
       wallet: publicKey,
       maxLamports: Math.ceil(0.005 * LAMPORTS_PER_SOL),

@@ -7,6 +7,7 @@ import {
   Keypair,
   PublicKey,
   TransactionMessage,
+  TransactionInstruction,
   VersionedTransaction,
   type AccountInfo,
 } from "@solana/web3.js";
@@ -125,6 +126,42 @@ function repricedCleanup(
   return transaction;
 }
 
+function loadedAccountsLimit(bytes: number): TransactionInstruction {
+  const data = Buffer.alloc(5);
+  data[0] = 4;
+  data.writeUInt32LE(bytes, 1);
+  return new TransactionInstruction({
+    programId: ComputeBudgetProgram.programId,
+    keys: [],
+    data,
+  });
+}
+
+function phantomCleanup(
+  wallet: Keypair,
+  lookupTable: PublicKey,
+  loadedAccountsBytes: number,
+  isDuplicateLoadedLimit = false,
+): VersionedTransaction {
+  const loadedLimit = loadedAccountsLimit(loadedAccountsBytes);
+  const transaction = new VersionedTransaction(new TransactionMessage({
+    payerKey: wallet.publicKey,
+    recentBlockhash: BLOCKHASH,
+    instructions: [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 100_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: BigInt(1_000_000) }),
+      loadedLimit,
+      ...(isDuplicateLoadedLimit ? [loadedLimit] : []),
+      AddressLookupTableProgram.deactivateLookupTable({
+        authority: wallet.publicKey,
+        lookupTable,
+      }),
+    ],
+  }).compileToV0Message());
+  transaction.sign([wallet]);
+  return transaction;
+}
+
 test("accepts a wallet-repriced cleanup within strict compute and fee caps", () => {
   const wallet = Keypair.generate();
   const lookupTable = Keypair.generate().publicKey;
@@ -135,6 +172,33 @@ test("accepts a wallet-repriced cleanup within strict compute and fee caps", () 
     { phase: "deactivate", wallet: wallet.publicKey, lookupTable, blockhash: BLOCKHASH },
     true,
   ));
+});
+
+test("accepts Phantom loaded-account sizing within the strict cap", () => {
+  const wallet = Keypair.generate();
+  const lookupTable = Keypair.generate().publicKey;
+  const transaction = phantomCleanup(wallet, lookupTable, 64 * 1024 * 1024);
+
+  assert.doesNotThrow(() => validateLookupCleanupTransaction(
+    Buffer.from(transaction.serialize()).toString("base64"),
+    { phase: "deactivate", wallet: wallet.publicKey, lookupTable, blockhash: BLOCKHASH },
+    true,
+  ));
+});
+
+test("rejects oversized or duplicate loaded-account sizing", () => {
+  const wallet = Keypair.generate();
+  const lookupTable = Keypair.generate().publicKey;
+  for (const transaction of [
+    phantomCleanup(wallet, lookupTable, 64 * 1024 * 1024 + 1),
+    phantomCleanup(wallet, lookupTable, 64 * 1024 * 1024, true),
+  ]) {
+    assert.throws(() => validateLookupCleanupTransaction(
+      Buffer.from(transaction.serialize()).toString("base64"),
+      { phase: "deactivate", wallet: wallet.publicKey, lookupTable, blockhash: BLOCKHASH },
+      true,
+    ), /instruction set is invalid|compute budget is invalid|priority fee is invalid/);
+  }
 });
 
 test("rejects cleanup repricing above strict compute and fee caps", () => {

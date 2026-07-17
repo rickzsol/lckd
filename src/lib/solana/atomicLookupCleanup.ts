@@ -17,6 +17,7 @@ const LOOKUP_CLEANUP_COMPUTE_UNIT_LIMIT = 25_000;
 const MAX_LOOKUP_CLEANUP_COMPUTE_UNIT_LIMIT = BigInt(100_000);
 const MAX_LOOKUP_CLEANUP_COMPUTE_UNIT_PRICE = BigInt(1_000_000);
 const MAX_LOOKUP_CLEANUP_PRIORITY_FEE_LAMPORTS = BigInt(100_000);
+const MAX_LOOKUP_CLEANUP_LOADED_ACCOUNTS_BYTES = BigInt(64 * 1024 * 1024);
 
 export type LookupCleanupPhase = "deactivate" | "close";
 
@@ -109,11 +110,12 @@ function readLittleEndian(data: Uint8Array, offset: number, length: number): big
 }
 
 function validateComputeBudgetPrefix(instructions: readonly TransactionInstruction[]): void {
-  if (![0, 2].includes(instructions.length)) {
+  if (![0, 2, 3].includes(instructions.length)) {
     throw new Error("Lookup table cleanup compute budget is invalid");
   }
   let unitLimit: bigint | null = null;
   let unitPrice: bigint | null = null;
+  let loadedAccountsBytes: bigint | null = null;
   for (const instruction of instructions) {
     const data = instruction.data;
     if (!instruction.programId.equals(ComputeBudgetProgram.programId) || instruction.keys.length) {
@@ -123,6 +125,8 @@ function validateComputeBudgetPrefix(instructions: readonly TransactionInstructi
       unitLimit = readLittleEndian(data, 1, 4);
     } else if (data.length === 9 && data[0] === 3 && unitPrice === null) {
       unitPrice = readLittleEndian(data, 1, 8);
+    } else if (data.length === 5 && data[0] === 4 && loadedAccountsBytes === null) {
+      loadedAccountsBytes = readLittleEndian(data, 1, 4);
     } else {
       throw new Error("Lookup table cleanup compute budget is invalid");
     }
@@ -132,6 +136,9 @@ function validateComputeBudgetPrefix(instructions: readonly TransactionInstructi
     unitLimit === null || unitPrice === null || unitLimit < BigInt(1) ||
     unitLimit > MAX_LOOKUP_CLEANUP_COMPUTE_UNIT_LIMIT ||
     unitPrice > MAX_LOOKUP_CLEANUP_COMPUTE_UNIT_PRICE ||
+    (instructions.length === 3 && loadedAccountsBytes === null) ||
+    loadedAccountsBytes === BigInt(0) ||
+    (loadedAccountsBytes !== null && loadedAccountsBytes > MAX_LOOKUP_CLEANUP_LOADED_ACCOUNTS_BYTES) ||
     unitLimit * unitPrice > MAX_LOOKUP_CLEANUP_PRIORITY_FEE_LAMPORTS * BigInt(1_000_000)
   ) {
     throw new Error("Lookup table cleanup priority fee is invalid");
@@ -147,7 +154,7 @@ function assertSemanticCleanupMessage(
     message.addressTableLookups.length !== 0 ||
     message.header.numRequiredSignatures !== 1 ||
     !message.staticAccountKeys[0]?.equals(expectation.wallet) ||
-    ![1, 3].includes(message.compiledInstructions.length)
+    ![1, 3, 4].includes(message.compiledInstructions.length)
   ) {
     throw new Error("Lookup table cleanup instruction set is invalid");
   }
