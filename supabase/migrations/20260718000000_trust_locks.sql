@@ -124,8 +124,14 @@ revoke all on public.webhook_inbox from public, anon, authenticated;
 -- Safe public view: only lock rows whose token is publicly visible (matches the
 -- tokens_select policy: launch + lock verified). No signatures, no slots, no
 -- escrow/recipient internals beyond what the trust API already exposes.
-create or replace view public.locks_public
-with (security_invoker = true) as
+--
+-- Intentionally a SECURITY DEFINER view (the default; no security_invoker): the
+-- view is owned by the migration role, which reads the RLS-locked `locks` table
+-- on the caller's behalf. The anon client has no grant or policy on `locks`
+-- itself, so this view is the ONLY path anon can reach lock rows, and it is
+-- pre-filtered to publicly visible tokens. An invoker view here would return
+-- zero rows because anon has neither a grant nor a select policy on `locks`.
+create or replace view public.locks_public as
 select
   l.id,
   l.token_id,
