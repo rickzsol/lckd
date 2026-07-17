@@ -39,12 +39,14 @@ export interface PinnedAnchors {
 export type VerifyRejection =
   | "attestation_not_found"
   | "schema_not_found"
+  | "schema_paused"
   | "wrong_program"
   | "wrong_credential"
   | "wrong_schema"
   | "wrong_schema_version"
   | "wrong_layout"
   | "expired"
+  | "cliff_mismatch"
   | "mint_mismatch"
   | "malformed_payload";
 
@@ -89,6 +91,11 @@ export async function verifyTrustAttestation(
   if (schema.data.version !== SCHEMA_VERSION) {
     return { verified: false, reason: "wrong_schema_version" };
   }
+  // A paused schema cannot issue new attestations (the create processor rejects
+  // it), so trust bound to a paused schema is no longer being maintained: reject.
+  if (schema.data.isPaused) {
+    return { verified: false, reason: "schema_paused" };
+  }
   if (!layoutMatches(schema.data.layout)) {
     return { verified: false, reason: "wrong_layout" };
   }
@@ -129,6 +136,12 @@ export async function verifyTrustAttestation(
   }
   if (data.mint !== mint) {
     return { verified: false, reason: "mint_mismatch" };
+  }
+  // The payload cliff must equal the account's outer expiry. Otherwise a payload
+  // with a past cliff but a future outer expiry would verify after the lock has
+  // ended: the attestation must die exactly when the lock does.
+  if (data.cliff_ts !== account.expiry) {
+    return { verified: false, reason: "cliff_mismatch" };
   }
 
   return { verified: true, data, attestationPda, expiry: account.expiry };

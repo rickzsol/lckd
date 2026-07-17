@@ -281,6 +281,7 @@ async function verifyTier(mint: string) {
   if (schema.programAddress !== SAS_PROGRAM) return null;      // wrong program
   if (schema.data.credential !== CREDENTIAL) return null;      // wrong credential
   if (schema.data.version !== 1) return null;                  // wrong version
+  if (schema.data.isPaused) return null;                       // paused schema, no longer issuing
   if (schema.data.layout.length !== LAYOUT.length) return null;
   if (LAYOUT.some((v, i) => schema.data.layout[i] !== v)) return null; // wrong layout
 
@@ -293,6 +294,7 @@ async function verifyTier(mint: string) {
 
   const data = deserializeAttestationData(schema.data, att.data.data);
   if (data.mint !== mint) return null;                         // payload mint mismatch
+  if (data.cliff_ts !== att.data.expiry) return null;          // cliff must equal outer expiry
   return data; // { mint, creator, stream_id, tier, lock_bps, cliff_ts, policy_version, github }
 }`}
             />

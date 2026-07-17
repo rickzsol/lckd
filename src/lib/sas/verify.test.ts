@@ -35,7 +35,9 @@ function encodeFieldNames(fields: readonly string[]): Uint8Array {
   return Uint8Array.from(parts);
 }
 
-function schemaAccountBytes(overrides: { credential?: Address; version?: number; layout?: Uint8Array } = {}): ReadonlyUint8Array {
+function schemaAccountBytes(
+  overrides: { credential?: Address; version?: number; layout?: Uint8Array; isPaused?: boolean } = {},
+): ReadonlyUint8Array {
   return getSchemaEncoder().encode({
     discriminator: 0,
     credential: overrides.credential ?? CREDENTIAL,
@@ -43,7 +45,7 @@ function schemaAccountBytes(overrides: { credential?: Address; version?: number;
     description: new TextEncoder().encode("desc"),
     layout: overrides.layout ?? SCHEMA_LAYOUT,
     fieldNames: encodeFieldNames(SCHEMA_FIELDS),
-    isPaused: false,
+    isPaused: overrides.isPaused ?? false,
     version: overrides.version ?? SCHEMA_VERSION,
   });
 }
@@ -98,14 +100,14 @@ function mockRpc(accounts: Map<string, AccountFixture>) {
 const FUTURE = BigInt(Math.floor(Date.now() / 1000) + 86_400);
 const PAST = BigInt(Math.floor(Date.now() / 1000) - 86_400);
 
-function validData(mint: string) {
+function validData(mint: string, cliffTs: bigint = FUTURE) {
   return serializeTrustData({
     mint,
     creator: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
     stream_id: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
     tier: TRUST_TIER.BUILDER,
     lock_bps: 6500,
-    cliff_ts: FUTURE,
+    cliff_ts: cliffTs,
     policy_version: 1,
     github: "octocat",
   });
@@ -188,4 +190,29 @@ test("rejects when the payload mint does not match the queried mint", async () =
   ]);
   const result = await verifyTrustAttestation(mockRpc(accounts), { credentialPda: CREDENTIAL, schemaPda: SCHEMA_PDA }, MINT);
   assert.deepEqual(result, { verified: false, reason: "mint_mismatch" });
+});
+
+// F7: a paused schema no longer issues attestations, so trust bound to it must
+// not verify even if the attestation account is otherwise valid.
+test("rejects a paused schema", async () => {
+  const pda = await attestationPdaFor(MINT);
+  const accounts = new Map<string, AccountFixture>([
+    [SCHEMA_PDA.toString(), { bytes: schemaAccountBytes({ isPaused: true }) }],
+    [pda.toString(), { bytes: attestationAccountBytes(address(MINT), FUTURE, validData(MINT)) }],
+  ]);
+  const result = await verifyTrustAttestation(mockRpc(accounts), { credentialPda: CREDENTIAL, schemaPda: SCHEMA_PDA }, MINT);
+  assert.deepEqual(result, { verified: false, reason: "schema_paused" });
+});
+
+// F7: a past payload cliff hidden behind a future outer expiry would verify a
+// lock that has already ended. The payload cliff MUST equal the outer expiry.
+test("rejects a payload cliff that does not match the outer expiry", async () => {
+  const pda = await attestationPdaFor(MINT);
+  // Outer expiry is in the future, but the payload cliff is in the past.
+  const accounts = new Map<string, AccountFixture>([
+    [SCHEMA_PDA.toString(), { bytes: schemaAccountBytes() }],
+    [pda.toString(), { bytes: attestationAccountBytes(address(MINT), FUTURE, validData(MINT, PAST)) }],
+  ]);
+  const result = await verifyTrustAttestation(mockRpc(accounts), { credentialPda: CREDENTIAL, schemaPda: SCHEMA_PDA }, MINT);
+  assert.deepEqual(result, { verified: false, reason: "cliff_mismatch" });
 });
