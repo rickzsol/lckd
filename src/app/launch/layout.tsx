@@ -1,23 +1,17 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Launch a Token — LCKD",
+  title: "Launch a Solana token",
   description:
-    "Create a token on pump.fun with enforced Streamflow token locks. Verified devs, locked bags, on-chain proof.",
+    "Create and buy a token on pump.fun, then approve a separate Streamflow lock transaction and verify both receipts.",
+  alternates: { canonical: "/launch" },
   openGraph: {
-    title: "Launch a Token — LCKD",
+    title: "Launch a Solana token | LCKD",
     description:
-      "Create a rug-proof token on Solana with enforced dev token locks.",
+      "An authenticated two-transaction create-then-lock workflow with explicit wallet approvals.",
+    url: "/launch",
     siteName: "LCKD",
     type: "website",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "LCKD" }],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Launch a Token — LCKD",
-    description:
-      "Create a rug-proof token on Solana with enforced dev token locks.",
-    images: ["/og.png"],
   },
 };
 

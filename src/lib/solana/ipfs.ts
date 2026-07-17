@@ -1,4 +1,6 @@
-import { PUMPFUN_IPFS_URL } from "./constants";
+import "server-only";
+
+import { PinataSDK } from "pinata";
 
 export interface TokenMetadataInput {
   name: string;
@@ -9,54 +11,58 @@ export interface TokenMetadataInput {
   website?: string;
 }
 
-interface IPFSResponse {
+export interface IPFSUploadResult {
   metadataUri: string;
+  imageUri: string;
+  metadataCid: string;
+  imageCid: string;
 }
 
-/**
- * Uploads token image and metadata to pump.fun's IPFS endpoint.
- * Returns the metadata URI to be used in the create instruction.
- */
+function createPublicGatewayUrl(cid: string): string {
+  const configuredGateway = process.env.PINATA_GATEWAY?.trim();
+  if (!configuredGateway) return `https://gateway.pinata.cloud/ipfs/${cid}`;
+
+  const gatewayUrl = configuredGateway.startsWith("http")
+    ? configuredGateway
+    : `https://${configuredGateway}`;
+  return `${gatewayUrl.replace(/\/$/, "")}/ipfs/${cid}`;
+}
+
 export async function uploadToIPFS(
   image: File,
   metadata: TokenMetadataInput,
-): Promise<string> {
-  if (!image) {
-    throw new Error("Token image is required for IPFS upload");
-  }
-
-  if (!metadata.name || !metadata.symbol) {
+): Promise<IPFSUploadResult> {
+  const pinataJwt = process.env.PINATA_JWT;
+  if (!pinataJwt) throw new Error("PINATA_JWT is not configured");
+  if (!image || image.size === 0) throw new Error("Token image is required");
+  if (!metadata.name.trim() || !metadata.symbol.trim()) {
     throw new Error("Token name and symbol are required");
   }
 
-  const formData = new FormData();
-  formData.append("file", image);
-  formData.append("name", metadata.name);
-  formData.append("symbol", metadata.symbol);
-  formData.append("description", metadata.description || "");
-  formData.append("showName", "true");
-
-  if (metadata.twitter) formData.append("twitter", metadata.twitter);
-  if (metadata.telegram) formData.append("telegram", metadata.telegram);
-  if (metadata.website) formData.append("website", metadata.website);
-
-  const response = await fetch(PUMPFUN_IPFS_URL, {
-    method: "POST",
-    body: formData,
+  const pinata = new PinataSDK({
+    pinataJwt,
+    pinataGateway: process.env.PINATA_GATEWAY,
   });
+  const imageUpload = await pinata.upload.public
+    .file(image)
+    .name(`${metadata.symbol.toLowerCase()}-${image.name}`);
+  const imageUri = createPublicGatewayUrl(imageUpload.cid);
+  const metadataUpload = await pinata.upload.public
+    .json({
+      name: metadata.name,
+      symbol: metadata.symbol,
+      description: metadata.description || "",
+      image: imageUri,
+      ...(metadata.twitter ? { twitter: metadata.twitter } : {}),
+      ...(metadata.telegram ? { telegram: metadata.telegram } : {}),
+      ...(metadata.website ? { website: metadata.website } : {}),
+    })
+    .name(`${metadata.symbol.toLowerCase()}-metadata.json`);
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "Unknown error");
-    throw new Error(
-      `IPFS upload failed (${response.status}): ${errorText}`,
-    );
-  }
-
-  const data = (await response.json()) as IPFSResponse;
-
-  if (!data.metadataUri) {
-    throw new Error("IPFS upload succeeded but no metadataUri was returned");
-  }
-
-  return data.metadataUri;
+  return {
+    metadataUri: createPublicGatewayUrl(metadataUpload.cid),
+    imageUri,
+    metadataCid: metadataUpload.cid,
+    imageCid: imageUpload.cid,
+  };
 }

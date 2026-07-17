@@ -3,23 +3,17 @@ import { getTokens } from "@/lib/queries";
 import FeedClient from "./FeedClient";
 
 export const metadata: Metadata = {
-  title: "Explore Builders — LCKD",
+  title: "Launch directory",
   description:
-    "Browse verified token launches with locked dev allocations. Filter by trust tier — every project on LCKD has on-chain token locks.",
+    "Browse LCKD launch records and open external sources to verify token, developer, market, and lock claims independently.",
+  alternates: { canonical: "/feed" },
   openGraph: {
-    title: "Explore Builders — LCKD",
+    title: "Launch directory | LCKD",
     description:
-      "Browse verified token launches with locked dev allocations on Solana.",
+      "Browse platform records and verify every claim independently.",
+    url: "/feed",
     siteName: "LCKD",
     type: "website",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "LCKD" }],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Explore Builders — LCKD",
-    description:
-      "Browse verified token launches with locked dev allocations on Solana.",
-    images: ["/og.png"],
   },
 };
 

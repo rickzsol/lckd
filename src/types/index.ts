@@ -23,6 +23,9 @@ export interface Token {
   live_url: string | null;
   trust_tier: TrustTier;
   launch_tx: string;
+  launch_verified_at: string | null;
+  lock_verified_at: string | null;
+  lock_unlock_at: string | null;
   created_at: string;
   twitter_url: string | null;
   telegram_url: string | null;
@@ -31,7 +34,7 @@ export interface Token {
 
 export interface GitHubProfile {
   id: string;
-  wallet_address: string;
+  wallet_address: string | null;
   github_id: string;
   github_username: string;
   github_avatar: string;
@@ -70,7 +73,6 @@ export interface LaunchConfig {
   image: File | null;
   imageUri: string | null;
   buyAmountSol: number;
-  skipLock: boolean;
   lockDurationDays: number;
   lockPercentage: number;
   githubUsername: string | null;

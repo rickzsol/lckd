@@ -1,410 +1,202 @@
 import type { Metadata } from "next";
-import Badge from "@/components/ui/Badge";
-import { TrustTier } from "@/types/index";
-import DocsToc from "@/components/docs/DocsToc";
+import Link from "next/link";
+import Toc, { type TocSection } from "@/components/docs/Toc";
 import {
-  SectionHeading,
-  SubHeading,
-  Prose,
   Accent,
   FaqItem,
   FlowStep,
+  Prose,
+  SectionHeading,
+  SubHeading,
 } from "@/components/docs/DocsPrimitives";
 
+const DOC_SECTIONS: TocSection[] = [
+  { id: "overview", label: "Overview" },
+  { id: "launch-flow", label: "Launch flow" },
+  { id: "lock-behavior", label: "Lock behavior" },
+  { id: "verification", label: "Verification" },
+  { id: "profiles", label: "Profile labels" },
+  { id: "buyers", label: "For buyers" },
+  { id: "faq", label: "FAQ" },
+];
+
 export const metadata: Metadata = {
-  title: "Docs — LCKD",
+  title: "Product documentation",
   description:
-    "Learn how LCKD enforces transparent token launches with locked dev allocations via Streamflow token locks.",
+    "How LCKD authentication, pump.fun token creation, the separate Streamflow lock transaction, partial failures, and independent verification work.",
+  alternates: { canonical: "/docs" },
+  openGraph: {
+    title: "Product documentation | LCKD",
+    description: "Understand the create-then-lock workflow before signing.",
+    url: "/docs",
+    type: "article",
+  },
 };
+
+function Notice({ children }: { children: React.ReactNode }) {
+  return <div className="warning-box max-w-none !block text-[13px] leading-7">{children}</div>;
+}
 
 export default function DocsPage() {
   return (
-    <div className="mx-auto flex max-w-5xl gap-10 px-4 pb-24 pt-10">
-      <DocsToc />
+    <div className="mx-auto max-w-[1152px] bg-bg pb-24">
+      <header className="border-b border-line px-4 pt-28 pb-12 sm:px-6 sm:pb-16">
+        <div className="mx-auto max-w-3xl">
+          <h1 className="font-sans text-[32px] font-bold tracking-[-0.02em] text-text-1 sm:text-[clamp(32px,5vw,44px)]">
+            Know what you are signing
+          </h1>
+          <p className="mt-5 max-w-2xl text-[15px] leading-[1.6] text-text-2">
+            LCKD coordinates token creation and a required token time lock. They are separate
+            transactions with separate outcomes.
+          </p>
+        </div>
+      </header>
 
-      <article className="min-w-0 max-w-3xl flex-1 space-y-16">
-        {/* ─── What is LCKD? ──────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="what-is-lckd">What is LCKD?</SectionHeading>
+      <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4 pt-6 lg:flex-row lg:gap-12 lg:pt-10">
+        <Toc sections={DOC_SECTIONS} />
+        <article className="min-w-0 max-w-3xl flex-1 space-y-20">
+          <section className="space-y-5">
+            <SectionHeading id="overview">Overview</SectionHeading>
+            <Prose>
+              The browser wizard requires <Accent>GitHub authentication</Accent> before it
+              uploads metadata or requests a launch transaction. A Solana wallet is connected
+              separately and keeps control of every wallet signature.
+            </Prose>
+            <Prose>
+              Token creation uses pump.fun infrastructure. The browser waits for creation to
+              confirm, reads the new token balance, and then builds a
+              Streamflow token lock. LCKD does not combine those actions atomically.
+            </Prose>
+            <Notice>
+              A confirmed create transaction is final even if the later lock fails or is
+              rejected. In that state, the purchased tokens remain in the wallet and can be
+              moved until a lock transaction confirms.
+            </Notice>
+          </section>
 
-          <Prose>
-            LCKD is a <Accent>trust-enforcement wrapper</Accent> around pump.fun. It
-            is <strong className="text-white">not</strong> a competing DEX or launchpad.
-            All trading still happens on pump.fun exactly as you{"'"}d expect — LCKD
-            only handles the launch transaction, adding mandatory token locks to the
-            developer{"'"}s token allocation before the token ever goes live.
-          </Prose>
-
-          <Prose>
-            The problem is simple: devs launch tokens, buy a bag during creation, and dump
-            it on buyers within minutes. LCKD makes that impossible by locking the dev
-            buy through a <Accent>Streamflow token lock</Accent> — an audited, non-cancelable
-            on-chain lock. If a dev launches through LCKD, their tokens are locked.
-            Period.
-          </Prose>
-
-          <div className="rounded-lg border border-accent/20 bg-accent/[0.04] px-4 py-3">
-            <p className="font-mono text-xs font-bold text-accent">Key point</p>
-            <p className="mt-1 text-sm leading-relaxed text-text-muted">
-              LCKD does not custody funds, run a DEX, or deploy a custom on-chain
-              program. It constructs a client-side transaction bundle that atomically
-              creates, buys, and locks — all in one signature.
-            </p>
-          </div>
-        </section>
-
-        {/* ─── How It Works ─────────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="how-it-works">How It Works</SectionHeading>
-
-          <SubHeading>The Atomic Transaction</SubHeading>
-          <Prose>
-            When you launch a token through LCKD, three instructions are bundled into
-            a single Solana transaction:
-          </Prose>
-
-          <div className="space-y-3">
-            <FlowStep
-              n={1}
-              label="Create token on pump.fun"
-              sub="The token is created using pump.fun's bonding curve program, exactly as a normal pump.fun launch."
-            />
-            <FlowStep
-              n={2}
-              label="Dev buy executes"
-              sub="Your initial SOL buy goes through the bonding curve. You receive tokens into your wallet."
-            />
-            <FlowStep
-              n={3}
-              label="Tokens are locked via Streamflow"
-              sub="The purchased tokens are immediately deposited into a Streamflow token lock contract with your chosen duration."
-            />
-          </div>
-
-          <div className="warning-box">
-            If any step fails, the entire transaction reverts. You cannot end up with an
-            unlocked buy — that{"'"}s the whole point. The atomicity is enforced at the
-            Solana runtime level.
-          </div>
-
-          <SubHeading>The Flow</SubHeading>
-
-          <div className="overflow-x-auto">
-            <div className="flex min-w-[540px] items-center gap-0">
-              {[
-                { label: "Your SOL", color: "text-white" },
-                { label: "pump.fun buy", color: "text-accent" },
-                { label: "Tokens", color: "text-white" },
-                { label: "Streamflow lock", color: "text-accent" },
-                { label: "Lock schedule", color: "text-white" },
-              ].map((step, i) => (
-                <div key={step.label} className="flex items-center">
-                  <div className="rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-2">
-                    <span className={`font-mono text-[11px] font-bold ${step.color}`}>
-                      {step.label}
-                    </span>
-                  </div>
-                  {i < 4 && (
-                    <span className="px-1 font-mono text-xs text-text-muted">
-                      {"\u2192"}
-                    </span>
-                  )}
-                </div>
-              ))}
+          <section className="space-y-6">
+            <SectionHeading id="launch-flow">Launch flow</SectionHeading>
+            <div className="space-y-5 rounded-card border border-line-default bg-surface p-5">
+              <FlowStep n={1} label="Authenticate" sub="Sign in with GitHub. This creates the session required by launch and metadata endpoints." />
+              <FlowStep n={2} label="Configure" sub="Add token metadata, choose an initial SOL buy, and select the time-lock duration and percentage." />
+              <FlowStep n={3} label="Approve create and buy" sub="Your wallet signs the pump.fun transaction. LCKD submits it and waits for confirmation." />
+              <FlowStep n={4} label="Approve the lock" sub="A second wallet request deposits the selected token amount into a Streamflow time lock." />
+              <FlowStep n={5} label="Verify receipts" sub="Check the create and lock signatures independently before relying on any platform label." />
             </div>
-          </div>
 
-          <SubHeading>Streamflow Token Lock</SubHeading>
-          <Prose>
-            Streamflow is an <Accent>audited token lock protocol</Accent> on Solana.
-            When LCKD locks your tokens, it creates a Streamflow token lock contract
-            with the following properties:
-          </Prose>
+            <SubHeading>Partial failure</SubHeading>
+            <Prose>
+              If the first transaction confirms but the second fails, the wizard shows a
+              partial-failure state and offers a lock retry. Do not describe the token as
+              locked until the retry confirms on-chain.
+            </Prose>
 
-          <ul className="space-y-2 pl-5 text-[15px] leading-[1.75] text-text-muted sm:text-base">
-            <li className="list-disc">
-              <strong className="text-white">Non-cancelable</strong> — once locked, the
-              creator cannot withdraw tokens early
-            </li>
-            <li className="list-disc">
-              <strong className="text-white">Cliff-based lock</strong> — tokens unlock
-              in full at the end of the lock period
-            </li>
-            <li className="list-disc">
-              <strong className="text-white">On-chain verifiable</strong> — anyone can
-              inspect the lock on Streamflow{"'"}s explorer
-            </li>
-            <li className="list-disc">
-              <strong className="text-white">Non-transferable</strong> — the lock
-              recipient cannot be changed
-            </li>
-          </ul>
-        </section>
+            <SubHeading>Estimated costs</SubHeading>
+            <Prose>
+              The review screen estimates the initial buy plus network, account-rent,
+              protocol, and priority costs. Actual charges can change. Read the transaction
+              simulation and wallet prompt before approving.
+            </Prose>
+          </section>
 
-        {/* ─── Trust Tiers ──────────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="trust-tiers">Trust Tiers Explained</SectionHeading>
-
-          <Prose>
-            Every token launched on LCKD receives a trust tier based on the
-            developer{"'"}s profile and launch configuration. Tiers are
-            computed <Accent>dynamically</Accent> — they can go up or down as conditions
-            change.
-          </Prose>
-
-          {/* Tier comparison table */}
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left">
-              <thead>
-                <tr className="border-b border-white/[0.08]">
-                  <th className="pb-3 pr-4 font-mono text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                    Tier
-                  </th>
-                  <th className="pb-3 pr-4 font-mono text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                    Requirements
-                  </th>
-                  <th className="pb-3 font-mono text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                    What it signals
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="text-sm leading-relaxed">
-                <tr className="border-b border-white/[0.04]">
-                  <td className="py-3 pr-4 align-top">
-                    <Badge tier={TrustTier.LOCKED} label="LOCKED" />
-                  </td>
-                  <td className="py-3 pr-4 align-top text-text-muted">
-                    Token launched with a token lock. No GitHub connected.
-                  </td>
-                  <td className="py-3 align-top text-text-muted">
-                    Dev tokens are locked, but the developer is anonymous.
-                  </td>
-                </tr>
-                <tr className="border-b border-white/[0.04]">
-                  <td className="py-3 pr-4 align-top">
-                    <Badge tier={TrustTier.VERIFIED} label="VERIFIED" />
-                  </td>
-                  <td className="py-3 pr-4 align-top text-text-muted">
-                    Lock + GitHub account connected (public profile with history).
-                  </td>
-                  <td className="py-3 align-top text-text-muted">
-                    Dev has a verifiable identity tied to their launch.
-                  </td>
-                </tr>
-                <tr className="border-b border-white/[0.04]">
-                  <td className="py-3 pr-4 align-top">
-                    <Badge tier={TrustTier.BUILDER} label="BUILDER" />
-                  </td>
-                  <td className="py-3 pr-4 align-top text-text-muted">
-                    Verified + linked public GitHub repo + lock duration of 30+ days.
-                  </td>
-                  <td className="py-3 align-top text-text-muted">
-                    Dev is actively building something and has committed to a longer lock.
-                  </td>
-                </tr>
-                <tr>
-                  <td className="py-3 pr-4 align-top">
-                    <Badge tier={TrustTier.SHIPPED} label="SHIPPED" />
-                  </td>
-                  <td className="py-3 pr-4 align-top text-text-muted">
-                    Builder + live product URL that resolves + recent repo activity.
-                  </td>
-                  <td className="py-3 align-top text-text-muted">
-                    Dev has shipped a working product. Highest trust signal.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div className="space-y-3">
-            <FaqItem q="Can a tier go down?">
-              Yes. Tiers are evaluated dynamically. If you disconnect GitHub, your tier
-              drops back to <Badge tier={TrustTier.LOCKED} label="LOCKED" />. If your repo
-              goes private or your live URL stops resolving, your tier adjusts accordingly.
-            </FaqItem>
-            <FaqItem q="Can I upgrade my tier after launch?">
-              Yes. Connect GitHub, link a repo, or add a live URL at any time. Your tier
-              will be recalculated the next time your token page is loaded.
-            </FaqItem>
-          </div>
-        </section>
-
-        {/* ─── For Developers ──────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="for-developers">For Developers</SectionHeading>
-
-          <SubHeading>Launching a Token</SubHeading>
-          <Prose>
-            The launch wizard walks you through four steps:
-          </Prose>
-
-          <ol className="space-y-2 pl-5 text-[15px] leading-[1.75] text-text-muted sm:text-base">
-            <li className="list-decimal">
-              <strong className="text-white">Token details</strong> — name, ticker,
-              description, and image
-            </li>
-            <li className="list-decimal">
-              <strong className="text-white">Dev buy amount</strong> — how much SOL you
-              want to buy at launch
-            </li>
-            <li className="list-decimal">
-              <strong className="text-white">Lock configuration</strong> — lock
-              duration and percentage of your buy to lock
-            </li>
-            <li className="list-decimal">
-              <strong className="text-white">Review and sign</strong> — preview the
-              transaction, then sign with your wallet
-            </li>
-          </ol>
-
-          <SubHeading>GitHub Verification</SubHeading>
-          <Prose>
-            Sign in with GitHub via OAuth. LCKD reads your public profile — account
-            age, public repos, and contribution history. No private data is accessed. Your
-            GitHub username is displayed on your token{"'"}s page so buyers can verify your
-            identity.
-          </Prose>
-
-          <SubHeading>Lock Duration Guidance</SubHeading>
-          <div className="space-y-2 rounded-lg border border-white/[0.06] bg-white/[0.015] p-4">
-            <div className="flex items-center justify-between border-b border-white/[0.04] pb-2">
-              <span className="font-mono text-xs text-text-muted">7 days</span>
-              <span className="font-mono text-[10px] text-text-muted">
-                Minimum. Shows intent but low commitment.
-              </span>
-            </div>
-            <div className="flex items-center justify-between border-b border-white/[0.04] pb-2">
-              <span className="font-mono text-xs text-accent">30+ days</span>
-              <span className="font-mono text-[10px] text-text-muted">
-                Required for <Badge tier={TrustTier.BUILDER} label="BUILDER" /> tier.
-                Recommended.
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs text-accent">90+ days</span>
-              <span className="font-mono text-[10px] text-text-muted">
-                Strong signal. Shows long-term commitment to the project.
-              </span>
-            </div>
-          </div>
-
-          <SubHeading>
-            Achieving <Badge tier={TrustTier.SHIPPED} label="SHIPPED" /> Status
-          </SubHeading>
-          <Prose>
-            To reach the highest trust tier, you need all of:
-          </Prose>
-          <ul className="space-y-1.5 pl-5 text-[15px] leading-[1.75] text-text-muted sm:text-base">
-            <li className="list-disc">GitHub connected with a linked public repo</li>
-            <li className="list-disc">Lock duration of 30+ days</li>
-            <li className="list-disc">
-              A live product URL (must resolve to an actual page)
-            </li>
-            <li className="list-disc">
-              Recent commit activity in the linked repo (within the last 30 days)
-            </li>
-          </ul>
-        </section>
-
-        {/* ─── For Buyers ──────────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="for-buyers">For Buyers</SectionHeading>
-
-          <SubHeading>Reading a Trust Tier</SubHeading>
-          <Prose>
-            Every token on LCKD displays a tier badge. Higher tiers mean more
-            verifiable signals of developer commitment. A{" "}
-            <Badge tier={TrustTier.SHIPPED} label="SHIPPED" /> badge means the dev has a
-            verified GitHub, a public repo, a live product, and a 30+ day lock. A{" "}
-            <Badge tier={TrustTier.LOCKED} label="LOCKED" /> badge means the tokens are
-            locked but the developer is anonymous.
-          </Prose>
-
-          <SubHeading>What the Lock Means for You</SubHeading>
-          <Prose>
-            A Streamflow token lock means the developer <Accent>cannot sell</Accent> their
-            locked tokens until the lock period ends. This protects you from
-            immediate dumps. However, a lock does not guarantee the project will succeed — it
-            only guarantees the dev cannot rug by dumping their allocation.
-          </Prose>
-
-          <SubHeading>Verify Independently</SubHeading>
-          <Prose>
-            Every token page on LCKD links to the Streamflow lock transaction. You can
-            verify the lock directly on{" "}
-            <a
-              href="https://app.streamflow.finance"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
-            >
-              Streamflow{"'"}s app
-            </a>{" "}
-            or by inspecting the transaction on a Solana explorer. The lock parameters
-            (duration, amount, recipient) are all on-chain.
-          </Prose>
-
-          <SubHeading>Red Flags to Watch For</SubHeading>
-          <div className="warning-box space-y-1.5">
-            <p>Even with locks, exercise caution:</p>
-            <ul className="list-disc space-y-1 pl-4">
-              <li>Very short lock durations (under 7 days)</li>
-              <li>Low lock percentage (locking only 10% of a large buy)</li>
-              <li>No GitHub connected (Tier 1 only)</li>
-              <li>No linked repo or live URL</li>
-              <li>
-                Remember: locks prevent dumps, but the token could still lose value
-                through normal market activity
-              </li>
+          <section className="space-y-5">
+            <SectionHeading id="lock-behavior">Lock behavior</SectionHeading>
+            <Prose>
+              The current builder creates a self-directed Streamflow token lock. It uses the
+              connected wallet as sender and recipient, disables cancellation and transfer
+              permissions, and schedules the locked amount for release at the end of the
+              selected period.
+            </Prose>
+            <ul className="space-y-3 pl-5 text-[15px] leading-[1.6] text-text-2">
+              <li className="list-disc marker:text-text-3">The lock amount is based on the token balance found in the connected wallet.</li>
+              <li className="list-disc marker:text-text-3">A percentage below 100 leaves the remainder liquid.</li>
+              <li className="list-disc marker:text-text-3">Streamflow fees mean the deposited amount can be slightly below the selected percentage.</li>
+              <li className="list-disc marker:text-text-3">The recorded percentage is recomputed from the finalized deposit and the tokens acquired in the launch transaction.</li>
+              <li className="list-disc marker:text-text-3">LCKD does not offer an unlocked launch path.</li>
             </ul>
-          </div>
-        </section>
+            <Prose>
+              Streamflow documents token locks as inaccessible before the unlock date. Review
+              the current product documentation at{" "}
+              <a className="font-mono text-accent-300 underline underline-offset-4 hover:text-accent-400" href="https://docs.streamflow.finance/en/articles/9339705-token-lock" target="_blank" rel="noreferrer">
+                Streamflow Token Lock
+              </a>
+              . Protocol behavior and fees can change.
+            </Prose>
+          </section>
 
-        {/* ─── FAQ ──────────────────────────────────────── */}
-        <section className="space-y-4">
-          <SectionHeading id="faq">FAQ</SectionHeading>
+          <section className="space-y-5">
+            <SectionHeading id="verification">Verify independently</SectionHeading>
+            <Prose>
+              LCKD records submitted signatures and displays schedule summaries. Those records
+              are convenient indexes, not an on-chain audit. Before relying on a lock, verify
+              the mint, token amount, sender, recipient, cancellation settings, transfer
+              settings, and unlock time using independent tools.
+            </Prose>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <a className="btn-secondary min-h-12 justify-between" href="https://app.streamflow.finance/token-lock" target="_blank" rel="noreferrer">
+                Streamflow lock explorer <span aria-hidden="true">&#8599;</span>
+              </a>
+              <a className="btn-secondary min-h-12 justify-between" href="https://solscan.io" target="_blank" rel="noreferrer">
+                Solscan <span aria-hidden="true">&#8599;</span>
+              </a>
+            </div>
+            <Notice>
+              An absent signature, unavailable explorer result, or mismatch between the page
+              and chain should be treated as unverified.
+            </Notice>
+          </section>
 
-          <FaqItem q="Is this free?">
-            Yes. During the MVP phase, LCKD charges no additional fees. You only pay
-            standard Solana transaction fees and the pump.fun creation fee.
-          </FaqItem>
+          <section className="space-y-5">
+            <SectionHeading id="profiles">Profile labels</SectionHeading>
+            <Prose>
+              GitHub sign-in proves control of a GitHub session at authentication time. A
+              submitted repository or product URL is a profile link, not proof of code quality,
+              ownership, availability, or token safety.
+            </Prose>
+            <Prose>
+              Directory labels such as Locked, Verified, Builder, or Shipped are platform
+              metadata. They are not endorsements, audits, or guarantees. Always inspect the
+              linked accounts and on-chain records yourself.
+            </Prose>
+          </section>
 
-          <FaqItem q="Do I need GitHub to launch?">
-            No. You can launch without GitHub, but you{"'"}ll only receive{" "}
-            <Badge tier={TrustTier.LOCKED} label="LOCKED" /> status (Tier 1). Connecting
-            GitHub unlocks higher trust tiers and gives buyers more confidence.
-          </FaqItem>
+          <section className="space-y-5">
+            <SectionHeading id="buyers">For buyers</SectionHeading>
+            <Prose>
+              A valid lock restricts only the deposited amount for its configured period. It
+              does not restrict other wallets, prevent mint or freeze authority abuse, secure
+              liquidity, guarantee development, or prevent price loss.
+            </Prose>
+            <ul className="space-y-3 pl-5 text-[15px] leading-[1.6] text-text-2">
+              <li className="list-disc marker:text-text-3">Confirm the mint address across every page and explorer.</li>
+              <li className="list-disc marker:text-text-3">Check the exact locked amount, percentage, and unlock date.</li>
+              <li className="list-disc marker:text-text-3">Review holder concentration, authorities, liquidity, and Token-2022 extensions.</li>
+              <li className="list-disc marker:text-text-3">Treat badges, boosts, repository links, and product links as signals, not proof.</li>
+            </ul>
+            <Link href="/risk" className="btn-secondary inline-flex">Read the full risk disclosure</Link>
+          </section>
 
-          <FaqItem q="Can I cancel my lock?">
-            No. Streamflow locks created through LCKD are{" "}
-            <strong className="text-white">non-cancelable by design</strong>. This is the
-            entire value proposition — buyers can trust that the lock is permanent. Once
-            signed, you wait for the lock period to end.
-          </FaqItem>
-
-          <FaqItem q="What if pump.fun changes their program?">
-            LCKD constructs transactions against pump.fun{"'"}s on-chain program. If
-            pump.fun updates their program ID or instruction format, we monitor for changes
-            and update our transaction builder accordingly. Your existing locks on
-            Streamflow are unaffected by any pump.fun changes.
-          </FaqItem>
-
-          <FaqItem q="Is this audited?">
-            <strong className="text-white">Streamflow</strong> is audited (by Sec3/Soteria
-            and others).{" "}
-            <strong className="text-white">LCKD itself</strong> does not deploy a
-            custom on-chain program — it bundles existing audited programs (pump.fun +
-            Streamflow) into a single client-side transaction. There is no smart contract
-            risk from LCKD specifically; the risk surface is the same as using
-            pump.fun and Streamflow directly.
-          </FaqItem>
-
-          <FaqItem q="What wallets are supported?">
-            Phantom and Solflare. Both desktop extensions and mobile wallets are supported.
-          </FaqItem>
-        </section>
-      </article>
+          <section className="space-y-4">
+            <SectionHeading id="faq">FAQ</SectionHeading>
+            <FaqItem q="Does launch and lock use one transaction?">
+              No. Token creation and the Streamflow lock are separate transactions. The lock
+              is built only after creation confirms.
+            </FaqItem>
+            <FaqItem q="Can token creation succeed while locking fails?">
+              Yes. The wizard exposes this as a partial failure and lets the authenticated
+              wallet retry the lock.
+            </FaqItem>
+            <FaqItem q="Is GitHub optional?">
+              GitHub authentication is required to use the browser launch workflow. Linking a
+              repository or live product URL is optional.
+            </FaqItem>
+            <FaqItem q="Does a lock make a token safe?">
+              No. It restricts only the deposited tokens for the configured period. Other
+              technical, market, liquidity, and operator risks remain.
+            </FaqItem>
+          </section>
+        </article>
+      </div>
     </div>
   );
 }

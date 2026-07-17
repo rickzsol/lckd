@@ -1,7 +1,11 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { signIn, useSession } from "next-auth/react";
+import Link from "next/link";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { useLaunchWizard, STEP_LABELS, STEP_COUNT } from "@/hooks/useLaunchWizard";
+import WalletButton from "@/components/ui/WalletButton";
 import StepTokenDetails from "./StepTokenDetails";
 import StepLockConfig from "./StepLockConfig";
 import StepGitHub from "./StepGitHub";
@@ -9,16 +13,136 @@ import StepReview from "./StepReview";
 
 export default function LaunchPage() {
   const wizard = useLaunchWizard();
+  const { data: session, status } = useSession();
+  const { connected, publicKey } = useWallet();
+  const [walletCheck, setWalletCheck] = useState<{
+    username: string;
+    walletAddress: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !session.github_username) return;
+
+    let isActive = true;
+    const username = session.github_username;
+    fetch("/api/profile/link-wallet")
+      .then(async (response) => {
+        if (response.status === 403) return null;
+        if (!response.ok) throw new Error("Unable to verify linked wallet");
+        const body = await response.json();
+        return typeof body.walletAddress === "string" ? body.walletAddress : null;
+      })
+      .then((walletAddress) => {
+        if (isActive) setWalletCheck({ username, walletAddress });
+      })
+      .catch(() => {
+        if (isActive) setWalletCheck({ username, walletAddress: null });
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [session?.github_username, status]);
+
+  const isWalletLinkLoading =
+    status === "authenticated" &&
+    walletCheck?.username !== session?.github_username;
+  const linkedWallet = isWalletLinkLoading ? null : walletCheck?.walletAddress ?? null;
+
+  if (status === "loading") {
+    return (
+      <div className="mx-auto max-w-[600px] px-4 pt-28 pb-16" role="status">
+        <h1 className="font-sans text-3xl font-bold tracking-[-0.02em] text-text-1">Launch a token</h1>
+        <p className="mt-3 font-mono text-sm text-text-3">Checking your session...</p>
+      </div>
+    );
+  }
+
+  if (status !== "authenticated") {
+    return (
+      <div className="mx-auto max-w-[600px] px-4 pt-28 pb-16">
+        <h1 className="font-sans text-[clamp(28px,7vw,44px)] font-bold tracking-[-0.02em] text-text-1">
+          Sign in before you build the launch
+        </h1>
+        <p className="mt-4 max-w-xl text-base leading-7 text-text-2">
+          LCKD uses GitHub authentication for metadata uploads and transaction building.
+          You will connect a Solana wallet separately when it is time to sign.
+        </p>
+        <div className="warning-box mt-6 leading-relaxed">
+          The workflow requires two transactions. The create and buy transaction confirms
+          first. The Streamflow time lock requires a second approval and can fail independently.
+        </div>
+        <button
+          type="button"
+          onClick={() => signIn("github", { callbackUrl: "/launch" })}
+          className="btn-primary mt-6 px-6"
+        >
+          sign in with github
+        </button>
+      </div>
+    );
+  }
+
+  if (isWalletLinkLoading) {
+    return (
+      <div className="mx-auto max-w-[600px] px-4 pt-28 pb-16" role="status">
+        <h1 className="font-sans text-3xl font-bold tracking-[-0.02em] text-text-1">Launch a token</h1>
+        <p className="mt-3 font-mono text-sm text-text-3">Checking wallet ownership...</p>
+      </div>
+    );
+  }
+
+  if (!linkedWallet) {
+    return (
+      <div className="mx-auto max-w-[600px] px-4 pt-28 pb-16">
+        <h1 className="font-sans text-[clamp(28px,7vw,44px)] font-bold tracking-[-0.02em] text-text-1">
+          Link a wallet before launching
+        </h1>
+        <p className="mt-4 max-w-xl text-base leading-7 text-text-2">
+          Sign a wallet ownership message from your developer profile before any launch
+          transaction is built or signed.
+        </p>
+        <Link
+          href={`/dev/${session?.github_username ?? ""}`}
+          className="btn-primary mt-6 inline-flex px-6"
+        >
+          open developer profile
+        </Link>
+      </div>
+    );
+  }
+
+  if (!connected || !publicKey || publicKey.toBase58() !== linkedWallet) {
+    return (
+      <div className="mx-auto max-w-[600px] px-4 pt-28 pb-16">
+        <h1 className="font-sans text-[clamp(28px,7vw,44px)] font-bold tracking-[-0.02em] text-text-1">
+          Connect your verified wallet
+        </h1>
+        <p className="mt-4 max-w-xl text-base leading-7 text-text-2">
+          This launch is authorized for {linkedWallet.slice(0, 4)}...{linkedWallet.slice(-4)}.
+          Connect that wallet before continuing.
+        </p>
+        <div className="mt-6">
+          <WalletButton />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="mx-auto max-w-[600px] px-4 py-6">
-      <h2 className="mb-1 font-sans text-[clamp(24px,6vw,32px)] font-extrabold text-white">
-        Launch a Token
-      </h2>
-      <p className="mb-7 font-mono text-xs text-[#555]">
-        Create on pump.fun &middot; Lock with Streamflow &middot; Verify with
-        GitHub
+    <div className="mx-auto max-w-[600px] px-4 pt-28 pb-16">
+      <h1 className="mb-1 font-sans text-[clamp(24px,6vw,32px)] font-bold tracking-[-0.02em] text-text-1">
+        Launch a token
+      </h1>
+      <p className="mb-7 font-mono text-xs text-text-3">
+        Create on pump.fun &middot; confirm &middot; lock separately with Streamflow
       </p>
+
+      <div className="warning-box mb-6 leading-relaxed">
+        Locking requires a second wallet signature. If token creation succeeds and the lock
+        fails, the token remains created and the purchased tokens remain in your wallet until
+        you retry the lock.
+      </div>
 
       {/* Step indicator */}
       {wizard.launchStatus === "idle" && (
@@ -33,24 +157,25 @@ export default function LaunchPage() {
               <Fragment key={num}>
                 {i > 0 && (
                   <div
-                    className={`mt-4 h-px flex-1 transition-colors ${isComplete ? "bg-accent/60" : "bg-white/8"}`}
+                    className={`mt-4 h-px flex-1 transition-colors duration-[180ms] ${isComplete ? "bg-accent/60" : "bg-line-default"}`}
                   />
                 )}
                 <button
                   onClick={() => {
                     if (isComplete) wizard.goToStep(num);
                   }}
-                  className={`flex flex-col items-center gap-1.5 ${isComplete ? "cursor-pointer" : "cursor-default"}`}
+                    type="button"
+                    className={`flex min-h-11 flex-col items-center justify-center gap-1.5 rounded-md px-1 ${isComplete ? "cursor-pointer" : "cursor-default"}`}
                   disabled={isFuture}
                   aria-current={isActive ? "step" : undefined}
                 >
                   <div
-                    className={`flex h-8 w-8 items-center justify-center rounded-full border-2 font-mono text-[11px] font-bold transition-all ${
+                    className={`review-num h-8 w-8 rounded-full border-2 text-[11px] transition-all duration-[180ms] ${
                       isActive
-                        ? "border-accent bg-accent text-black"
+                        ? "border-accent bg-accent text-accent-ink"
                         : isComplete
-                          ? "border-accent bg-accent/15 text-accent"
-                          : "border-white/10 bg-transparent text-white/25"
+                          ? "border-accent bg-accent-dim text-accent"
+                          : "border-line-default bg-transparent text-text-4"
                     }`}
                   >
                     {isComplete ? (
@@ -72,12 +197,12 @@ export default function LaunchPage() {
                     )}
                   </div>
                   <span
-                    className={`whitespace-nowrap font-mono text-[9px] transition-colors ${
+                    className={`whitespace-nowrap font-mono text-[10px] transition-colors duration-[180ms] ${
                       isActive
                         ? "text-accent"
                         : isComplete
                           ? "text-accent/50"
-                          : "text-white/20"
+                          : "text-text-4"
                     }`}
                   >
                     {label}
@@ -91,17 +216,13 @@ export default function LaunchPage() {
 
       {/* Progress bar (compact) */}
       {wizard.launchStatus === "idle" && (
-        <div className="mb-6 flex gap-[3px]">
+        <div className="mb-6 flex gap-1">
           {Array.from({ length: STEP_COUNT }).map((_, i) => (
             <div
               key={i}
-              className="h-[3px] flex-1 rounded-sm transition-colors duration-300"
-              style={{
-                background:
-                  i + 1 <= wizard.step
-                    ? "#8b5cf6"
-                    : "rgba(255,255,255,0.06)",
-              }}
+              className={`h-1 flex-1 rounded-full transition-colors duration-300 ${
+                i + 1 <= wizard.step ? "bg-accent" : "bg-line-default"
+              }`}
             />
           ))}
         </div>

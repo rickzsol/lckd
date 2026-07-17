@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { PublicKey } from "@solana/web3.js";
 import nacl from "tweetnacl";
 import { linkWallet } from "@/lib/profile";
+import { requireAuth, requireLinkedWallet } from "@/lib/api/auth";
+import { requireSameOrigin } from "@/lib/api/origin";
 
 const EXPECTED_PREFIX = "Link wallet to lckd.tech";
 
@@ -13,11 +13,18 @@ interface LinkWalletBody {
   message: string;
 }
 
+export async function GET() {
+  const { session, error } = await requireLinkedWallet();
+  if (error) return error;
+  return NextResponse.json({ walletAddress: session.wallet_address });
+}
+
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.github_id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const originError = requireSameOrigin(req);
+  if (originError) return originError;
+
+  const { session, error: authError } = await requireAuth();
+  if (authError) return authError;
 
   let body: LinkWalletBody;
   try {
@@ -59,8 +66,14 @@ export async function POST(req: Request) {
   // Verify the ed25519 signature
   try {
     const pubkey = new PublicKey(walletAddress);
+    if (pubkey.toBase58() !== walletAddress) {
+      return NextResponse.json({ error: "Invalid wallet address" }, { status: 400 });
+    }
     const msgBytes = new TextEncoder().encode(message);
     const sigBytes = Uint8Array.from(Buffer.from(signature, "base64"));
+    if (sigBytes.length !== nacl.sign.signatureLength) {
+      return NextResponse.json({ error: "Invalid signature length" }, { status: 400 });
+    }
 
     const isValid = nacl.sign.detached.verify(
       msgBytes,
@@ -83,9 +96,10 @@ export async function POST(req: Request) {
 
   const result = await linkWallet(session.github_id, walletAddress);
   if (!result.success) {
+    const status = result.code === "conflict" ? 409 : result.code === "not_found" ? 404 : 503;
     return NextResponse.json(
       { error: result.error ?? "Failed to link wallet" },
-      { status: 500 },
+      { status },
     );
   }
 

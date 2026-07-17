@@ -18,34 +18,30 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  applicationName: "LCKD",
   title: {
-    default: "LCKD — Builders who ship. Tokens that lock.",
-    template: "%s",
+    default: "LCKD | Solana token launches with visible lock records",
+    template: "%s | LCKD",
   },
   description:
-    "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it. Built on pump.fun + Streamflow.",
+    "Create a Solana token, then place eligible creator tokens in a separate Streamflow lock transaction with public on-chain receipts.",
   metadataBase: new URL("https://lckd.tech"),
-  icons: {
-    icon: [
-      { url: "/icon.png", type: "image/png" },
-    ],
-    shortcut: "/icon.png",
-    apple: "/icon.png",
-  },
+  alternates: { canonical: "/" },
   openGraph: {
-    title: "LCKD — Builders who ship. Tokens that lock.",
+    title: "LCKD | Builders who ship",
     description:
-      "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it on-chain.",
+      "Create on pump.fun, then submit a separate Streamflow token lock with explicit wallet approval.",
+    url: "/",
     siteName: "LCKD",
     type: "website",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "LCKD" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "LCKD — Builders who ship. Tokens that lock.",
+    site: "@launchlckd",
+    creator: "@launchlckd",
+    title: "LCKD | Builders who ship",
     description:
-      "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it.",
-    images: ["/og.png"],
+      "Create on pump.fun, then submit a separate Streamflow token lock with explicit wallet approval.",
   },
 };
 
@@ -57,12 +53,55 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} bg-dark-bg text-text-primary antialiased`}
+        className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} bg-bg text-text-1 antialiased`}
       >
+        <a className="skip-link" href="#main-content">
+          Skip to main content
+        </a>
         <AuthProvider>
           <WalletProvider>
             <Navbar />
-            <main className="relative z-[1]">{children}</main>
+            <main id="main-content" className="relative z-[1]" tabIndex={-1}>
+              {children}
+            </main>
+            <footer className="relative z-[1] border-t border-line">
+              <div className="mx-auto flex max-w-[1152px] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-[22px] font-mono text-[11px] font-medium text-text-3 sm:px-6">
+                <span className="flex items-center gap-2.5">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-md bg-accent">
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#041710"
+                      strokeWidth="2.8"
+                      strokeLinecap="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="4" y="11" width="16" height="10" rx="2.5" />
+                      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+                    </svg>
+                  </span>
+                  <span>&copy; 2026 LCKD &middot; lckd.tech</span>
+                </span>
+                <nav aria-label="Footer" className="flex flex-wrap items-center gap-5">
+                  <a href="/docs" className="footer-link">docs</a>
+                  <a href="/api-docs" className="footer-link">api</a>
+                  <a href="/risk" className="footer-link">risk</a>
+                  <a
+                    href="https://x.com/launchlckd"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="footer-link"
+                  >
+                    @launchlckd
+                  </a>
+                </nav>
+              </div>
+              <div className="mx-auto max-w-[1152px] px-4 pb-5 font-mono text-[10px] text-text-4 sm:px-6">
+                LCKD provides launch tooling and public records, not investment advice.
+              </div>
+            </footer>
           </WalletProvider>
         </AuthProvider>
       </body>

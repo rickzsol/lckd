@@ -1,48 +1,66 @@
-import { apiResponse, apiError } from "@/lib/api/helpers";
-import { hasSupabaseConfig } from "@/lib/supabase";
+import { apiResponse } from "@/lib/api/helpers";
+import { getSupabase, hasSupabaseConfig } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 60;
 
+const EMPTY_STATS = {
+  launched: 0,
+  totalLocked: 0,
+  devsVerified: 0,
+  buildingNow: 0,
+  available: false,
+};
+
+function isActiveVerifiedLock(token: {
+  lock_tx: string;
+  lock_amount: string;
+  lock_unlock_at: string | null;
+}): boolean {
+  if (!token.lock_tx || !/^\d+$/.test(token.lock_amount)) return false;
+  if (BigInt(token.lock_amount) <= BigInt(0) || !token.lock_unlock_at) return false;
+
+  const lockEnd = new Date(token.lock_unlock_at).getTime();
+  return Number.isFinite(lockEnd) && lockEnd > Date.now();
+}
+
 export async function GET() {
-  if (!hasSupabaseConfig()) {
-    return apiError("Stats unavailable", 503);
-  }
+  if (!hasSupabaseConfig()) return apiResponse(EMPTY_STATS);
 
   try {
-    const { getSupabase } = await import("@/lib/supabase");
-    const supabase = getSupabase();
+    const { data, error } = await getSupabase()
+      .from("tokens")
+      .select("creator_wallet, github_username, lock_amount, lock_tx, lock_unlock_at, trust_tier")
+      .not("launch_verified_at", "is", null)
+      .not("lock_verified_at", "is", null);
 
-    const [tokensRes, profilesRes] = await Promise.all([
-      supabase.from("tokens").select("lock_amount, trust_tier"),
-      supabase.from("github_profiles").select("github_id"),
-    ]);
-
-    if (tokensRes.error) {
-      console.error("[stats] tokens query error:", tokensRes.error.message);
-      return apiError("Failed to fetch stats", 500);
-    }
-    if (profilesRes.error) {
-      console.error("[stats] profiles query error:", profilesRes.error.message);
-      return apiError("Failed to fetch stats", 500);
+    if (error) {
+      console.error("[stats] Supabase error:", error.message);
+      return apiResponse(EMPTY_STATS);
     }
 
-    const tokens = tokensRes.data ?? [];
-    const profiles = profilesRes.data ?? [];
+    const tokens = data ?? [];
+    const activeLocks = tokens.filter(isActiveVerifiedLock);
+    const totalLockedRaw = activeLocks.reduce(
+      (sum, token) => sum + BigInt(token.lock_amount),
+      BigInt(0),
+    );
+    const verifiedDevs = new Set(
+      tokens
+        .filter((token) => token.trust_tier >= 2 && token.github_username)
+        .map((token) => token.github_username),
+    );
+    const activeBuilders = new Set(activeLocks.map((token) => token.creator_wallet));
 
-    const launched = tokens.length;
-
-    const totalLocked = tokens.reduce((sum, t) => {
-      const amt = parseFloat(t.lock_amount || "0");
-      return sum + (isNaN(amt) ? 0 : amt);
-    }, 0);
-
-    const devsVerified = tokens.filter((t) => t.trust_tier >= 2).length;
-    const buildingNow = profiles.length;
-
-    return apiResponse({ launched, totalLocked, devsVerified, buildingNow });
-  } catch (err) {
-    console.error("[stats] Error:", err instanceof Error ? err.message : err);
-    return apiError("Failed to fetch stats", 500);
+    return apiResponse({
+      launched: tokens.length,
+      totalLocked: Number(totalLockedRaw) / 1_000_000,
+      devsVerified: verifiedDevs.size,
+      buildingNow: activeBuilders.size,
+      available: true,
+    });
+  } catch (error) {
+    console.error("[stats] Error:", error);
+    return apiResponse(EMPTY_STATS);
   }
 }

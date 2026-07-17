@@ -9,6 +9,7 @@ interface TierContext {
   hasRecentCommits?: boolean;
   hasPostLaunchCommits?: boolean;
   isLiveUrlVerified?: boolean;
+  isLockVerified?: boolean;
 }
 
 export function calculateTrustTier(
@@ -16,7 +17,10 @@ export function calculateTrustTier(
   githubProfile: GitHubProfile | null,
   context: TierContext = {},
 ): TrustTier {
-  // Tier 1: always true if token exists (lock is atomic with launch)
+  if (!context.isLockVerified) {
+    throw new Error("Trust tier requires a verified on-chain lock");
+  }
+
   let tier = TrustTier.LOCKED;
 
   // Tier 2: verified GitHub identity
@@ -31,10 +35,19 @@ export function calculateTrustTier(
 
   // Tier 3: active builder
   if (!token.github_repo || !context.repoData) return tier;
+  const [repoOwner, repoName, extra] = token.github_repo.split("/");
+  if (
+    !repoOwner ||
+    !repoName ||
+    extra ||
+    repoOwner.toLowerCase() !== githubProfile.github_username.toLowerCase()
+  ) {
+    return tier;
+  }
 
   const repoUpdatedAt = new Date(context.repoData.updated_at).getTime();
   const isRepoActive = context.hasRecentCommits ?? (Date.now() - repoUpdatedAt < THIRTY_DAYS_MS);
-  const hasMinLockDuration = token.lock_duration_days > MIN_LOCK_DAYS_FOR_BUILDER;
+  const hasMinLockDuration = token.lock_duration_days >= MIN_LOCK_DAYS_FOR_BUILDER;
 
   if (!isRepoActive || !hasMinLockDuration) return tier;
   tier = TrustTier.BUILDER;

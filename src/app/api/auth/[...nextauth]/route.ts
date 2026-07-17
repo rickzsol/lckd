@@ -13,13 +13,9 @@ interface GitHubOAuthProfile {
 const clientId = process.env.GITHUB_CLIENT_ID;
 const clientSecret = process.env.GITHUB_CLIENT_SECRET;
 
-if (!clientId || !clientSecret) {
-  throw new Error("Missing GITHUB_CLIENT_ID or GITHUB_CLIENT_SECRET env vars");
-}
-
 export const authOptions: AuthOptions = {
   providers: [
-    GitHubProvider({ clientId, clientSecret }),
+    GitHubProvider({ clientId: clientId ?? "", clientSecret: clientSecret ?? "" }),
   ],
   session: { strategy: "jwt" },
   callbacks: {
@@ -27,33 +23,29 @@ export const authOptions: AuthOptions = {
       if (account?.provider !== "github" || !profile) return true;
 
       const gh = profile as unknown as GitHubOAuthProfile;
-      const supabase = getServerClient();
+      if (!gh.id || !gh.login || !gh.avatar_url || !gh.created_at) return false;
 
-      const { data: existing } = await supabase
-        .from("github_profiles")
-        .select("id")
-        .eq("github_id", String(gh.id))
-        .single();
-
-      if (existing) {
-        await supabase
-          .from("github_profiles")
-          .update({
+      try {
+        const supabase = getServerClient();
+        const { error } = await supabase.from("github_profiles").upsert(
+          {
+            github_id: String(gh.id),
             github_username: gh.login,
             github_avatar: gh.avatar_url,
-            public_repos: gh.public_repos,
+            account_created_at: gh.created_at,
+            public_repos: Number.isFinite(gh.public_repos) ? gh.public_repos : 0,
             last_refreshed: new Date().toISOString(),
-          })
-          .eq("github_id", String(gh.id));
-      } else {
-        await supabase.from("github_profiles").insert({
-          github_id: String(gh.id),
-          github_username: gh.login,
-          github_avatar: gh.avatar_url,
-          account_created_at: gh.created_at,
-          public_repos: gh.public_repos,
-          wallet_address: "",
-        });
+          },
+          { onConflict: "github_id" },
+        );
+
+        if (error) {
+          console.error("[auth/signIn] Profile upsert failed:", error.message);
+          return false;
+        }
+      } catch (error) {
+        console.error("[auth/signIn] Profile persistence failed:", error);
+        return false;
       }
 
       return true;

@@ -12,6 +12,11 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
+/.playwright-cli
+/.playwright-mcp
+/output
 
 # next.js
 /.next/
@@ -44,7 +49,15 @@ next-env.d.ts
 # internal tooling
 /cli/
 /scripts/
-/supabase/
 CLAUDE.md
 
+# local Solana/debug artifacts
+*-wallet.json
+sigs*.json
+*tx_debug*.json
+/public/Untitled*.png
+
 .vercel
+
+.design-handoff/
+.gstack/

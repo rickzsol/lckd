@@ -1,13 +1,15 @@
 import type { MetadataRoute } from "next";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.lckd.tech";
+  const baseUrl = "https://lckd.tech";
 
   const staticRoutes: MetadataRoute.Sitemap = [
-    { url: baseUrl, lastModified: new Date(), changeFrequency: "daily", priority: 1 },
-    { url: `${baseUrl}/feed`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.9 },
-    { url: `${baseUrl}/launch`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.8 },
-    { url: `${baseUrl}/docs`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.7 },
+    { url: baseUrl, changeFrequency: "weekly", priority: 1 },
+    { url: `${baseUrl}/feed`, changeFrequency: "hourly", priority: 0.9 },
+    { url: `${baseUrl}/launch`, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${baseUrl}/docs`, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${baseUrl}/api-docs`, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${baseUrl}/risk`, changeFrequency: "monthly", priority: 0.6 },
   ];
 
   // Add token pages from Supabase if available
@@ -35,7 +37,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }
     }
   } catch {
-    // Supabase unavailable — skip token routes
+    // Supabase unavailable, skip token routes
   }
 
   return [...staticRoutes, ...tokenRoutes];

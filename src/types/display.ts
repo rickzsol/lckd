@@ -35,7 +35,7 @@ export interface DisplayCommit {
 }
 
 export interface DisplayToken {
-  id: number;
+  id: string;
   name: string;
   ticker: string;
   tier: TrustTier;
@@ -51,6 +51,6 @@ export interface DisplayToken {
   holders: number;
   live?: string;
   liquidity?: string;
-  /** Solana mint address — used for routing. Undefined for mock data. */
+  /** Solana mint address used for routing. */
   mintAddress?: string;
 }

@@ -4,7 +4,7 @@ export function SectionHeading({ id, children }: { id: string; children: ReactNo
   return (
     <h2
       id={id}
-      className="scroll-mt-24 font-sans text-2xl font-bold tracking-tight text-white sm:text-3xl"
+      className="scroll-mt-24 font-sans text-2xl font-bold tracking-[-0.01em] text-text-1"
     >
       {children}
     </h2>
@@ -13,7 +13,7 @@ export function SectionHeading({ id, children }: { id: string; children: ReactNo
 
 export function SubHeading({ children }: { children: ReactNode }) {
   return (
-    <h3 className="font-sans text-lg font-semibold tracking-tight text-white">
+    <h3 className="font-sans text-lg font-semibold text-text-1">
       {children}
     </h3>
   );
@@ -21,21 +21,21 @@ export function SubHeading({ children }: { children: ReactNode }) {
 
 export function Prose({ children }: { children: ReactNode }) {
   return (
-    <p className="text-[15px] leading-[1.75] text-text-muted sm:text-base">
+    <p className="text-[15px] leading-[1.6] text-text-2">
       {children}
     </p>
   );
 }
 
 export function Accent({ children }: { children: ReactNode }) {
-  return <span className="font-medium text-accent">{children}</span>;
+  return <span className="font-mono font-medium text-accent-300">{children}</span>;
 }
 
 export function FaqItem({ q, children }: { q: string; children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-4">
-      <p className="mb-2 font-sans text-sm font-semibold text-white">{q}</p>
-      <div className="text-[14px] leading-[1.7] text-text-muted">{children}</div>
+    <div className="rounded-card border border-line-default bg-surface p-4">
+      <h3 className="mb-2 font-sans text-sm font-semibold text-text-1">{q}</h3>
+      <div className="text-[14px] leading-[1.7] text-text-2">{children}</div>
     </div>
   );
 }
@@ -45,8 +45,8 @@ export function FlowStep({ n, label, sub }: { n: number; label: string; sub: str
     <div className="flex items-start gap-3">
       <div className="review-num shrink-0">{n}</div>
       <div>
-        <p className="font-mono text-xs font-bold text-white">{label}</p>
-        <p className="mt-0.5 text-xs leading-relaxed text-text-muted">{sub}</p>
+        <p className="font-mono text-xs font-bold text-text-1">{label}</p>
+        <p className="mt-0.5 font-mono text-xs leading-relaxed text-text-3">{sub}</p>
       </div>
     </div>
   );

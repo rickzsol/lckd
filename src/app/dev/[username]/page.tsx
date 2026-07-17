@@ -15,23 +15,26 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const profile = await getProfileByUsername(username);
 
   if (!profile) {
-    return { title: "Profile Not Found — LCKD" };
+    return { title: "Profile not found", robots: { index: false, follow: false } };
   }
 
   return {
-    title: `@${profile.github_username} — LCKD`,
-    description: `${profile.github_username}'s developer profile on LCKD. ${profile.public_repos} repos, ${profile.total_commits} commits.`,
+    title: `@${profile.github_username}`,
+    description: `View the submitted LCKD developer profile for ${profile.github_username} and inspect its public links independently.`,
+    alternates: { canonical: `/dev/${profile.github_username}` },
     openGraph: {
-      title: `@${profile.github_username} — LCKD`,
-      description: `Developer profile with ${profile.public_repos} repos on LCKD`,
+      title: `@${profile.github_username} | LCKD`,
+      description: `Submitted developer profile for ${profile.github_username}.`,
+      url: `/dev/${profile.github_username}`,
       images: profile.github_avatar
         ? [profile.github_avatar]
         : [{ url: "/og.png", width: 1200, height: 630, alt: "LCKD" }],
     },
     twitter: {
       card: "summary_large_image",
-      title: `@${profile.github_username} — LCKD`,
-      description: `Developer profile with ${profile.public_repos} repos on LCKD`,
+      site: "@launchlckd",
+      title: `@${profile.github_username} | LCKD`,
+      description: `Submitted developer profile for ${profile.github_username}.`,
       images: profile.github_avatar ? [profile.github_avatar] : ["/og.png"],
     },
   };

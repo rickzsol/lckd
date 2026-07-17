@@ -1,27 +1,31 @@
 import type { Metadata } from "next";
-import TokenShowcase from "@/components/landing/TokenShowcase";
+import Hero from "@/components/landing/Hero";
+import WhyCards from "@/components/landing/WhyCards";
+import FeatureRows from "@/components/landing/FeatureRows";
+import ClosingCta from "@/components/landing/ClosingCta";
 
 export const metadata: Metadata = {
-  title: "LCKD — Builders who ship. Tokens that lock.",
+  title: "Solana token launch workflow",
   description:
-    "Launch Solana tokens with enforced token locks. Ship code, lock tokens, prove it. Built on pump.fun + Streamflow.",
+    "Create a Solana token, confirm it on-chain, then approve a separate Streamflow token lock. Review both transaction receipts independently.",
+  alternates: { canonical: "/" },
   openGraph: {
-    title: "LCKD — Builders who ship. Tokens that lock.",
+    title: "LCKD | Solana token launch workflow",
     description:
-      "Launch tokens where devs can't rug. Every dev allocation is locked via Streamflow token lock.",
+      "A transparent create-then-lock workflow with separate wallet approvals and public receipts.",
+    url: "/",
     siteName: "LCKD",
     type: "website",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "LCKD" }],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "LCKD — Builders who ship. Tokens that lock.",
-    description:
-      "Launch tokens where devs can't rug. Every dev allocation is locked via Streamflow token lock.",
-    images: ["/og.png"],
   },
 };
 
 export default function Home() {
-  return <TokenShowcase />;
+  return (
+    <>
+      <Hero />
+      <WhyCards />
+      <FeatureRows />
+      <ClosingCta />
+    </>
+  );
 }

@@ -1,5 +1,7 @@
 import { type NextRequest } from "next/server";
 import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
+import { isValidSolanaAddress } from "@/lib/api/validation";
+import { checkRateLimit } from "@/lib/api/rateLimit";
 
 export { OPTIONS };
 
@@ -18,17 +20,18 @@ interface DexPair {
 }
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ ca: string }> },
 ) {
   try {
     const { ca } = await params;
 
-    if (!ca || ca.trim().length === 0) {
-      return apiError("Token address is required", 400);
-    }
+    if (!isValidSolanaAddress(ca)) return apiError("A valid token address is required", 400);
 
-    const response = await fetch(`${DEXSCREENER_API}/${ca}`, {
+    const limited = checkRateLimit(request);
+    if (limited) return limited;
+
+    const response = await fetch(`${DEXSCREENER_API}/${encodeURIComponent(ca)}`, {
       headers: { Accept: "application/json" },
       next: { revalidate: 60 },
     });
@@ -37,7 +40,7 @@ export async function POST(
       return apiError(`DexScreener API returned ${response.status}`, 502);
     }
 
-    const data = (await response.json()) as { pairs: DexPair[] | null };
+    const data = (await response.json()) as { pairs?: DexPair[] | null };
 
     if (!data.pairs || data.pairs.length === 0) {
       return apiResponse({
@@ -55,8 +58,8 @@ export async function POST(
         baseToken: p.baseToken.symbol,
         quoteToken: p.quoteToken.symbol,
         priceUsd: p.priceUsd,
-        volume24h: p.volume.h24,
-        liquidityUsd: p.liquidity.usd,
+        volume24h: p.volume?.h24 ?? 0,
+        liquidityUsd: p.liquidity?.usd ?? 0,
         fdv: p.fdv,
       }));
 

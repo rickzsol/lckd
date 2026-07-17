@@ -2,7 +2,8 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { PublicKey } from "@solana/web3.js";
 import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
-import { requireAuth } from "@/lib/api/auth";
+import { requireLinkedWallet } from "@/lib/api/auth";
+import { requireSameOrigin } from "@/lib/api/origin";
 import { checkRateLimit } from "@/lib/api/rateLimit";
 import { isValidSolanaAddress } from "@/lib/api/validation";
 import { buildCreateTransaction } from "@/lib/solana/launchTransaction";
@@ -10,34 +11,40 @@ import { buildCreateTransaction } from "@/lib/solana/launchTransaction";
 export { OPTIONS };
 
 const solanaAddress = z.string().refine(isValidSolanaAddress, "Invalid Solana address");
+const nullableHttpsUrl = z.string().url().refine(
+  (value) => new URL(value).protocol === "https:",
+  "URL must use HTTPS",
+).nullable().optional();
 
 const launchSchema = z.object({
   walletPublicKey: solanaAddress,
   mintPublicKey: solanaAddress,
-  metadataUri: z.string().url(),
-  name: z.string().min(1).max(64),
-  ticker: z.string().min(1).max(10),
+  metadataUri: z.string().url().max(200).refine(
+    (value) => new URL(value).protocol === "https:",
+    "Metadata URI must use HTTPS",
+  ),
+  name: z.string().trim().min(1).max(32),
+  ticker: z.string().trim().min(1).max(13),
   description: z.string().max(1000).default(""),
-  buyAmountSol: z.number().positive(),
-  skipLock: z.boolean().default(false),
-  lockDurationDays: z.number().int().min(0).default(0),
-  lockPercentage: z.number().min(0).max(100).default(0),
+  buyAmountSol: z.number().finite().min(0.01).max(100),
+  lockDurationDays: z.number().int().min(7).max(365),
+  lockPercentage: z.number().int().min(50).max(100),
   githubUsername: z.string().nullable().optional(),
   githubRepo: z.string().nullable().optional(),
-  liveUrl: z.string().nullable().optional(),
-  twitterUrl: z.string().nullable().optional(),
-  telegramUrl: z.string().nullable().optional(),
-  websiteUrl: z.string().nullable().optional(),
-}).refine(
-  (d) => d.skipLock || (d.lockDurationDays >= 1 && d.lockPercentage >= 1),
-  { message: "Lock duration and percentage required when skipLock is false" },
-);
+  liveUrl: nullableHttpsUrl,
+  twitterUrl: nullableHttpsUrl,
+  telegramUrl: nullableHttpsUrl,
+  websiteUrl: nullableHttpsUrl,
+});
 
 export async function POST(request: NextRequest) {
+  const originError = requireSameOrigin(request);
+  if (originError) return originError;
+
   const limited = checkRateLimit(request, "launch");
   if (limited) return limited;
 
-  const { error: authErr } = await requireAuth();
+  const { session, error: authErr } = await requireLinkedWallet();
   if (authErr) return authErr;
 
   try {
@@ -48,6 +55,9 @@ export async function POST(request: NextRequest) {
     }
 
     const body = parsed.data;
+    if (body.walletPublicKey !== session.wallet_address) {
+      return apiError("walletPublicKey does not match the linked wallet", 403);
+    }
     const walletPubkey = new PublicKey(body.walletPublicKey);
     const mintPubkey = new PublicKey(body.mintPublicKey);
 
@@ -58,9 +68,8 @@ export async function POST(request: NextRequest) {
       image: null as File | null,
       imageUri: body.metadataUri,
       buyAmountSol: body.buyAmountSol,
-      skipLock: body.skipLock,
-      lockDurationDays: body.skipLock ? 0 : body.lockDurationDays,
-      lockPercentage: body.skipLock ? 0 : body.lockPercentage,
+      lockDurationDays: body.lockDurationDays,
+      lockPercentage: body.lockPercentage,
       githubUsername: body.githubUsername ?? null,
       githubRepo: body.githubRepo ?? null,
       liveUrl: body.liveUrl ?? null,

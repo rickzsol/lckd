@@ -7,8 +7,6 @@ import Image from "next/image";
 import Link from "next/link";
 import Badge from "@/components/ui/Badge";
 import Bar from "@/components/ui/Bar";
-import CommitGraph from "@/components/ui/CommitGraph";
-import { useClaimFees } from "@/hooks/useClaimFees";
 import { TrustTier } from "@/types/index";
 import type { GitHubProfile, ContributionDay } from "@/types/index";
 import type { DisplayToken } from "@/types/display";
@@ -78,10 +76,10 @@ export default function DevProfileClient({
     : ["launches", "github"];
 
   return (
-    <div className="mx-auto max-w-[800px] p-4 pt-8">
+    <div className="mx-auto max-w-[800px] px-4 pt-28 pb-16">
       {/* Header */}
       <div className="mb-6 flex items-start gap-4">
-        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-white/[0.08]">
+        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-card border border-line-default">
           {avatar.startsWith("http") || avatar.startsWith("/") ? (
             <Image
               src={avatar}
@@ -91,7 +89,7 @@ export default function DevProfileClient({
               className="h-full w-full object-cover"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-accent/[0.06] font-mono text-lg font-bold text-accent">
+            <div className="flex h-full w-full items-center justify-center bg-accent-dim font-mono text-lg font-bold text-accent">
               {profile.github_username.slice(0, 2).toUpperCase()}
             </div>
           )}
@@ -99,39 +97,42 @@ export default function DevProfileClient({
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-sans text-xl font-bold text-white">
+            <h1 className="font-sans text-xl font-bold tracking-[-0.01em] text-text-1">
               @{profile.github_username}
             </h1>
-            <Badge tier={tier} label={TIER_LABELS[tier]} />
+            <Badge tier={tier} label={`${TIER_LABELS[tier]} PROFILE`} />
           </div>
 
           {bio && (
-            <p className="mt-1 font-mono text-xs text-[#888]">{bio}</p>
+            <p className="mt-1 font-mono text-xs text-text-2">{bio}</p>
           )}
 
-          <div className="mt-2 flex flex-wrap items-center gap-3 font-mono text-[10px] text-[#555]">
+          <div className="mt-2 flex flex-wrap items-center gap-3 font-mono text-[10px] text-text-3">
             {profile.wallet_address && (
-              <span className="rounded bg-white/[0.04] px-1.5 py-0.5">
+              <span className="rounded-md bg-surface-2 px-1.5 py-0.5 tabular-nums">
                 {truncateAddress(profile.wallet_address)}
               </span>
             )}
-            <span>{accountAge} on GitHub</span>
-            <span>{repos} repos</span>
-            <span>{tokens.length} launches</span>
+            <span className="tabular-nums">{accountAge} on GitHub</span>
+            <span className="tabular-nums">{repos} repos</span>
+            <span className="tabular-nums">{tokens.length} launches</span>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="mb-4 flex gap-1 border-b border-white/[0.06] pb-px">
+      <div className="mb-4 flex gap-1 border-b border-line pb-px" role="tablist" aria-label="Developer profile sections">
         {tabs.map((tab) => (
           <button
             key={tab}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-3 py-2 font-mono text-[11px] font-semibold uppercase tracking-wide transition-colors ${
+            className={`min-h-11 px-3 py-2 font-mono text-[11px] font-semibold uppercase tracking-wide transition-colors duration-[180ms] ${
               activeTab === tab
                 ? "border-b-2 border-accent text-accent"
-                : "text-[#555] hover:text-[#888]"
+                : "text-text-3 hover:text-text-2"
             }`}
           >
             {tab}
@@ -146,7 +147,6 @@ export default function DevProfileClient({
       {activeTab === "github" && (
         <GitHubTab
           profile={profile}
-          githubData={githubData}
           contributions={contributions}
           repos={repos}
           accountAge={accountAge}
@@ -165,8 +165,8 @@ function LaunchesTab({ tokens }: { tokens: DisplayToken[] }) {
   if (tokens.length === 0) {
     return (
       <div className="flex flex-col items-center py-16">
-        <div className="font-mono text-[48px] text-white/10">{"{ }"}</div>
-        <p className="mt-3 font-mono text-sm text-[#555]">
+        <div className="font-mono text-[48px] text-line-strong">{"{ }"}</div>
+        <p className="mt-3 font-mono text-sm text-text-3">
           No tokens launched yet.
         </p>
       </div>
@@ -182,11 +182,15 @@ function LaunchesTab({ tokens }: { tokens: DisplayToken[] }) {
         const isImageUrl =
           typeof t.image === "string" &&
           (t.image.startsWith("http") || t.image.startsWith("/"));
+        const hasLockRecord =
+          t.lock.amount !== "--" &&
+          t.lock.amount !== "0" &&
+          t.lock.duration !== "--";
 
         return (
           <Link key={t.id} href={href} className="token-card block">
             <div className="mb-2 flex items-center gap-2.5">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-accent/20 bg-accent/[0.06]">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-control border border-accent/20 bg-accent-dim">
                 {isImageUrl ? (
                   <Image
                     src={t.image}
@@ -202,34 +206,34 @@ function LaunchesTab({ tokens }: { tokens: DisplayToken[] }) {
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-[5px]">
-                  <span className="font-sans text-sm font-bold text-white">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-sans text-sm font-bold text-text-1">
                     {t.name}
                   </span>
-                  <span className="font-mono text-[11px] text-[#555]">
+                  <span className="font-mono text-[11px] text-text-3">
                     {t.ticker}
                   </span>
-                  <Badge tier={t.tier} label={t.tierLabel} />
+                  <Badge tier={t.tier} label={`${t.tierLabel} PROFILE`} />
                 </div>
-                <div className="font-mono text-[10px] text-[#444]">
-                  LOCKED {t.lock.amount} {"\u00B7"} {t.lock.duration}
+                <div className="font-mono text-[10px] text-text-4">
+                  {hasLockRecord
+                    ? `Recorded lock ${t.lock.amount} · ${t.lock.duration}`
+                    : "Lock verification unavailable"}
                 </div>
               </div>
               <div className="shrink-0 text-right">
-                <div className="font-mono text-[13px] font-bold text-[#e5e5e5]">
+                <div className="font-mono text-[13px] font-bold tabular-nums text-text-1">
                   {t.mcap}
                 </div>
               </div>
             </div>
-            <div className="flex items-center font-mono text-[10px] text-[#888]">
-              <span className="mr-1.5">
-                {t.lock.start} {"\u2192"} {t.lock.end}
-              </span>
-              <div className="min-w-[40px] flex-1">
-                <Bar pct={t.lock.pct} />
+            {hasLockRecord && (
+              <div className="flex items-center font-mono text-[10px] text-text-2">
+                <span className="mr-1.5 tabular-nums">{t.lock.start} {"\u2192"} {t.lock.end}</span>
+                <div className="min-w-[40px] flex-1"><Bar pct={t.lock.pct} /></div>
+                <span className="ml-1.5 tabular-nums text-text-3">{100 - t.lock.pct}% est. remaining</span>
               </div>
-              <span className="ml-1.5 text-[#555]">{100 - t.lock.pct}%</span>
-            </div>
+            )}
           </Link>
         );
       })}
@@ -241,13 +245,11 @@ function LaunchesTab({ tokens }: { tokens: DisplayToken[] }) {
 
 function GitHubTab({
   profile,
-  githubData,
   contributions,
   repos,
   accountAge,
 }: {
   profile: GitHubProfile;
-  githubData: GitHubData | null;
   contributions: ContributionDay[];
   repos: number;
   accountAge: string;
@@ -255,21 +257,21 @@ function GitHubTab({
   return (
     <div className="flex flex-col gap-4">
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.04]">
+      <div className="grid grid-cols-3 gap-px overflow-hidden rounded-card border border-line-default bg-line-default">
         <StatCell label="Repos" value={String(repos)} />
         <StatCell label="Commits" value={String(profile.total_commits)} />
         <StatCell label="Account Age" value={accountAge} />
       </div>
 
       {/* Contribution graph */}
-      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
-        <h3 className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-wide text-[#555]">
+      <div className="rounded-card border border-line-default bg-surface p-4">
+        <h3 className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-wide text-text-3">
           Recent Activity
         </h3>
         {contributions.length > 0 ? (
           <ContributionGraph contributions={contributions} />
         ) : (
-          <CommitGraph />
+          <p role="status" className="font-mono text-xs text-text-3">Contribution data unavailable.</p>
         )}
       </div>
 
@@ -288,9 +290,9 @@ function GitHubTab({
 
 function StatCell({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-dark-bg px-4 py-3 text-center">
-      <div className="font-mono text-lg font-bold text-white">{value}</div>
-      <div className="font-mono text-[10px] text-[#555]">{label}</div>
+    <div className="bg-surface-deep px-4 py-3 text-center">
+      <div className="font-mono text-lg font-bold tabular-nums text-text-1">{value}</div>
+      <div className="font-mono text-[10px] text-text-3">{label}</div>
     </div>
   );
 }
@@ -303,16 +305,16 @@ function ContributionGraph({
   const maxCount = Math.max(...contributions.map((c) => c.count), 1);
 
   return (
-    <div className="flex gap-[2px] overflow-hidden">
+    <div className="flex gap-[2px] overflow-hidden" role="img" aria-label="Recent GitHub contribution activity">
       {contributions.map((day) => {
         const intensity = day.count / maxCount;
         const bg =
           intensity > 0.7
-            ? "#8b5cf6"
+            ? "#2BD17E"
             : intensity > 0.4
-              ? "#065f46"
+              ? "#1FB368"
               : intensity > 0
-                ? "#064e3b"
+                ? "#178A52"
                 : "rgba(255,255,255,0.03)";
         return (
           <div
@@ -333,7 +335,6 @@ function SettingsTab({ profile }: { profile: GitHubProfile }) {
   return (
     <div className="flex flex-col gap-6">
       <WalletLinkSection profile={profile} />
-      <FeeClaimSection profile={profile} />
     </div>
   );
 }
@@ -356,7 +357,7 @@ function WalletLinkSection({ profile }: { profile: GitHubProfile }) {
       const message = `Link wallet to lckd.tech\nUsername: ${profile.github_username}\nTimestamp: ${ts}`;
       const msgBytes = new TextEncoder().encode(message);
       const sigBytes = await signMessage(msgBytes);
-      const signature = Buffer.from(sigBytes).toString("base64");
+      const signature = btoa(String.fromCharCode(...sigBytes));
 
       const res = await fetch("/api/profile/link-wallet", {
         method: "POST",
@@ -383,17 +384,17 @@ function WalletLinkSection({ profile }: { profile: GitHubProfile }) {
   }, [publicKey, signMessage, profile.github_username]);
 
   return (
-    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
-      <h3 className="mb-1 font-sans text-sm font-bold text-white">
+    <div className="rounded-card border border-line-default bg-surface p-4">
+      <h3 className="mb-1 font-sans text-sm font-bold text-text-1">
         Wallet
       </h3>
-      <p className="mb-3 font-mono text-[10px] text-[#555]">
-        Link your Solana wallet to claim creator fees and verify ownership.
+      <p className="mb-3 font-mono text-[10px] text-text-3">
+        Link your Solana wallet to verify ownership before launching.
       </p>
 
       {linkedAddress ? (
         <div className="flex items-center gap-2">
-          <span className="rounded bg-accent/[0.08] px-2 py-1 font-mono text-[11px] text-accent">
+          <span className="rounded-md bg-accent-dim px-2 py-1 font-mono text-[11px] tabular-nums text-accent">
             {truncateAddress(linkedAddress)}
           </span>
           {linkSuccess && (
@@ -404,6 +405,7 @@ function WalletLinkSection({ profile }: { profile: GitHubProfile }) {
         </div>
       ) : connected && publicKey ? (
         <button
+          type="button"
           onClick={handleLinkWallet}
           disabled={isLinking}
           className="btn-primary px-4 py-2 text-[11px]"
@@ -411,75 +413,13 @@ function WalletLinkSection({ profile }: { profile: GitHubProfile }) {
           {isLinking ? "Signing..." : "Link Wallet"}
         </button>
       ) : (
-        <p className="font-mono text-[11px] text-[#555]">
+        <p className="font-mono text-[11px] text-text-3">
           Connect your wallet first using the button in the navbar.
         </p>
       )}
 
       {linkError && (
-        <p className="mt-2 font-mono text-[10px] text-red-400">{linkError}</p>
-      )}
-    </div>
-  );
-}
-
-function FeeClaimSection({ profile }: { profile: GitHubProfile }) {
-  const { connected } = useWallet();
-  const { claimFees, isLoading, error, txSignature } = useClaimFees();
-
-  const hasWallet = !!profile.wallet_address;
-
-  if (!hasWallet) {
-    return (
-      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
-        <h3 className="mb-1 font-sans text-sm font-bold text-white">
-          Claim Creator Fees
-        </h3>
-        <p className="font-mono text-[10px] text-[#555]">
-          Link your wallet first to claim accumulated creator fees from PumpPortal.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
-      <h3 className="mb-1 font-sans text-sm font-bold text-white">
-        Claim Creator Fees
-      </h3>
-      <p className="mb-3 font-mono text-[10px] text-[#555]">
-        Collect accumulated creator fees from Pump.fun / Meteora.
-      </p>
-
-      {connected ? (
-        <button
-          onClick={claimFees}
-          disabled={isLoading}
-          className="btn-primary px-4 py-2 text-[11px]"
-        >
-          {isLoading ? "Claiming..." : "Claim Fees"}
-        </button>
-      ) : (
-        <p className="font-mono text-[11px] text-[#555]">
-          Connect your wallet to claim fees.
-        </p>
-      )}
-
-      {txSignature && (
-        <div className="mt-2">
-          <a
-            href={`https://solscan.io/tx/${txSignature}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-mono text-[10px] text-accent underline underline-offset-2"
-          >
-            View transaction {"\u2192"}
-          </a>
-        </div>
-      )}
-
-      {error && (
-        <p className="mt-2 font-mono text-[10px] text-red-400">{error}</p>
+        <p role="alert" className="mt-2 font-mono text-[10px] text-danger">{linkError}</p>
       )}
     </div>
   );

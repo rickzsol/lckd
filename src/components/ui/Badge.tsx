@@ -1,18 +1,18 @@
 import { TrustTier } from "@/types/index";
 
-const TIER_STYLES: Record<TrustTier, { bg: string; border: string; text: string }> = {
-  [TrustTier.LOCKED]: { bg: "rgba(100,100,100,0.2)", border: "#555", text: "#999" },
-  [TrustTier.VERIFIED]: { bg: "rgba(59,130,246,0.12)", border: "#3b82f6", text: "#60a5fa" },
-  [TrustTier.BUILDER]: { bg: "rgba(168,85,247,0.12)", border: "#a855f7", text: "#c084fc" },
-  [TrustTier.SHIPPED]: { bg: "rgba(139,92,246,0.12)", border: "#8b5cf6", text: "#a78bfa" },
+const TIER_STYLES: Record<TrustTier, { bg: string; border: string; text: string; glow?: string }> = {
+  [TrustTier.LOCKED]: { bg: "transparent", border: "rgba(255,255,255,0.14)", text: "var(--color-text-3)" },
+  [TrustTier.VERIFIED]: { bg: "rgba(43,209,126,0.06)", border: "rgba(43,209,126,0.35)", text: "var(--color-accent-400)" },
+  [TrustTier.BUILDER]: { bg: "rgba(43,209,126,0.14)", border: "rgba(43,209,126,0.5)", text: "var(--color-accent-300)" },
+  [TrustTier.SHIPPED]: { bg: "var(--color-accent)", border: "var(--color-accent)", text: "var(--color-accent-ink)", glow: "0 0 16px rgba(43,209,126,0.35)" },
 };
 
 export default function Badge({ tier, label }: { tier: TrustTier; label: string }) {
   const s = TIER_STYLES[tier];
   return (
     <span
-      className="inline-flex items-center gap-[3px] whitespace-nowrap rounded px-[7px] py-[2px] font-mono text-[9px] font-bold tracking-wide"
-      style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.text }}
+      className="inline-flex items-center gap-[4px] whitespace-nowrap rounded-md px-[9px] py-[4px] font-mono text-[10px] font-bold tracking-[0.08em]"
+      style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.text, boxShadow: s.glow }}
     >
       {tier >= TrustTier.VERIFIED && (
         <span className="h-1 w-1 rounded-full" style={{ background: s.text }} />

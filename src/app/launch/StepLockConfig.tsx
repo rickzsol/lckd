@@ -6,21 +6,15 @@ const DURATION_PRESETS = [7, 30, 90, 180, 365];
 const PERCENTAGE_PRESETS = [50, 75, 100];
 
 export default function StepLockConfig({ w }: { w: WizardContext }) {
-  const isSkipped = w.config.skipLock;
-
   return (
     <div>
-      <div className="mb-5 font-mono text-[13px] font-bold text-accent">
-        02 &mdash; Lock Configuration
-      </div>
+      <h2 className="mb-5 font-mono text-[13px] font-bold text-accent">
+        02 / Lock configuration
+      </h2>
 
       <div className="flex flex-col gap-5">
-        {/* Buy Amount */}
         <div>
-          <label
-            htmlFor="buy-amount"
-            className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-[#555]"
-          >
+          <label htmlFor="buy-amount" className="form-label">
             Buy Amount (SOL)
           </label>
           <input
@@ -28,216 +22,127 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
             type="number"
             min={0.1}
             step={0.1}
-            className="form-input"
+            className={`form-input tabular-nums ${w.errors.buyAmountSol ? "form-input-error" : ""}`}
             value={w.config.buyAmountSol}
-            onChange={(e) =>
-              w.updateConfig("buyAmountSol", parseFloat(e.target.value) || 0)
+            onChange={(event) =>
+              w.updateConfig("buyAmountSol", Number.parseFloat(event.target.value) || 0)
             }
           />
           {w.errors.buyAmountSol ? (
-            <div className="mt-1 font-mono text-[10px] text-red-400">
+            <div className="mt-1 font-mono text-[11px] text-danger">
               {w.errors.buyAmountSol}
             </div>
           ) : (
-            <div className="mt-1 font-mono text-[10px] text-[#444]">
-              {isSkipped
-                ? "This SOL buys your initial supply"
-                : "This SOL buys your initial supply, which gets locked"}
+            <div className="mt-1 font-mono text-[10px] text-text-4">
+              This SOL buys your initial supply, which must be locked.
             </div>
           )}
         </div>
 
-        {/* Skip Lock Toggle */}
         <div>
-          <button
-            type="button"
-            onClick={() => w.updateConfig("skipLock", !isSkipped)}
-            className={`flex w-full items-center justify-between rounded-lg border px-3.5 py-3 transition-colors ${
-              isSkipped
-                ? "border-red-500/30 bg-red-500/5"
-                : "border-white/8 bg-white/2 hover:border-white/15"
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <div
-                className={`flex h-4 w-7 items-center rounded-full transition-colors ${
-                  isSkipped ? "justify-end bg-red-500" : "justify-start bg-white/10"
+          <div className="mb-1.5 flex items-center justify-between">
+            <label htmlFor="lock-duration" className="form-label mb-0">
+              Lock Duration
+            </label>
+            <span className="font-mono text-sm font-bold tabular-nums text-accent">
+              {w.config.lockDurationDays} days
+            </span>
+          </div>
+          <input
+            id="lock-duration"
+            type="range"
+            min={7}
+            max={365}
+            value={w.config.lockDurationDays}
+            onChange={(event) =>
+              w.updateConfig("lockDurationDays", Number(event.target.value))
+            }
+            className="w-full accent-accent"
+          />
+          <div className="mt-2 flex gap-1.5">
+            {DURATION_PRESETS.map((duration) => (
+              <button
+                key={duration}
+                type="button"
+                onClick={() => w.updateConfig("lockDurationDays", duration)}
+                className={`flex-1 rounded-control border py-1.5 font-mono text-[10px] font-bold transition-colors duration-[180ms] ${
+                  w.config.lockDurationDays === duration
+                    ? "border-accent/40 bg-accent-dim text-accent"
+                    : "border-line-default bg-surface-2 text-text-3 hover:border-line-strong hover:text-text-2"
                 }`}
               >
-                <div className="mx-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-all" />
-              </div>
-              <span className="font-mono text-[11px] font-bold text-white">
-                Skip token lock
-              </span>
-            </div>
-            <span
-              className={`rounded-full px-2 py-0.5 font-mono text-[9px] font-bold uppercase ${
-                isSkipped
-                  ? "bg-red-500/15 text-red-400"
-                  : "bg-white/5 text-[#555]"
-              }`}
-            >
-              {isSkipped ? "no lock" : "locked"}
-            </span>
-          </button>
-
-          {isSkipped && (
-            <div className="mt-2.5 rounded-lg border border-red-500/20 bg-red-500/5 px-3.5 py-3">
-              <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wider text-red-400">
-                Highly unrecommended
-              </div>
-              <div className="font-mono text-[10px] leading-relaxed text-red-400/80">
-                Launching without a token lock means your dev tokens are fully
-                liquid. Holders will have no on-chain guarantee that you
-                won&apos;t sell. This will significantly hurt trust and your
-                trust tier.
-              </div>
-            </div>
-          )}
+                {duration}d
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Lock Duration — hidden when skipped */}
-        {!isSkipped && (
-          <div>
-            <div className="mb-1.5 flex items-center justify-between">
-              <label
-                htmlFor="lock-duration"
-                className="font-mono text-[10px] uppercase tracking-wider text-[#555]"
-              >
-                Lock Duration
-              </label>
-              <span className="font-mono text-sm font-bold text-accent">
-                {w.config.lockDurationDays} days
-              </span>
-            </div>
-            <input
-              id="lock-duration"
-              type="range"
-              min={7}
-              max={365}
-              value={w.config.lockDurationDays}
-              onChange={(e) =>
-                w.updateConfig("lockDurationDays", +e.target.value)
-              }
-              className="w-full accent-accent"
-            />
-            <div className="mt-2 flex gap-1.5">
-              {DURATION_PRESETS.map((d) => (
-                <button
-                  key={d}
-                  onClick={() => w.updateConfig("lockDurationDays", d)}
-                  className={`flex-1 rounded-md border py-1.5 font-mono text-[10px] font-bold transition-colors ${
-                    w.config.lockDurationDays === d
-                      ? "border-accent/40 bg-accent/10 text-accent"
-                      : "border-white/8 bg-white/3 text-[#555] hover:border-white/15 hover:text-[#888]"
-                  }`}
-                >
-                  {d}d
-                </button>
-              ))}
-            </div>
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label htmlFor="lock-pct" className="form-label mb-0">
+              Tokens to Lock
+            </label>
+            <span className="font-mono text-sm font-bold tabular-nums text-accent">
+              {w.config.lockPercentage}%
+            </span>
           </div>
-        )}
-
-        {/* Lock Percentage — hidden when skipped */}
-        {!isSkipped && (
-          <div>
-            <div className="mb-1.5 flex items-center justify-between">
-              <label
-                htmlFor="lock-pct"
-                className="font-mono text-[10px] uppercase tracking-wider text-[#555]"
+          <input
+            id="lock-pct"
+            type="range"
+            min={50}
+            max={100}
+            value={w.config.lockPercentage}
+            onChange={(event) =>
+              w.updateConfig("lockPercentage", Number(event.target.value))
+            }
+            className="w-full accent-accent"
+          />
+          <div className="mt-2 flex gap-1.5">
+            {PERCENTAGE_PRESETS.map((percentage) => (
+              <button
+                key={percentage}
+                type="button"
+                onClick={() => w.updateConfig("lockPercentage", percentage)}
+                className={`flex-1 rounded-control border py-1.5 font-mono text-[10px] font-bold transition-colors duration-[180ms] ${
+                  w.config.lockPercentage === percentage
+                    ? "border-accent/40 bg-accent-dim text-accent"
+                    : "border-line-default bg-surface-2 text-text-3 hover:border-line-strong hover:text-text-2"
+                }`}
               >
-                Tokens to Lock
-              </label>
-              <span className="font-mono text-sm font-bold text-accent">
-                {w.config.lockPercentage}%
-              </span>
-            </div>
-            <input
-              id="lock-pct"
-              type="range"
-              min={50}
-              max={100}
-              value={w.config.lockPercentage}
-              onChange={(e) => w.updateConfig("lockPercentage", +e.target.value)}
-              className="w-full accent-accent"
-            />
-            <div className="mt-2 flex gap-1.5">
-              {PERCENTAGE_PRESETS.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => w.updateConfig("lockPercentage", p)}
-                  className={`flex-1 rounded-md border py-1.5 font-mono text-[10px] font-bold transition-colors ${
-                    w.config.lockPercentage === p
-                      ? "border-accent/40 bg-accent/10 text-accent"
-                      : "border-white/8 bg-white/3 text-[#555] hover:border-white/15 hover:text-[#888]"
-                  }`}
-                >
-                  {p}%
-                </button>
-              ))}
-            </div>
+                {percentage}%
+              </button>
+            ))}
           </div>
-        )}
+        </div>
 
-        {/* Live Summary */}
         <div className="lock-preview">
-          <div
-            className={`mb-1.5 font-mono text-[10px] uppercase tracking-[0.1em] ${
-              isSkipped ? "text-red-400" : "text-accent"
-            }`}
-          >
-            {isSkipped ? "Launch Preview" : "Lock Preview"}
+          <div className="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-accent">
+            Lock Preview
           </div>
-          <div className="font-mono text-xs text-white">
-            You will buy{" "}
-            <span className="font-bold text-accent">
-              {w.config.buyAmountSol} SOL
-            </span>{" "}
-            worth of{" "}
-            <span className="font-bold">
-              ${w.config.ticker || "???"}
-            </span>
-            {isSkipped ? (
-              <span className="text-red-400"> with no token lock</span>
-            ) : (
-              <>
-                {" "}and lock{" "}
-                <span className="font-bold text-accent">
-                  {w.config.lockPercentage}%
-                </span>{" "}
-                for{" "}
-                <span className="font-bold text-accent">
-                  {w.config.lockDurationDays} days
-                </span>
-              </>
-            )}
+          <div className="font-mono text-xs text-text-1">
+            You will buy <span className="font-bold tabular-nums text-accent">{w.config.buyAmountSol} SOL</span>{" "}
+            worth of <span className="font-bold">${w.config.ticker || "???"}</span>{" "}
+            and lock <span className="font-bold tabular-nums text-accent">{w.config.lockPercentage}%</span>{" "}
+            for <span className="font-bold tabular-nums text-accent">{w.config.lockDurationDays} days</span>.
           </div>
-          {!isSkipped && (
-            <div className="mt-2 font-mono text-[10px] text-[#555]">
-              Non-cancelable &middot; Streamflow token lock
-            </div>
-          )}
+          <div className="mt-2 font-mono text-[10px] text-text-3">
+            Non-cancelable, Streamflow token lock
+          </div>
         </div>
 
-        {/* Info note */}
-        {!isSkipped && (
-          <div className="flex items-start gap-2 rounded-lg border border-white/6 bg-white/2 px-3 py-2.5">
-            <span className="mt-0.5 text-[12px] text-[#555]">i</span>
-            <span className="font-mono text-[10px] leading-relaxed text-[#555]">
-              The lock is non-cancelable and uses a Streamflow token lock.
-              Tokens unlock in full at the end of the lock period. This cannot
-              be reversed after launch.
-            </span>
-          </div>
-        )}
+        <div className="warning-box flex items-start gap-2 leading-relaxed">
+          <span aria-hidden="true">!</span>
+          <span>
+            The lock cannot be canceled, topped up, paused, or transferred. Tokens unlock in full at the selected date.
+          </span>
+        </div>
       </div>
 
       <div className="mt-6 flex gap-2.5">
-        <button onClick={w.goBack} className="btn-secondary flex-1 py-3">
+        <button type="button" onClick={w.goBack} className="btn-secondary flex-1 py-3">
           &larr; back
         </button>
-        <button onClick={w.goNext} className="btn-primary flex-[2] py-3">
+        <button type="button" onClick={w.goNext} className="btn-primary flex-[2] py-3">
           continue &rarr;
         </button>
       </div>

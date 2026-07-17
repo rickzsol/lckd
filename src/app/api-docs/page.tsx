@@ -1,543 +1,260 @@
 import type { Metadata } from "next";
-import ApiToc from "@/components/docs/ApiToc";
 import CodeBlock from "@/components/docs/CodeBlock";
-import QuickStart from "@/components/landing/QuickStart";
-import {
-  SectionHeading,
-  SubHeading,
-  Prose,
-  Accent,
-} from "@/components/docs/DocsPrimitives";
+import Toc, { type TocSection } from "@/components/docs/Toc";
+import { Prose, SectionHeading, SubHeading } from "@/components/docs/DocsPrimitives";
+
+const API_SECTIONS: TocSection[] = [
+  { id: "overview", label: "Overview" },
+  { id: "authentication", label: "Authentication" },
+  { id: "feed", label: "GET /feed" },
+  { id: "token", label: "GET /token/:ca" },
+  { id: "lock", label: "GET /token/:ca/lock" },
+  { id: "developer", label: "GET /dev/:username" },
+  { id: "dex", label: "POST /verify-dex" },
+  { id: "launch", label: "POST /launch" },
+  { id: "errors", label: "Errors and limits" },
+];
 
 export const metadata: Metadata = {
-  title: "API Docs — LCKD",
+  title: "REST API reference",
   description:
-    "REST API documentation for LCKD — launch tokens, query lock status, and integrate with your tools.",
+    "Current LCKD REST endpoints, authentication boundaries, response shapes, and the limits of platform lock records.",
+  alternates: { canonical: "/api-docs" },
+  openGraph: {
+    title: "REST API reference | LCKD",
+    description: "Public read endpoints and authenticated browser launch endpoints.",
+    url: "/api-docs",
+    type: "article",
+  },
 };
 
-function ParamRow({ name, type, desc }: { name: string; type: string; desc: string }) {
+function Method({ children }: { children: string }) {
+  const isGet = children === "GET";
   return (
-    <tr className="border-b border-white/[0.04]">
-      <td className="py-2 pr-4 align-top font-mono text-xs text-accent">{name}</td>
-      <td className="py-2 pr-4 align-top font-mono text-[11px] text-text-muted">{type}</td>
-      <td className="py-2 align-top text-sm text-text-muted">{desc}</td>
-    </tr>
-  );
-}
-
-function ParamTable({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-left">
-        <thead>
-          <tr className="border-b border-white/[0.08]">
-            <th className="pb-2 pr-4 font-mono text-[10px] font-bold uppercase tracking-wider text-text-muted">Param</th>
-            <th className="pb-2 pr-4 font-mono text-[10px] font-bold uppercase tracking-wider text-text-muted">Type</th>
-            <th className="pb-2 font-mono text-[10px] font-bold uppercase tracking-wider text-text-muted">Description</th>
-          </tr>
-        </thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
-  );
-}
-
-function MethodBadge({ method }: { method: "GET" | "POST" }) {
-  const color = method === "GET" ? "text-blue-400 border-blue-400/20 bg-blue-400/[0.06]" : "text-amber-400 border-amber-400/20 bg-amber-400/[0.06]";
-  return (
-    <span className={`inline-block rounded border px-2 py-0.5 font-mono text-[10px] font-bold ${color}`}>
-      {method}
+    <span
+      className={`mr-2 inline-flex rounded-md border px-2 py-1 align-middle font-mono text-[10px] font-bold tracking-[0.08em] ${
+        isGet
+          ? "border-accent/40 bg-accent-dim text-accent-400"
+          : "border-warn/40 bg-[rgba(224,167,62,0.07)] text-warn"
+      }`}
+    >
+      {children}
     </span>
+  );
+}
+
+function EndpointCard({
+  method,
+  path,
+  children,
+}: {
+  method: "GET" | "POST";
+  path: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-card border border-line-default bg-surface p-4">
+      <p className="mb-2 break-all font-mono text-xs text-text-1">
+        <Method>{method}</Method>{path}
+      </p>
+      <p className="text-sm leading-6 text-text-2">{children}</p>
+    </div>
   );
 }
 
 export default function ApiDocsPage() {
   return (
-    <div className="mx-auto flex max-w-5xl gap-10 px-4 pb-24 pt-10">
-      <ApiToc />
+    <div className="mx-auto max-w-[1152px] bg-bg pb-24">
+      <header className="border-b border-line px-4 pt-28 pb-12 sm:px-6 sm:pb-16">
+        <div className="mx-auto max-w-3xl">
+          <h1 className="font-sans text-[32px] font-bold tracking-[-0.02em] text-text-1 sm:text-[clamp(32px,5vw,44px)]">
+            Public data, explicit boundaries
+          </h1>
+          <p className="mt-5 max-w-2xl text-[15px] leading-[1.6] text-text-2">
+            Read endpoints are public. Launch and upload endpoints use the authenticated
+            browser session and do not form a standalone public launch SDK.
+          </p>
+        </div>
+      </header>
 
-      <article className="min-w-0 max-w-3xl flex-1 space-y-16">
-        {/* ─── Quick Start ─────────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="quick-start">Quick Start</SectionHeading>
-          <Prose>
-            Get up and running in seconds. Pick your preferred method below.
-          </Prose>
-          <QuickStart />
-        </section>
-
-        {/* ─── Overview ──────────────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="overview">API Overview</SectionHeading>
-
-          <Prose>
-            The lckd.tech REST API lets you integrate token launches, lock queries, and
-            developer profiles into CLIs, bots, CI/CD pipelines, and dashboards. All
-            endpoints return JSON and support CORS.
-          </Prose>
-
-          <div className="space-y-3">
-            <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-4">
-              <p className="mb-2 font-mono text-xs font-bold text-white">Base URL</p>
-              <code className="font-mono text-sm text-accent">https://www.lckd.tech/api/v1</code>
+      <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4 pt-6 lg:flex-row lg:gap-12 lg:pt-10">
+        <Toc sections={API_SECTIONS} />
+        <article className="min-w-0 max-w-3xl flex-1 space-y-20">
+          <section className="space-y-5">
+            <SectionHeading id="overview">Overview</SectionHeading>
+            <Prose>
+              The production base URL is{" "}
+              <code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">
+                https://lckd.tech/api/v1
+              </code>
+              . Responses are JSON. Success responses return the endpoint payload directly.
+              Errors use{" "}
+              <code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-danger">{`{ "error": "message" }`}</code>.
+            </Prose>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <EndpointCard method="GET" path="/feed">Directory records with pagination metadata.</EndpointCard>
+              <EndpointCard method="GET" path="/token/:ca">One platform token record by mint address or ID.</EndpointCard>
+              <EndpointCard method="GET" path="/token/:ca/lock">A lock summary computed from stored platform fields.</EndpointCard>
+              <EndpointCard method="GET" path="/dev/:username">Directory records associated with a GitHub username.</EndpointCard>
             </div>
-
-            <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-4">
-              <p className="mb-2 font-mono text-xs font-bold text-white">Response Format</p>
-              <p className="text-sm text-text-muted">
-                All responses are JSON. Successful responses return the data directly.
-                Errors return <code className="font-mono text-xs text-red-400">{"{ \"error\": \"message\" }"}</code> with
-                an appropriate HTTP status code.
-              </p>
+            <div className="warning-box block text-[13px] leading-7">
+              API lock fields are not fresh on-chain verification. Consumers must validate the
+              lock transaction and contract state independently.
             </div>
-          </div>
+          </section>
 
-          <div className="rounded-lg border border-accent/20 bg-accent/[0.04] px-4 py-3">
-            <p className="font-mono text-xs font-bold text-accent">No auth required</p>
-            <p className="mt-1 text-sm leading-relaxed text-text-muted">
-              All GET endpoints are public. POST endpoints require valid input parameters
-              but no API key during the MVP phase.
-            </p>
-          </div>
-        </section>
+          <section className="space-y-5">
+            <SectionHeading id="authentication">Authentication</SectionHeading>
+            <Prose>
+              Public read endpoints and the DexScreener lookup do not require a session. The
+              metadata upload, launch transaction builder, GitHub repository list, and token
+              record writer require a valid GitHub-authenticated session cookie.
+            </Prose>
+            <Prose>
+              Cross-origin access is restricted by the server allowlist. There is no published
+              API-key flow and no supported command-line package. Use the browser wizard for
+              authenticated launches.
+            </Prose>
+          </section>
 
-        {/* ─── CLI ───────────────────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="cli">CLI</SectionHeading>
-
-          <Prose>
-            Launch tokens directly from your terminal. The CLI wraps the REST API and
-            handles wallet signing locally — your private key never leaves your machine.
-          </Prose>
-
-          <SubHeading>Installation</SubHeading>
-          <CodeBlock lang="bash" code="npx lckd launch" />
-
-          <SubHeading>Commands</SubHeading>
-          <div className="space-y-2">
-            {[
-              { cmd: "lckd launch", desc: "Interactive token launch wizard" },
-              { cmd: "lckd status <mint-address>", desc: "Check lock status for a token" },
-              { cmd: "lckd profile <github-username>", desc: "View all tokens by a developer" },
-              { cmd: "lckd verify-dex <mint-address>", desc: "Check DexScreener data for a token" },
-              { cmd: "lckd tokens", desc: "List recent token launches" },
-            ].map((item) => (
-              <div key={item.cmd} className="flex items-start gap-3 rounded-lg border border-white/[0.04] bg-white/[0.015] px-4 py-3">
-                <code className="shrink-0 font-mono text-xs text-accent">{item.cmd}</code>
-                <span className="text-sm text-text-muted">{item.desc}</span>
-              </div>
-            ))}
-          </div>
-
-          <SubHeading>Launch Wizard Output</SubHeading>
-          <CodeBlock lang="terminal" code={`$ lckd launch
-
-  lckd.tech — builders who ship. tokens that lock.
-
-  ? Token name: MyToken
-  ? Ticker: $MTK
-  ? Description: A community token with locked dev allocation
-  ? Image path: ./token-logo.png
-  ? Initial buy (SOL): 1.5
-  ? Lock duration (days): 90
-  ? Lock percentage: 100
-  ? GitHub username (optional): myuser
-  ? GitHub repo (optional): myuser/mytoken
-
-  Uploading metadata to IPFS... done
-  Building create transaction... done
-
-  Review:
-    Token:     MyToken ($MTK)
-    Buy:       1.5 SOL
-    Lock:      100% for 90 days
-    Mint:      7xKX...AsU
-
-  ? Sign and submit? Yes
-
-  Transaction submitted: 5xYZ...abc
-  Token live at: https://www.lckd.tech/token/7xKX...AsU`} />
-        </section>
-
-        {/* ─── Config File ───────────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="config-file">Config File</SectionHeading>
-
-          <Prose>
-            For CI/CD and automated launches, use a <Accent>lckd.json</Accent> config
-            file instead of the interactive wizard.
-          </Prose>
-
-          <CodeBlock lang="json" code={`{
-  "name": "MyToken",
-  "ticker": "MTK",
-  "description": "A community token with locked dev allocation",
-  "image": "./token-logo.png",
-  "buyAmountSol": 1.5,
-  "lockDurationDays": 90,
-  "lockPercentage": 100,
-  "githubUsername": "myuser",
-  "githubRepo": "myuser/mytoken",
-  "liveUrl": "https://mytoken.app",
-  "twitterUrl": "https://x.com/mytoken",
-  "telegramUrl": "https://t.me/mytoken",
-  "websiteUrl": "https://mytoken.app"
+          <section className="space-y-5">
+            <SectionHeading id="feed"><Method>GET</Method>/feed</SectionHeading>
+            <Prose>Returns directory records and pagination metadata.</Prose>
+            <SubHeading>Query parameters</SubHeading>
+            <ul className="space-y-2 pl-5 text-sm leading-7 text-text-2">
+              <li className="list-disc marker:text-text-3"><code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">tier</code>: locked, verified, builder, or shipped</li>
+              <li className="list-disc marker:text-text-3"><code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">sort</code>: newest or oldest</li>
+              <li className="list-disc marker:text-text-3"><code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">limit</code>: 1 to 100, default 20</li>
+              <li className="list-disc marker:text-text-3"><code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">offset</code>: zero-based result offset</li>
+            </ul>
+            <CodeBlock lang="bash" code={`curl "https://lckd.tech/api/v1/feed?sort=newest&limit=20"`} />
+            <CodeBlock lang="json" code={`{
+  "tokens": [],
+  "meta": { "total": 0, "limit": 20, "offset": 0, "sort": "newest" }
 }`} />
+          </section>
 
-          <Prose>
-            Then run: <code className="font-mono text-xs text-accent">lckd launch --config lckd.json</code>
-          </Prose>
-        </section>
+          <section className="space-y-5">
+            <SectionHeading id="token"><Method>GET</Method>/token/:ca</SectionHeading>
+            <Prose>
+              Returns{" "}
+              <code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">{`{ "token": DisplayToken }`}</code>{" "}
+              for a known mint address or ID. Unknown records return 404.
+            </Prose>
+            <CodeBlock lang="bash" code={`curl "https://lckd.tech/api/v1/token/<mint-address>"`} />
+            <Prose>
+              Market fields can be unavailable and appear as{" "}
+              <code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">--</code>.
+              Treat missing values as unknown, not zero.
+            </Prose>
+          </section>
 
-        {/* ─── POST /launch ──────────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="post-launch">
-            <MethodBadge method="POST" /> /launch
-          </SectionHeading>
+          <section className="space-y-5">
+            <SectionHeading id="lock"><Method>GET</Method>/token/:ca/lock</SectionHeading>
+            <Prose>
+              Returns a schedule summary derived from the stored launch record. The response
+              includes token name, ticker, verified amount and duration, cliff unlock state,
+              days remaining, timestamps, and the finalized lock transaction.
+            </Prose>
+            <CodeBlock lang="bash" code={`curl "https://lckd.tech/api/v1/token/<mint-address>/lock"`} />
+            <CodeBlock lang="json" code={`{
+  "lock": {
+    "tokenName": "Example",
+    "ticker": "$EX",
+    "lockAmount": "998,103",
+    "lockDuration": "90d",
+    "percentUnlocked": 0,
+    "daysRemaining": 90,
+    "start": "2026-07-17T12:00:00.000Z",
+    "end": "2026-10-15T12:02:00.000Z",
+    "status": "locked",
+    "transaction": "<finalized-lock-signature>"
+  }
+}`} />
+            <div className="warning-box block text-[13px] leading-7">
+              A time lock reports 0 percent unlocked before its cliff and 100 percent at or
+              after the unlock timestamp. Verify the linked Streamflow account independently
+              before using this record for alerts, access control, or trading decisions.
+            </div>
+            <Prose>
+              The recorded lock percentage is recomputed from the finalized Streamflow deposit
+              and the wallet&apos;s finalized token purchase in the launch transaction. It is not
+              derived from a later wallet balance or a client-supplied percentage.
+            </Prose>
+          </section>
 
-          <Prose>
-            Builds a pump.fun create+buy transaction with an ephemeral mint keypair.
-            Returns serialized transaction bytes for client-side signing.
-          </Prose>
+          <section className="space-y-5">
+            <SectionHeading id="developer"><Method>GET</Method>/dev/:username</SectionHeading>
+            <Prose>Returns directory records associated with an exact GitHub username.</Prose>
+            <CodeBlock lang="bash" code={`curl "https://lckd.tech/api/v1/dev/<github-username>"`} />
+            <CodeBlock lang="json" code={`{
+  "developer": "github-username",
+  "tokens": []
+}`} />
+          </section>
 
-          <SubHeading>Request</SubHeading>
-          <CodeBlock lang="json" code={`POST /api/v1/launch
+          <section className="space-y-5">
+            <SectionHeading id="dex"><Method>POST</Method>/token/:ca/verify-dex</SectionHeading>
+            <Prose>
+              Requests current DexScreener pairs for a mint and filters the result to Solana.
+              It does not verify token ownership, lock state, or project legitimacy.
+            </Prose>
+            <CodeBlock lang="bash" code={`curl -X POST "https://lckd.tech/api/v1/token/<mint-address>/verify-dex"`} />
+          </section>
+
+          <section className="space-y-5">
+            <SectionHeading id="launch"><Method>POST</Method>/launch</SectionHeading>
+            <Prose>
+              This authenticated endpoint validates launch input and returns a serialized
+              pump.fun create-and-buy transaction. The browser generates the mint keypair and
+              supplies its public key. The endpoint does not return a private key and does not
+              build the Streamflow lock.
+            </Prose>
+            <CodeBlock lang="json" code={`POST /api/v1/launch
 Content-Type: application/json
+Cookie: <authenticated session>
 
 {
-  "walletPublicKey": "YourWalletPublicKeyBase58",
+  "walletPublicKey": "<wallet-public-key>",
+  "mintPublicKey": "<client-generated-mint-public-key>",
   "metadataUri": "https://...",
-  "name": "MyToken",
-  "ticker": "MTK",
-  "description": "A community token",
-  "buyAmountSol": 1.5,
+  "name": "Example",
+  "ticker": "EX",
+  "description": "Example token",
+  "buyAmountSol": 1,
   "lockDurationDays": 90,
-  "lockPercentage": 100,
-  "githubUsername": "myuser",
-  "githubRepo": "myuser/mytoken"
+  "lockPercentage": 100
 }`} />
-
-          <ParamTable>
-            <ParamRow name="walletPublicKey" type="string" desc="Solana wallet public key (base58)" />
-            <ParamRow name="metadataUri" type="string" desc="IPFS URI from /metadata/upload" />
-            <ParamRow name="name" type="string" desc="Token name" />
-            <ParamRow name="ticker" type="string" desc="Token ticker (max 10 chars)" />
-            <ParamRow name="buyAmountSol" type="number" desc="Initial dev buy in SOL (> 0)" />
-            <ParamRow name="lockDurationDays" type="number" desc="Lock duration in days (>= 1)" />
-            <ParamRow name="lockPercentage" type="number" desc="Percentage of tokens to lock (1-100)" />
-          </ParamTable>
-
-          <SubHeading>Response</SubHeading>
-          <CodeBlock lang="json" code={`{
-  "transaction": "base64-encoded-transaction-bytes",
-  "mintPublicKey": "EphemeralMintPublicKeyBase58",
-  "mintSecretKey": "base64-encoded-mint-secret-key"
+            <CodeBlock lang="json" code={`{
+  "transaction": "<base64 transaction bytes>",
+  "mintPublicKey": "<client-generated-mint-public-key>"
 }`} />
+            <div className="error-box block text-[13px] leading-7">
+              The client must co-sign the create transaction with the locally generated mint
+              keypair and the connected wallet. After confirmation, the browser builds and
+              signs a separate Streamflow lock transaction. A lock failure does not roll back
+              the confirmed create transaction.
+            </div>
+          </section>
 
-          <div className="rounded-lg border border-accent/20 bg-accent/[0.04] px-4 py-3">
-            <p className="font-mono text-xs font-bold text-accent">Why mintSecretKey?</p>
-            <p className="mt-1 text-sm leading-relaxed text-text-muted">
-              The mint keypair is ephemeral — generated per-launch for the token{"'"}s mint
-              account. Your client needs it to co-sign the create transaction. The server
-              never touches your wallet{"'"}s private key.
-            </p>
-          </div>
-        </section>
-
-        {/* ─── POST /metadata/upload ─────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="post-metadata-upload">
-            <MethodBadge method="POST" /> /metadata/upload
-          </SectionHeading>
-
-          <Prose>
-            Uploads token image and metadata to IPFS via pump.fun{"'"}s endpoint. Returns a
-            metadata URI for use in the /launch endpoint.
-          </Prose>
-
-          <SubHeading>Request</SubHeading>
-          <CodeBlock lang="bash" code={`curl -X POST https://www.lckd.tech/api/v1/metadata/upload \\
-  -F "file=@token-logo.png" \\
-  -F "name=MyToken" \\
-  -F "symbol=MTK" \\
-  -F "description=A community token" \\
-  -F "twitter=https://x.com/mytoken" \\
-  -F "website=https://mytoken.app"`} />
-
-          <ParamTable>
-            <ParamRow name="file" type="File" desc="Token image (PNG/JPG)" />
-            <ParamRow name="name" type="string" desc="Token name (required)" />
-            <ParamRow name="symbol" type="string" desc="Token symbol (required)" />
-            <ParamRow name="description" type="string" desc="Token description" />
-            <ParamRow name="twitter" type="string" desc="Twitter URL (optional)" />
-            <ParamRow name="telegram" type="string" desc="Telegram URL (optional)" />
-            <ParamRow name="website" type="string" desc="Website URL (optional)" />
-          </ParamTable>
-
-          <SubHeading>Response</SubHeading>
-          <CodeBlock lang="json" code={`{
-  "metadataUri": "https://arweave.net/..."
-}`} />
-        </section>
-
-        {/* ─── GET /token/:ca ────────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="get-token">
-            <MethodBadge method="GET" /> /token/:ca
-          </SectionHeading>
-
-          <Prose>
-            Returns the full token profile by mint address or ID.
-          </Prose>
-
-          <SubHeading>Request</SubHeading>
-          <CodeBlock lang="bash" code="GET /api/v1/token/7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU" />
-
-          <SubHeading>Response</SubHeading>
-          <CodeBlock lang="json" code={`{
-  "token": {
-    "id": 1,
-    "name": "NeuralSwap",
-    "ticker": "$NSWAP",
-    "tier": 4,
-    "tierLabel": "SHIPPED",
-    "image": "NS",
-    "dev": {
-      "github": "alexchen",
-      "avatar": "AC",
-      "accountAge": "3yr"
-    },
-    "lock": {
-      "amount": "4.2M",
-      "duration": "180d",
-      "pct": 12,
-      "start": "Jan 15",
-      "end": "Jul 14"
-    },
-    "mcap": "$482K",
-    "vol": "$89K",
-    "price": "$0.000482",
-    "chg": "+34.2%",
-    "holders": 1847
-  }
-}`} />
-        </section>
-
-        {/* ─── GET /token/:ca/lock ───────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="get-token-lock">
-            <MethodBadge method="GET" /> /token/:ca/lock
-          </SectionHeading>
-
-          <Prose>
-            Returns the lock status for a token — useful for monitoring dashboards
-            and automated alerts.
-          </Prose>
-
-          <SubHeading>Request</SubHeading>
-          <CodeBlock lang="bash" code="GET /api/v1/token/7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU/lock" />
-
-          <SubHeading>Response</SubHeading>
-          <CodeBlock lang="json" code={`{
-  "lock": {
-    "tokenName": "NeuralSwap",
-    "ticker": "$NSWAP",
-    "lockAmount": "4.2M",
-    "lockDuration": "180d",
-    "percentUnlocked": 12,
-    "daysRemaining": 158,
-    "start": "Jan 15",
-    "end": "Jul 14",
-    "status": "locked"
-  }
-}`} />
-
-          <ParamTable>
-            <ParamRow name="status" type="string" desc="One of: fully_locked, locked, fully_unlocked" />
-            <ParamRow name="percentUnlocked" type="number" desc="0-100 representing lock progress" />
-            <ParamRow name="daysRemaining" type="number" desc="Days until fully unlocked" />
-          </ParamTable>
-        </section>
-
-        {/* ─── GET /dev/:username ────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="get-dev">
-            <MethodBadge method="GET" /> /dev/:username
-          </SectionHeading>
-
-          <Prose>
-            Returns all tokens launched by a specific GitHub user.
-          </Prose>
-
-          <SubHeading>Request</SubHeading>
-          <CodeBlock lang="bash" code="GET /api/v1/dev/alexchen" />
-
-          <SubHeading>Response</SubHeading>
-          <CodeBlock lang="json" code={`{
-  "developer": "alexchen",
-  "tokens": [
-    {
-      "id": 1,
-      "name": "NeuralSwap",
-      "ticker": "$NSWAP",
-      "tier": 4,
-      "tierLabel": "SHIPPED",
-      ...
-    }
-  ]
-}`} />
-        </section>
-
-        {/* ─── POST /verify-dex ──────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="post-verify-dex">
-            <MethodBadge method="POST" /> /token/:ca/verify-dex
-          </SectionHeading>
-
-          <Prose>
-            Fetches DexScreener data for a token mint address. Returns trading pair
-            information including price, volume, liquidity, and fully diluted valuation.
-          </Prose>
-
-          <SubHeading>Request</SubHeading>
-          <CodeBlock lang="bash" code="POST /api/v1/token/7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU/verify-dex" />
-
-          <SubHeading>Response</SubHeading>
-          <CodeBlock lang="json" code={`{
-  "found": true,
-  "pairs": [
-    {
-      "dex": "raydium",
-      "pairAddress": "...",
-      "baseToken": "NSWAP",
-      "quoteToken": "SOL",
-      "priceUsd": "0.000482",
-      "volume24h": 89000,
-      "liquidityUsd": 45000,
-      "fdv": 482000
-    }
-  ]
-}`} />
-        </section>
-
-        {/* ─── GET /feed ─────────────────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="get-feed">
-            <MethodBadge method="GET" /> /feed
-          </SectionHeading>
-
-          <Prose>
-            Returns a paginated list of tokens. Supports filtering by trust tier and
-            sorting by creation date.
-          </Prose>
-
-          <SubHeading>Query Parameters</SubHeading>
-          <ParamTable>
-            <ParamRow name="tier" type="string" desc="Filter by tier: locked, verified, builder, shipped" />
-            <ParamRow name="sort" type="string" desc="Sort order: newest (default), oldest" />
-            <ParamRow name="limit" type="number" desc="Results per page (default 20, max 100)" />
-            <ParamRow name="offset" type="number" desc="Skip N results for pagination" />
-          </ParamTable>
-
-          <SubHeading>Request</SubHeading>
-          <CodeBlock lang="bash" code="GET /api/v1/feed?tier=shipped&sort=newest&limit=10" />
-
-          <SubHeading>Response</SubHeading>
-          <CodeBlock lang="json" code={`{
-  "tokens": [ ... ],
-  "meta": {
-    "total": 2,
-    "limit": 10,
-    "offset": 0,
-    "sort": "newest"
-  }
-}`} />
-        </section>
-
-        {/* ─── Integration Examples ──────────────────────── */}
-        <section className="space-y-5">
-          <SectionHeading id="integration-examples">Integration Examples</SectionHeading>
-
-          <SubHeading>GitHub Actions (CI/CD Launch)</SubHeading>
-          <CodeBlock lang="yaml" code={`name: Launch Token
-on:
-  workflow_dispatch:
-
-jobs:
-  launch:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Upload metadata
-        id: metadata
-        run: |
-          RESPONSE=$(curl -s -X POST https://www.lckd.tech/api/v1/metadata/upload \\
-            -F "file=@./token-logo.png" \\
-            -F "name=\${{ vars.TOKEN_NAME }}" \\
-            -F "symbol=\${{ vars.TOKEN_TICKER }}" \\
-            -F "description=\${{ vars.TOKEN_DESC }}")
-          echo "uri=$(echo $RESPONSE | jq -r '.metadataUri')" >> $GITHUB_OUTPUT
-
-      - name: Build launch transaction
-        run: |
-          curl -s -X POST https://www.lckd.tech/api/v1/launch \\
-            -H "Content-Type: application/json" \\
-            -d '{
-              "walletPublicKey": "\${{ secrets.WALLET_PUBKEY }}",
-              "metadataUri": "\${{ steps.metadata.outputs.uri }}",
-              "name": "\${{ vars.TOKEN_NAME }}",
-              "ticker": "\${{ vars.TOKEN_TICKER }}",
-              "buyAmountSol": 1.0,
-              "lockDurationDays": 90,
-              "lockPercentage": 100
-            }'`} />
-
-          <SubHeading>Bot Integration (TypeScript)</SubHeading>
-          <CodeBlock lang="typescript" code={`const BASE = "https://www.lckd.tech/api/v1";
-
-async function getTokenLockStatus(mintAddress: string) {
-  const res = await fetch(\`\${BASE}/token/\${mintAddress}/lock\`);
-  const data = await res.json();
-
-  if (data.error) throw new Error(data.error);
-
-  const { lock } = data;
-  console.log(\`\${lock.tokenName} (\${lock.ticker})\`);
-  console.log(\`Status: \${lock.status}\`);
-  console.log(\`\${lock.percentUnlocked}% unlocked, \${lock.daysRemaining}d remaining\`);
-
-  return lock;
-}
-
-async function getDevTokens(username: string) {
-  const res = await fetch(\`\${BASE}/dev/\${username}\`);
-  return res.json();
-}`} />
-
-          <SubHeading>Lock Status Monitor (Polling)</SubHeading>
-          <CodeBlock lang="typescript" code={`const MINT = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
-const POLL_INTERVAL = 60_000; // 1 minute
-
-async function pollLockStatus() {
-  const res = await fetch(
-    \`https://www.lckd.tech/api/v1/token/\${MINT}/lock\`
-  );
-  const { lock } = await res.json();
-
-  if (lock.status === "fully_unlocked") {
-    console.log("ALERT: Dev tokens are fully unlocked!");
-    // Send notification...
-    return;
-  }
-
-  console.log(\`\${lock.percentUnlocked}% unlocked — \${lock.daysRemaining}d left\`);
-  setTimeout(pollLockStatus, POLL_INTERVAL);
-}
-
-pollLockStatus();`} />
-        </section>
-      </article>
+          <section className="space-y-5">
+            <SectionHeading id="errors">Errors and limits</SectionHeading>
+            <ul className="space-y-3 pl-5 text-sm leading-7 text-text-2">
+              <li className="list-disc marker:text-text-3">400 for invalid parameters</li>
+              <li className="list-disc marker:text-text-3">401 for a missing authenticated session on protected endpoints</li>
+              <li className="list-disc marker:text-text-3">403 when authenticated identity does not match requested account data</li>
+              <li className="list-disc marker:text-text-3">404 for an unknown directory record</li>
+              <li className="list-disc marker:text-text-3">429 when a route rate limit is exceeded</li>
+              <li className="list-disc marker:text-text-3">5xx when an upstream service or server operation fails</li>
+            </ul>
+            <Prose>
+              Rate-limit values are operational settings and may change. Clients should honor
+              status codes, use bounded retries with backoff, and never interpret a failed
+              response as a successful launch or lock.
+            </Prose>
+          </section>
+        </article>
+      </div>
     </div>
   );
 }

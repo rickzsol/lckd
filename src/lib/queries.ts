@@ -2,6 +2,7 @@ import { type Token, TrustTier } from "@/types/index";
 import type { DisplayToken } from "@/types/display";
 import type { DexMarketData } from "./dexscreener";
 import { hasSupabaseConfig } from "./supabase";
+import { isValidSolanaAddress } from "./api/validation";
 
 const TIER_LABELS: Record<TrustTier, string> = {
   [TrustTier.LOCKED]: "LOCKED",
@@ -10,7 +11,8 @@ const TIER_LABELS: Record<TrustTier, string> = {
   [TrustTier.SHIPPED]: "SHIPPED",
 };
 
-const TOKEN_COLUMNS = "mint_address, name, ticker, image_uri, trust_tier, creator_wallet, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, description, twitter_url, telegram_url, website_url";
+const TOKEN_COLUMNS = "id, mint_address, name, ticker, image_uri, trust_tier, creator_wallet, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, launch_verified_at, lock_verified_at, lock_unlock_at, description, twitter_url, telegram_url, website_url";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function formatTokenAmount(raw: string): string {
   const num = parseFloat(raw);
@@ -21,43 +23,12 @@ function formatTokenAmount(raw: string): string {
   return tokens.toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
-async function resolveImageUri(uri: string): Promise<string> {
-  if (!uri || !uri.startsWith("http")) return uri;
-
-  try {
-    const res = await fetch(uri, {
-      signal: AbortSignal.timeout(4000),
-      headers: { Accept: "application/json" },
-    });
-    if (!res.ok) return uri;
-
-    const contentType = res.headers.get("content-type") ?? "";
-    if (!contentType.includes("json")) return uri;
-
-    const meta = await res.json();
-    if (typeof meta.image === "string" && meta.image.startsWith("http")) {
-      return meta.image;
-    }
-  } catch {
-    // Network error or timeout
-  }
-  return uri;
-}
-
 export function tokenToDisplay(t: Token, market?: DexMarketData | null): DisplayToken {
-  const lockDaysElapsed = Math.min(
-    t.lock_duration_days,
-    Math.floor(
-      (Date.now() - new Date(t.created_at).getTime()) / (1000 * 60 * 60 * 24),
-    ),
-  );
-  const lockPct = t.lock_duration_days > 0
-    ? Math.round((lockDaysElapsed / t.lock_duration_days) * 100)
-    : 0;
-
-  const launchDate = new Date(t.created_at);
-  const lockEndDate = new Date(t.created_at);
-  lockEndDate.setDate(lockEndDate.getDate() + t.lock_duration_days);
+  const lockStartDate = new Date(t.lock_verified_at ?? t.created_at);
+  const lockEndDate = new Date(t.lock_unlock_at ?? "");
+  const isUnlocked = Number.isFinite(lockEndDate.getTime()) && Date.now() >= lockEndDate.getTime();
+  const lockPct = isUnlocked ? 100 : 0;
+  const displayTier = isUnlocked ? TrustTier.LOCKED : t.trust_tier;
 
   const fmtDate = (d: Date) =>
     d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -66,8 +37,8 @@ export function tokenToDisplay(t: Token, market?: DexMarketData | null): Display
     id: t.mint_address,
     name: t.name,
     ticker: `$${t.ticker}`,
-    tier: t.trust_tier,
-    tierLabel: TIER_LABELS[t.trust_tier],
+    tier: displayTier,
+    tierLabel: isUnlocked ? "UNLOCKED" : TIER_LABELS[displayTier],
     image: t.image_uri,
     dev: {
       github: t.github_username,
@@ -80,8 +51,8 @@ export function tokenToDisplay(t: Token, market?: DexMarketData | null): Display
       amount: formatTokenAmount(t.lock_amount),
       duration: t.lock_duration_days > 0 ? `${t.lock_duration_days}d` : "--",
       pct: lockPct,
-      start: fmtDate(launchDate),
-      end: fmtDate(lockEndDate),
+      start: fmtDate(lockStartDate),
+      end: Number.isFinite(lockEndDate.getTime()) ? fmtDate(lockEndDate) : "--",
     },
     mcap: market?.mcap ?? "--",
     vol: market?.volume ?? "--",
@@ -95,10 +66,8 @@ export function tokenToDisplay(t: Token, market?: DexMarketData | null): Display
 }
 
 export async function getTokens(): Promise<DisplayToken[]> {
-  const { FEATURED_TOKEN } = await import("./mock-data");
-
   if (!hasSupabaseConfig()) {
-    return [FEATURED_TOKEN];
+    return [];
   }
 
   try {
@@ -108,50 +77,39 @@ export async function getTokens(): Promise<DisplayToken[]> {
     const { data, error } = await supabase
       .from("tokens")
       .select(TOKEN_COLUMNS)
+      .not("launch_verified_at", "is", null)
+      .not("lock_verified_at", "is", null)
       .order("created_at", { ascending: false })
       .limit(50);
 
     if (error || !data || data.length === 0) {
-      return [FEATURED_TOKEN];
+      return [];
     }
 
     const tokens = data as Token[];
     const mintAddresses = tokens.map((t) => t.mint_address);
 
-    // Batch fetch market data + resolve images in parallel
-    const [marketMap, resolvedImages] = await Promise.all([
-      import("./dexscreener").then((m) => m.fetchMarketDataBatch(mintAddresses)),
-      Promise.all(
-        tokens.map((t) =>
-          t.image_uri ? resolveImageUri(t.image_uri) : Promise.resolve(""),
-        ),
-      ),
-    ]);
+    const marketMap = await import("./dexscreener").then((module) =>
+      module.fetchMarketDataBatch(mintAddresses),
+    );
 
-    const displayTokens = tokens.map((t, i) =>
+    return tokens.map((token) =>
       tokenToDisplay(
-        { ...t, image_uri: resolvedImages[i] || t.image_uri },
-        marketMap.get(t.mint_address) ?? null,
+        token,
+        marketMap.get(token.mint_address) ?? null,
       ),
     );
-
-    const hasFeatured = displayTokens.some(
-      (dt) => dt.mintAddress === FEATURED_TOKEN.mintAddress,
-    );
-    if (!hasFeatured) {
-      displayTokens.unshift(FEATURED_TOKEN);
-    }
-
-    return displayTokens;
   } catch (err) {
     console.error("[getTokens] Error:", err instanceof Error ? err.message : err);
-    return [FEATURED_TOKEN];
+    return [];
   }
 }
 
 export async function getTokenByIdOrMint(
   id: string,
 ): Promise<DisplayToken | null> {
+  if (!UUID_PATTERN.test(id) && !isValidSolanaAddress(id)) return null;
+
   // Check Supabase first
   if (hasSupabaseConfig()) {
     try {
@@ -162,43 +120,21 @@ export async function getTokenByIdOrMint(
         .from("tokens")
         .select(TOKEN_COLUMNS)
         .or(`mint_address.eq.${id},id.eq.${id}`)
+        .not("launch_verified_at", "is", null)
+        .not("lock_verified_at", "is", null)
         .limit(1)
         .single();
 
       if (!error && data) {
         const token = data as Token;
-        const [market, resolvedImage] = await Promise.all([
-          import("./dexscreener").then((m) => m.fetchMarketData(token.mint_address)),
-          token.image_uri ? resolveImageUri(token.image_uri) : Promise.resolve(""),
-        ]);
-
-        return tokenToDisplay(
-          { ...token, image_uri: resolvedImage || token.image_uri },
-          market,
+        const market = await import("./dexscreener").then((module) =>
+          module.fetchMarketData(token.mint_address),
         );
+        return tokenToDisplay(token, market);
       }
-    } catch {
-      // Fall through to featured token check
+    } catch (error) {
+      console.error("[getTokenByIdOrMint] Error:", error);
     }
   }
-
-  // Fallback: check featured token
-  const { FEATURED_TOKEN } = await import("./mock-data");
-  if (FEATURED_TOKEN.id === id || FEATURED_TOKEN.mintAddress === id) {
-    // Enrich with live market data if mint address exists
-    if (FEATURED_TOKEN.mintAddress) {
-      try {
-        const { fetchMarketData } = await import("./dexscreener");
-        const market = await fetchMarketData(FEATURED_TOKEN.mintAddress);
-        if (market) {
-          return { ...FEATURED_TOKEN, ...market, mcap: market.mcap, vol: market.volume, price: market.price, chg: market.change24h, liquidity: market.liquidity };
-        }
-      } catch {
-        // Return without market data
-      }
-    }
-    return FEATURED_TOKEN;
-  }
-
   return null;
 }
