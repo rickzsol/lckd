@@ -747,6 +747,7 @@ export function useTokenLaunch(config: LaunchConfig) {
       recoveryStatus !== "atomic_submitted"
     ) {
       setLaunchStatus("launching");
+      setLaunchPhase(-1);
       setErrorMessage(null);
       try {
         const isClosed = await cleanupLookup(deps);

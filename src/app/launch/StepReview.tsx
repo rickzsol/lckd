@@ -151,6 +151,20 @@ function ReviewForm({ w }: { w: WizardContext }) {
 // Launching view (in progress)───────────────────────────────────────────
 
 function LaunchingView({ w }: { w: WizardContext }) {
+  if (w.launchPhase === -1) {
+    return (
+      <div className="flex flex-col items-center py-12" role="status" aria-live="polite">
+        <div className="mb-6 h-12 w-12 animate-spin rounded-full border-[3px] border-line-strong border-t-accent" aria-hidden="true" />
+        <div className="font-mono text-sm font-bold text-text-1">
+          Reconciling lookup-table recovery...
+        </div>
+        <div className="mt-3 max-w-[360px] text-center font-mono text-[11px] text-text-3">
+          Check your wallet if a cleanup approval is required.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center py-12" role="status" aria-live="polite" aria-atomic="true">
       <div className="mb-6 h-12 w-12 animate-spin rounded-full border-[3px] border-line-strong border-t-accent" aria-hidden="true" />
