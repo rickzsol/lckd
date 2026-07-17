@@ -21,7 +21,7 @@ export default function PendingLaunchCard({
     <article className="group relative rounded-card border border-warn/30 bg-[rgba(224,167,62,0.035)] p-4 transition-colors duration-180 ease-out hover:border-accent/35 sm:p-5">
       <Link
         href={`/token/${launch.id}`}
-        className="absolute inset-0 rounded-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="absolute inset-0 z-10 rounded-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         aria-label={`Open ${launch.name} token page`}
       />
       <div className="pointer-events-none relative flex items-start gap-3.5">
@@ -41,7 +41,7 @@ export default function PendingLaunchCard({
             {launch.description}
           </p>
 
-          <div className="pointer-events-auto relative z-10 mt-3 flex flex-wrap items-center gap-2">
+          <div className="pointer-events-auto relative z-20 mt-3 flex flex-wrap items-center gap-2">
             {launch.contractAddress ? (
               <a
                 href={`https://solscan.io/token/${launch.contractAddress}`}
