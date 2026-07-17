@@ -17,6 +17,14 @@ export const STEP_LABELS = [
 export const STEP_COUNT = 4;
 
 const STORAGE_KEY = "lckd_launch_wizard";
+const METADATA_FIELDS = new Set<keyof LaunchConfig>([
+  "name",
+  "ticker",
+  "description",
+  "twitterUrl",
+  "telegramUrl",
+  "websiteUrl",
+]);
 
 const INITIAL_CONFIG: LaunchConfig = {
   name: "",
@@ -26,7 +34,7 @@ const INITIAL_CONFIG: LaunchConfig = {
   imageUri: null,
   buyAmountSol: 1,
   lockDurationDays: 90,
-  lockPercentage: 100,
+  lockPercentage: 99,
   githubUsername: null,
   githubRepo: null,
   liveUrl: null,
@@ -56,6 +64,7 @@ function loadSavedState(): { config: LaunchConfig; step: number } {
             ...INITIAL_CONFIG,
             ...parsed.config,
             image: null,
+            lockPercentage: Math.min(Number(parsed.config.lockPercentage ?? 99), 99),
           }
         : INITIAL_CONFIG,
       step: Number.isInteger(savedStep) && savedStep >= 1 && savedStep <= STEP_COUNT
@@ -89,7 +98,7 @@ export function useLaunchWizard() {
   useEffect(() => {
     if (!recoveredConfig) return;
     const timeout = window.setTimeout(() => {
-      setConfig((current) => ({ ...current, ...recoveredConfig, image: null }));
+      setConfig((current) => ({ ...current, ...recoveredConfig, image: current.image }));
       setStep(STEP_COUNT);
     }, 0);
     return () => window.clearTimeout(timeout);
@@ -106,7 +115,11 @@ export function useLaunchWizard() {
 
   const updateConfig = useCallback(
     <K extends keyof LaunchConfig>(key: K, value: LaunchConfig[K]) => {
-      setConfig((prev) => ({ ...prev, [key]: value }));
+      setConfig((prev) => ({
+        ...prev,
+        [key]: value,
+        ...(METADATA_FIELDS.has(key) && prev[key] !== value ? { imageUri: null } : {}),
+      }));
       setErrors((prev) => {
         if (!prev[key]) return prev;
         const next = { ...prev };
@@ -130,7 +143,7 @@ export function useLaunchWizard() {
       return;
     }
 
-    setConfig((prev) => ({ ...prev, image: file }));
+    setConfig((prev) => ({ ...prev, image: file, imageUri: null }));
     setErrors((p) => {
       const n = { ...p };
       delete n.image;
@@ -160,7 +173,7 @@ export function useLaunchWizard() {
     else if (ticker.length < 2) errs.ticker = "Min 2 characters";
     else if (ticker.length > 10) errs.ticker = "Max 10 characters";
 
-    if (!config.image) errs.image = "Token image is required";
+    if (!config.image && !config.imageUri) errs.image = "Token image is required";
 
     const desc = config.description.trim();
     if (!desc) errs.description = "Description is required";

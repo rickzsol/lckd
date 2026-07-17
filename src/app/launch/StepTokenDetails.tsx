@@ -34,10 +34,10 @@ export default function StepTokenDetails({ w }: { w: WizardContext }) {
             }}
           />
 
-          {w.imagePreview ? (
+          {(w.imagePreview ?? w.config.imageUri) ? (
             <div className="flex items-center gap-4 rounded-card border border-line-default bg-surface-deep p-3">
               <Image
-                src={w.imagePreview}
+                src={w.imagePreview ?? w.config.imageUri!}
                 alt="Token preview"
                 width={64}
                 height={64}
