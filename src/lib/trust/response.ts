@@ -81,6 +81,9 @@ export interface TrustResponseData {
     username: string;
     accountCreatedAt: string | null;
     repo: string | null;
+    // true when the profile lookup FAILED: null aggregate fields then mean
+    // "unknown due to error", not "confirmed absent" (finding 11).
+    degraded?: boolean;
   } | null;
   attestation: AttestationBlock | null;
 }

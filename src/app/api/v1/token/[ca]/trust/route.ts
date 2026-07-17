@@ -96,10 +96,12 @@ export async function GET(
     };
 
     // stale reflects real verification freshness, not a hardcoded false: a tier
-    // computed long ago or a lock whose on-chain state was last verified beyond
-    // the freshness window is served with stale=true so consumers know to treat
-    // it with caution (finding 11).
-    const stale = isTrustStale(tierComputedAt, canonicalLock?.last_verified_at ?? null, now);
+    // computed long ago, a lock whose on-chain state was last verified beyond the
+    // freshness window, or a degraded GitHub lookup are all served with
+    // stale=true so consumers know to treat it with caution (finding 11).
+    const stale =
+      isTrustStale(tierComputedAt, canonicalLock?.last_verified_at ?? null, now) ||
+      github?.degraded === true;
 
     return publicJson(
       envelope(data, { source: tokenSource(mint), stale }),
@@ -122,12 +124,14 @@ async function loadGithub(
     .maybeSingle();
   if (error) {
     console.error("[trust] github profile lookup failed:", error.message);
-    // Public aggregate the site already shows; a lookup miss is not a hard fail.
-    return { username, accountCreatedAt: null, repo };
+    // A lookup failure is surfaced as degraded, not serialized as a confirmed
+    // missing account-created date (finding 11). The tier itself is unaffected.
+    return { username, accountCreatedAt: null, repo, degraded: true };
   }
   return {
     username,
     accountCreatedAt: (data?.account_created_at as string | null) ?? null,
     repo,
+    degraded: false,
   };
 }

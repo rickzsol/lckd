@@ -206,6 +206,28 @@ async function main(): Promise<void> {
           skipped += 1;
           continue;
         }
+        // Prove the stream actually locks THIS token's mint before crediting it
+        // (finding 3): a stream that locks a different mint is not evidence for
+        // this token. cliffAmount must release the full deposit (cliff lock), and
+        // the deposit must match the recorded lock_amount.
+        if (stream.mint !== token.mint_address) {
+          console.warn(`[backfill] stream ${streamId} mint mismatch for ${token.id}, skipping`);
+          skipped += 1;
+          continue;
+        }
+        if (!stream.cliffAmount.eq(stream.depositedAmount)) {
+          console.warn(`[backfill] stream ${streamId} is not a full-cliff lock, skipping ${token.id}`);
+          skipped += 1;
+          continue;
+        }
+        if (stream.depositedAmount.toString() !== token.lock_amount) {
+          console.warn(
+            `[backfill] stream ${streamId} deposit ${stream.depositedAmount.toString()} != recorded ` +
+              `lock_amount ${token.lock_amount} for ${token.id}, skipping`,
+          );
+          skipped += 1;
+          continue;
+        }
         const deposited = BigInt(stream.depositedAmount.toString());
         const withdrawn = BigInt(stream.withdrawnAmount.toString());
         const cliffRaw = stream.cliff;
