@@ -36,3 +36,18 @@ Production release approved after independent security review and deployed at `h
 ## Remaining operational check
 
 - Run one disposable-wallet mainnet launch only after the user supplies an explicit SOL spending cap. This is optional post-deploy validation and is the only step that spends funds.
+
+## SAS attestations (feature/sas-attestations, review fixes)
+
+- Independent review returned CHANGES REQUESTED; all 12 findings addressed on this branch.
+- Issuance now enqueues from the finalized-lock record path and the tier-recompute cron, both behind `SAS_ENABLED` (default off). Trust-projection seam stays marked for `feature/trust-api`.
+- Outbox worker drives jobs from live chain state (skip/issue/reissue/close decided from the full payload + expiry). Reissue is two durable phases (close then create), each with its own persisted signature and reconciliation; a single close+create tx is intentionally not used.
+- Completion RPCs fence on lease token, status, and persisted signature before any attestation mutation; a stale worker cannot land or commit effects. Close completion never inserts a false generation.
+- Public reads go through an owner-executed, tightly projected `attestations_public` view (no base-table grant/policy). Enqueue is atomic (insert-on-conflict) and parks a successor snapshot when trust changes during in-flight work.
+- Verifier rejects paused schemas and requires payload `cliff_ts == account.expiry`; the `/api-docs` example mirrors both. RPC is cluster-specific and genesis-hash-checked before signing.
+
+## SAS verification
+
+- `npm run typecheck`, `npm run lint`, `npm run build` green. `npm test` 102 passed (40 SAS unit tests).
+- Migration applied and exercised against local Postgres 16: idempotent first enqueue, successor parking, completion fence (wrong lease / wrong signature raise), close completion inserts no generation, anon view read allowed / base table denied, and the full two-phase reissue plus its crash-recovery reconciliation all verified.
+- `tools/sas-devnet-e2e.ts` extended to exercise the two-phase close-then-recreate path (devnet only; requires funded keys/airdrop, not run in CI).

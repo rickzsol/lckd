@@ -15,3 +15,19 @@
 - [ ] Run a disposable-wallet mainnet launch after explicit approval of a SOL spending cap.
 - [ ] Add the LCKD contract address after the manual token launch and finalized receipt review.
 - [ ] Monitor upstream remediation for the transitive `bigint-buffer` advisory.
+
+## SAS attestations review fixes (feature/sas-attestations)
+
+- [x] Wire triggerAttestation into the record persistence path and tier recompute cron behind SAS_ENABLED.
+- [x] Reconcile broadcast jobs by persisted signature (confirmed or finalized), never resend.
+- [x] Close jobs close the DB row via a dedicated RPC without inserting a false generation.
+- [x] Require markBroadcast success and fence completion on lease/status/signature.
+- [x] Retain a successor snapshot when trust changes during leased/broadcast work.
+- [x] Serve public reads from an owner-executed projected view; anon denied on the base table.
+- [x] Enforce cliff==expiry and reject paused schemas in the verifier and the published example.
+- [x] Drive the worker from live chain state; model reissue as two durable phases.
+- [x] Compare the full evidence hash in decideIssuance, not four gating fields.
+- [x] Make first enqueue atomic (insert-on-conflict) against concurrent races.
+- [x] Persist policy and schema versions in the job and complete from the snapshot.
+- [x] Bind cluster-specific RPC and verify the genesis hash before signing.
+- [x] Add devnet E2E covering the two-phase close-and-recreate path.
