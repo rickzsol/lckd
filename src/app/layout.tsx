@@ -89,7 +89,7 @@ export default function RootLayout({
                   <a href="/api-docs" className="footer-link">api</a>
                   <a href="/risk" className="footer-link">risk</a>
                   <a
-                    href="https://github.com/rickzsol/lockpad"
+                    href="https://github.com/rickzsol/lckd"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="footer-link"
