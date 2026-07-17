@@ -12,6 +12,7 @@ import {
 import {
   DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
   LOOKUP_SETUP_COMPUTE_UNIT_LIMIT,
+  MEMO_PROGRAM_ID,
 } from "./constants";
 
 const MAX_LOOKUP_ADDRESSES = 256;
@@ -30,6 +31,7 @@ export interface LookupTablePreparation {
 export interface LookupTablePreparationParams {
   authority: PublicKey;
   payer: PublicKey;
+  coSigner?: PublicKey;
   addresses: readonly PublicKey[];
   recentSlot: number;
   blockhash: string;
@@ -83,6 +85,9 @@ function buildPreparationMessages(
   if (!params.authority.equals(params.payer)) {
     throw new Error("Lookup table authority and payer must be the launch wallet");
   }
+  if (params.coSigner?.equals(params.payer)) {
+    throw new Error("Lookup table co-signer must be distinct from the launch wallet");
+  }
   if (!Number.isSafeInteger(params.recentSlot) || params.recentSlot < 1) {
     throw new Error("Lookup table recent slot is invalid");
   }
@@ -110,6 +115,11 @@ function buildPreparationMessages(
       ComputeBudgetProgram.setComputeUnitPrice({
         microLamports: DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
       }),
+      ...(params.coSigner ? [new TransactionInstruction({
+        programId: MEMO_PROGRAM_ID,
+        keys: [{ pubkey: params.coSigner, isSigner: true, isWritable: false }],
+        data: Buffer.alloc(0),
+      })] : []),
       createInstruction,
       extendInstruction,
     ],
@@ -166,6 +176,10 @@ export function validateLookupTablePreparation(
   params: LookupTablePreparationParams,
 ): PublicKey {
   const { lookupTableAddress, message: expected } = buildPreparationMessages(params);
+  const pinnedOneSignerExpected = buildPreparationMessages({
+    ...params,
+    coSigner: undefined,
+  }).message;
   const legacyExpected = buildLegacyPreparationMessage(params);
   if (transactionBytes.length > 1_232) {
     throw new Error("Lookup table preparation transaction is too large");
@@ -175,9 +189,9 @@ export function validateLookupTablePreparation(
     const message = transaction.message;
     if (
       message.addressTableLookups.length !== 0 ||
-      message.header.numRequiredSignatures !== 1 ||
+      ![1, 2].includes(message.header.numRequiredSignatures) ||
       !message.staticAccountKeys[0]?.equals(params.authority) ||
-      ![expected, legacyExpected].some((candidate) =>
+      ![expected, pinnedOneSignerExpected, legacyExpected].some((candidate) =>
         Buffer.from(message.serialize()).equals(Buffer.from(candidate.serialize())))
     ) {
       throw new Error("mismatch");

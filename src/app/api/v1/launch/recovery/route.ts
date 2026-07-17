@@ -122,6 +122,39 @@ const cleanupSchema = z.object({
 const cleanupBuildSchema = z.object({ mintAddress: address }).strict();
 type AtomicIntent = AtomicIntentSnapshot;
 
+function issuedSetupSigners(intent: AtomicIntent): PublicKey[] {
+  const wallet = new PublicKey(intent.creatorWallet);
+  if (!intent.issuedSetupTransaction || intent.issuedSetupRecentSlot === null) {
+    return [wallet];
+  }
+
+  const issued = VersionedTransaction.deserialize(
+    Buffer.from(intent.issuedSetupTransaction, "base64"),
+  );
+  validateLookupTablePreparation(issued.serialize(), {
+    authority: wallet,
+    payer: wallet,
+    coSigner: new PublicKey(intent.metadataAddress),
+    addresses: intent.altAddresses.map((value) => new PublicKey(value)),
+    recentSlot: intent.issuedSetupRecentSlot,
+    blockhash: intent.issuedSetupBlockhash,
+    lastValidBlockHeight: intent.issuedSetupLastValidBlockHeight,
+  });
+  const signers = issued.message.staticAccountKeys.slice(
+    0,
+    issued.message.header.numRequiredSignatures,
+  );
+  const metadata = new PublicKey(intent.metadataAddress);
+  const isLegacy = signers.length === 1 && signers[0]?.equals(wallet);
+  const isCoSigned = signers.length === 2 &&
+    signers[0]?.equals(wallet) &&
+    signers[1]?.equals(metadata);
+  if (!isLegacy && !isCoSigned) {
+    throw new AtomicLaunchRecoveryError("Issued ALT setup signers are invalid", 422);
+  }
+  return signers;
+}
+
 let connectionPromise: Promise<Connection> | null = null;
 
 async function getConnection(): Promise<Connection> {
@@ -175,6 +208,7 @@ async function verifyFinalizedAltSetup(intent: AtomicIntent): Promise<void> {
   validateLookupTablePreparation(unsigned.serialize(), {
     authority: new PublicKey(intent.creatorWallet),
     payer: new PublicKey(intent.creatorWallet),
+    coSigner: new PublicKey(intent.metadataAddress),
     addresses: intent.altAddresses.map((value) => new PublicKey(value)),
     recentSlot: intent.issuedSetupRecentSlot,
     blockhash: intent.setupBlockhash,
@@ -283,11 +317,12 @@ async function reconcileUncheckpointedSetup(
   intent: AtomicIntent,
   finalizedBlockHeight: number,
 ) {
+  const setupSigners = issuedSetupSigners(intent);
   const discovery = await discoverIssuedSignature({
     messageHash: intent.issuedSetupMessageHash,
     blockhash: intent.issuedSetupBlockhash,
-    signers: [intent.creatorWallet],
-    searchAddresses: [intent.altAddress],
+    signers: setupSigners.map((signer) => signer.toBase58()),
+    searchAddresses: [intent.altAddress, intent.metadataAddress],
   });
   if (discovery.state === "processing") {
     throw new AtomicLaunchRecoveryError("Issued ALT setup is still processing", 409);
@@ -460,7 +495,7 @@ function validateSignedIssuedTransaction(
       transaction.message.header.numRequiredSignatures,
     );
     const expectedSigners = phase === "setup"
-      ? [new PublicKey(intent.creatorWallet)]
+      ? issuedSetupSigners(intent)
       : [
           new PublicKey(intent.creatorWallet),
           new PublicKey(intent.mintAddress),

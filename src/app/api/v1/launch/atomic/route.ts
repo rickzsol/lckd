@@ -17,7 +17,7 @@ import {
   type AtomicLaunchPlanSnapshot,
   type IssuedAtomicLaunchTransaction,
 } from "@/lib/solana/atomicLaunchBuilder.server";
-import { PUBLIC_LAUNCHES_ENABLED } from "@/lib/launchAvailability";
+import { arePublicLaunchesEnabled } from "@/lib/launchAvailability";
 
 export { OPTIONS };
 
@@ -100,7 +100,7 @@ function frozenPlan(intent: z.infer<typeof intentSchema>): AtomicLaunchPlanSnaps
 }
 
 export async function POST(request: NextRequest) {
-  if (!PUBLIC_LAUNCHES_ENABLED) {
+  if (!arePublicLaunchesEnabled()) {
     return apiError("Public launches are temporarily paused", 503);
   }
   const originError = requireSameOrigin(request);

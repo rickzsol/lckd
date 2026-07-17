@@ -405,6 +405,7 @@ export async function buildAtomicLookupPreparation(
   const preparation = buildLookupTablePreparation({
     authority: identity.walletPublicKey,
     payer: identity.walletPublicKey,
+    coSigner: identity.metadataPublicKey,
     addresses,
     recentSlot,
     blockhash: latestBlockhash.blockhash,
@@ -468,6 +469,7 @@ export async function rebuildIssuedAtomicLookupPreparation(
   const params = {
     authority: identity.walletPublicKey,
     payer: identity.walletPublicKey,
+    coSigner: identity.metadataPublicKey,
     addresses: issued.addresses,
     recentSlot: issued.recentSlot,
     blockhash: issued.blockhash,

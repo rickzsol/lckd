@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import { arePublicLaunchesEnabled } from "./src/lib/launchAvailability";
 
 function getLaunchMonitorOrigin(): string | null {
   const configured = process.env.NEXT_PUBLIC_LAUNCH_MONITOR_URL;
@@ -17,6 +18,7 @@ function getLaunchMonitorOrigin(): string | null {
 }
 
 const LAUNCH_MONITOR_ORIGIN = getLaunchMonitorOrigin();
+const ARE_PUBLIC_LAUNCHES_ENABLED = arePublicLaunchesEnabled();
 
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -59,11 +61,11 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
-      {
+      ...(!ARE_PUBLIC_LAUNCHES_ENABLED ? [{
         destination: "/",
         permanent: false,
         source: "/launch/:path*",
-      },
+      }] : []),
       {
         destination: "/token/lckd",
         permanent: true,

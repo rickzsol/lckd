@@ -12,6 +12,9 @@ export const STREAMFLOW_PROGRAM_ID = new PublicKey(
 export const MPL_TOKEN_METADATA_PROGRAM_ID = new PublicKey(
   "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
 );
+export const MEMO_PROGRAM_ID = new PublicKey(
+  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+);
 
 export const PUMPFUN_TOKEN_DECIMALS = 6;
 

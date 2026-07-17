@@ -15,6 +15,7 @@ import {
 } from "./atomicLaunchBuilder.server";
 import { buildLookupTablePreparation, canonicalLookupAddresses } from "./lookupTable";
 import {
+  assertLookupSetupCoSigner,
   validateAtomicLaunchTransactionClient,
   validateLookupSetupTransaction,
   validateReviewedUnlockTimestamp,
@@ -104,7 +105,39 @@ test("client accepts the exact resolved atomic transaction", async () => {
   assert.equal(transaction.message.compiledInstructions.length, 7);
 });
 
-test("client accepts the server fee-pinned lookup setup transaction", async () => {
+test("client accepts and locally signs the two-signer lookup setup transaction", async () => {
+  const value = await fixture();
+  const metadataSigner = keypair(3);
+  const preparation = buildLookupTablePreparation({
+    authority: value.wallet,
+    payer: value.wallet,
+    coSigner: value.metadata,
+    addresses: value.expectation.lookupAddresses,
+    recentSlot: 100,
+    blockhash: value.blockhash,
+    lastValidBlockHeight: 200,
+  });
+  const transaction = validateLookupSetupTransaction(
+    Buffer.from(preparation.transaction).toString("base64"),
+    {
+      wallet: value.wallet,
+      coSigner: value.metadata,
+      lookupTable: preparation.lookupTableAddress,
+      addresses: value.expectation.lookupAddresses,
+      recentSlot: 100,
+      blockhash: value.blockhash,
+      lastValidBlockHeight: 200,
+    },
+  );
+  assert.equal(preparation.transaction.length, 1_224);
+  assert.equal(transaction.message.header.numRequiredSignatures, 2);
+  assert.equal(transaction.message.compiledInstructions.length, 5);
+  assert.doesNotThrow(() => assertLookupSetupCoSigner(transaction, value.metadata));
+  transaction.sign([metadataSigner]);
+  assert(transaction.signatures[1].some((byte) => byte !== 0));
+});
+
+test("client accepts an already-issued one-signer setup during rollout", async () => {
   const value = await fixture();
   const preparation = buildLookupTablePreparation({
     authority: value.wallet,
@@ -118,6 +151,7 @@ test("client accepts the server fee-pinned lookup setup transaction", async () =
     Buffer.from(preparation.transaction).toString("base64"),
     {
       wallet: value.wallet,
+      coSigner: value.metadata,
       lookupTable: preparation.lookupTableAddress,
       addresses: value.expectation.lookupAddresses,
       recentSlot: 100,
@@ -125,7 +159,16 @@ test("client accepts the server fee-pinned lookup setup transaction", async () =
       lastValidBlockHeight: 200,
     },
   );
+  assert.equal(transaction.message.header.numRequiredSignatures, 1);
   assert.equal(transaction.message.compiledInstructions.length, 4);
+  assert.throws(
+    () => assertLookupSetupCoSigner(transaction, value.metadata),
+    /must expire and be cleaned up/,
+  );
+  assert.throws(
+    () => transaction.sign([keypair(3)]),
+    /Cannot sign with non signer key/,
+  );
 });
 
 test("client rejects changed global account privileges", async () => {

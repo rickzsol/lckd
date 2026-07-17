@@ -38,6 +38,7 @@ export {
   deriveReviewedAtomicEconomics,
   validateAtomicLaunchTransactionClient,
   validateLookupSetupTransaction,
+  assertLookupSetupCoSigner,
   validateReviewedUnlockTimestamp,
   type ReviewedAtomicEconomics,
   type AtomicTransactionExpectation,

@@ -17,6 +17,7 @@ import {
   validateExactLookupTable,
   validateLookupTablePreparation,
 } from "./lookupTable";
+import { MEMO_PROGRAM_ID } from "./constants";
 
 const wallet = Keypair.fromSeed(Uint8Array.from({ length: 32 }, () => 1)).publicKey;
 const accountA = Keypair.fromSeed(Uint8Array.from({ length: 32 }, () => 2)).publicKey;
@@ -50,7 +51,8 @@ test("builds and strictly validates wallet-authorized create and extend transact
   const params = {
     authority: wallet,
     payer: wallet,
-    addresses: Array.from({ length: 28 }, (_, index) =>
+    coSigner: accountB,
+    addresses: Array.from({ length: 24 }, (_, index) =>
       Keypair.fromSeed(Uint8Array.from({ length: 32 }, () => index + 10)).publicKey),
     recentSlot: 100,
     blockhash,
@@ -58,13 +60,17 @@ test("builds and strictly validates wallet-authorized create and extend transact
   };
   const preparation = buildLookupTablePreparation(params);
 
-  assert(preparation.transaction.length <= 1_232);
+  assert.equal(preparation.transaction.length, 1_224);
   const message = VersionedTransaction.deserialize(preparation.transaction).message;
-  assert.equal(message.compiledInstructions.length, 4);
+  assert.equal(message.header.numRequiredSignatures, 2);
+  assert.deepEqual(message.staticAccountKeys.slice(0, 2), [wallet, accountB]);
+  assert.equal(message.compiledInstructions.length, 5);
   assert(message.staticAccountKeys[message.compiledInstructions[0].programIdIndex]
     .equals(ComputeBudgetProgram.programId));
   assert(message.staticAccountKeys[message.compiledInstructions[1].programIdIndex]
     .equals(ComputeBudgetProgram.programId));
+  assert(message.staticAccountKeys[message.compiledInstructions[2].programIdIndex]
+    .equals(MEMO_PROGRAM_ID));
   assert(validateLookupTablePreparation(preparation.transaction, params).equals(
     preparation.lookupTableAddress,
   ));
@@ -97,6 +103,17 @@ test("builds and strictly validates wallet-authorized create and extend transact
   assert.throws(
     () => buildLookupTablePreparation({ ...params, payer: accountA }),
     /authority and payer/,
+  );
+  assert.throws(
+    () => buildLookupTablePreparation({ ...params, coSigner: wallet }),
+    /co-signer must be distinct/,
+  );
+  assert.throws(
+    () => buildLookupTablePreparation({
+      ...params,
+      addresses: [...params.addresses, Keypair.generate().publicKey],
+    }),
+    /preparation transaction is too large/,
   );
 });
 

@@ -19,7 +19,7 @@ import {
   type AtomicLaunchIdentity,
 } from "@/lib/solana/atomicLaunchBuilder.server";
 import type { AtomicIntentSnapshot } from "@/lib/api/atomicLaunchRecoveryValidation";
-import { PUBLIC_LAUNCHES_ENABLED } from "@/lib/launchAvailability";
+import { arePublicLaunchesEnabled } from "@/lib/launchAvailability";
 
 export { OPTIONS };
 
@@ -81,7 +81,7 @@ async function restorePersistedSetup(
 }
 
 export async function POST(request: NextRequest) {
-  if (!PUBLIC_LAUNCHES_ENABLED) {
+  if (!arePublicLaunchesEnabled()) {
     return apiError("Public launches are temporarily paused", 503);
   }
   const originError = requireSameOrigin(request);

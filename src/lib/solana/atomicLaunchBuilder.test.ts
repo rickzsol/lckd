@@ -112,12 +112,14 @@ test("builds a packet-sized atomic launch with three static signers and one exac
   const setup = buildLookupTablePreparation({
     authority: fixture.wallet,
     payer: fixture.wallet,
+    coSigner: fixture.metadata,
     addresses: fixture.lookupAddresses,
     recentSlot: 100,
     blockhash: fixture.blockhash,
     lastValidBlockHeight: 200,
   });
-  assert(setup.transaction.length <= 1_232, `ALT setup is ${setup.transaction.length} bytes`);
+  assert.equal(fixture.lookupAddresses.length, 24);
+  assert.equal(setup.transaction.length, 1_224);
 });
 
 test("rejects instruction mutation even when accounts and ALT remain valid", async () => {
@@ -198,6 +200,7 @@ test("rebuilds the exact persisted setup transaction on an API replay", async ()
   const original = buildLookupTablePreparation({
     authority: fixture.wallet,
     payer: fixture.wallet,
+    coSigner: fixture.metadata,
     addresses: fixture.lookupAddresses,
     recentSlot: 100,
     blockhash: originalBlockhash,
@@ -206,6 +209,7 @@ test("rebuilds the exact persisted setup transaction on an API replay", async ()
   const freshPreparation = buildLookupTablePreparation({
     authority: fixture.wallet,
     payer: fixture.wallet,
+    coSigner: fixture.metadata,
     addresses: fixture.lookupAddresses,
     recentSlot: 101,
     blockhash: freshBlockhash,

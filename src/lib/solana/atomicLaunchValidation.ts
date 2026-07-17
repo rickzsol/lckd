@@ -24,6 +24,7 @@ import BN from "bn.js";
 import {
   DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
   LOOKUP_SETUP_COMPUTE_UNIT_LIMIT,
+  MEMO_PROGRAM_ID,
   PUMPFUN_PROGRAM_ID,
 } from "./constants";
 import { validatePumpBuyInstruction } from "./pumpBuyValidation";
@@ -125,6 +126,7 @@ export function validateReviewedUnlockTimestamp(
 
 export interface LookupSetupExpectation {
   wallet: PublicKey;
+  coSigner: PublicKey;
   lookupTable: PublicKey;
   addresses: readonly PublicKey[];
   recentSlot: number;
@@ -162,6 +164,9 @@ export function validateLookupSetupTransaction(
   transactionBase64: string,
   expectation: LookupSetupExpectation,
 ): VersionedTransaction {
+  if (expectation.coSigner.equals(expectation.wallet)) {
+    throw new Error("Lookup table co-signer must be distinct from the launch wallet");
+  }
   const [createInstruction, derivedLookupTable] = AddressLookupTableProgram.createLookupTable({
     authority: expectation.wallet,
     payer: expectation.wallet,
@@ -189,6 +194,23 @@ export function validateLookupSetupTransaction(
       ComputeBudgetProgram.setComputeUnitPrice({
         microLamports: DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
       }),
+      new TransactionInstruction({
+        programId: MEMO_PROGRAM_ID,
+        keys: [{ pubkey: expectation.coSigner, isSigner: true, isWritable: false }],
+        data: Buffer.alloc(0),
+      }),
+      createInstruction,
+      extendInstruction,
+    ],
+  }).compileToV0Message();
+  const pinnedOneSignerExpectedMessage = new TransactionMessage({
+    payerKey: expectation.wallet,
+    recentBlockhash: expectation.blockhash,
+    instructions: [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: LOOKUP_SETUP_COMPUTE_UNIT_LIMIT }),
+      ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
+      }),
       createInstruction,
       extendInstruction,
     ],
@@ -198,14 +220,27 @@ export function validateLookupSetupTransaction(
   if (
     expectation.lastValidBlockHeight < 1 ||
     transaction.message.addressTableLookups.length !== 0 ||
-    transaction.message.header.numRequiredSignatures !== 1 ||
+    ![1, 2].includes(transaction.message.header.numRequiredSignatures) ||
     !transaction.message.staticAccountKeys[0]?.equals(expectation.wallet) ||
-    ![expectedMessage, legacyExpectedMessage].some((candidate) =>
+    ![expectedMessage, pinnedOneSignerExpectedMessage, legacyExpectedMessage].some((candidate) =>
       Buffer.from(transaction.message.serialize()).equals(Buffer.from(candidate.serialize())))
   ) {
     throw new Error("Lookup table setup transaction does not match the reviewed launch");
   }
   return transaction;
+}
+
+export function assertLookupSetupCoSigner(
+  transaction: VersionedTransaction,
+  coSigner: PublicKey,
+): void {
+  const requiredSigners = transaction.message.staticAccountKeys.slice(
+    0,
+    transaction.message.header.numRequiredSignatures,
+  );
+  if (!requiredSigners.some((signer) => signer.equals(coSigner))) {
+    throw new Error("Legacy lookup setup must expire and be cleaned up before retrying");
+  }
 }
 
 function assertExactLookupTable(expectation: AtomicTransactionExpectation): void {

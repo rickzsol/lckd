@@ -20,7 +20,7 @@ import {
   deriveReviewedAtomicEconomics,
   validateReviewedUnlockTimestamp,
   validateLookupSetupTransaction,
-  assertVersionedMessageUnchanged,
+  assertLookupSetupCoSigner,
   restoreLocalVersionedSignatures,
 } from "@/lib/solana";
 import { validateLookupCleanupTransaction } from "@/lib/solana/atomicLookupCleanup";
@@ -468,15 +468,23 @@ export function useTokenLaunch(config: LaunchConfig) {
       setLaunchPhase(2);
       let setupTransaction = validateLookupSetupTransaction(setup.transaction, {
         wallet: publicKey,
+        coSigner: metadataKeypair.publicKey,
         lookupTable: new PublicKey(setup.lookupTableAddress),
         addresses: setup.lookupAddresses.map((address) => new PublicKey(address)),
         recentSlot: setup.recentSlot,
         blockhash: setup.blockhash,
         lastValidBlockHeight: setup.lastValidBlockHeight,
       });
+      assertLookupSetupCoSigner(setupTransaction, metadataKeypair.publicKey);
+      setupTransaction.sign([metadataKeypair]);
       const issuedSetupMessage = setupTransaction.message.serialize();
       setupTransaction = await signTransaction(setupTransaction);
-      assertVersionedMessageUnchanged(issuedSetupMessage, setupTransaction, "lookup setup");
+      setupTransaction = restoreLocalVersionedSignatures(
+        issuedSetupMessage,
+        setupTransaction,
+        [metadataKeypair],
+        "lookup setup",
+      );
       await simulateVersionedTransactionOrThrow(connection, setupTransaction, "Lookup setup", {
         wallet: publicKey,
         maxLamports: Math.ceil(0.02 * LAMPORTS_PER_SOL),
