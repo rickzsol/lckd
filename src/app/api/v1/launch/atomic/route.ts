@@ -2,7 +2,7 @@ import { type NextRequest } from "next/server";
 import { PublicKey } from "@solana/web3.js";
 import { z } from "zod";
 import { apiError, apiResponse, OPTIONS } from "@/lib/api/helpers";
-import { requireLinkedWallet } from "@/lib/api/auth";
+import { requireLaunchCreationAccess } from "@/lib/api/launchAccess";
 import { requireSameOrigin } from "@/lib/api/origin";
 import { checkRateLimit } from "@/lib/api/rateLimit";
 import { isValidSolanaAddress } from "@/lib/api/validation";
@@ -17,7 +17,6 @@ import {
   type AtomicLaunchPlanSnapshot,
   type IssuedAtomicLaunchTransaction,
 } from "@/lib/solana/atomicLaunchBuilder.server";
-import { arePublicLaunchesEnabled } from "@/lib/launchAvailability";
 
 export { OPTIONS };
 
@@ -100,14 +99,11 @@ function frozenPlan(intent: z.infer<typeof intentSchema>): AtomicLaunchPlanSnaps
 }
 
 export async function POST(request: NextRequest) {
-  if (!arePublicLaunchesEnabled()) {
-    return apiError("Public launches are temporarily paused", 503);
-  }
   const originError = requireSameOrigin(request);
   if (originError) return originError;
   const limited = await checkRateLimit(request, "launch");
   if (limited) return limited;
-  const { session, error: authError } = await requireLinkedWallet();
+  const { session, error: authError } = await requireLaunchCreationAccess();
   if (authError) return authError;
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return apiError(parsed.error.issues[0].message, 400);

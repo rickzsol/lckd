@@ -63,7 +63,13 @@ function RepoSelector({
   );
 }
 
-export default function StepGitHub({ w }: { w: WizardContext }) {
+export default function StepGitHub({
+  w,
+  callbackUrl,
+}: {
+  w: WizardContext;
+  callbackUrl: "/launch" | "/launch-test";
+}) {
   const { data: session } = useSession();
   const isLinked = !!session?.github_username;
   const username = w.config.githubUsername ?? session?.github_username ?? null;
@@ -72,7 +78,7 @@ export default function StepGitHub({ w }: { w: WizardContext }) {
     if (isLinked) {
       w.updateConfig("githubUsername", session.github_username);
     } else {
-      signIn("github", { callbackUrl: "/launch" });
+      signIn("github", { callbackUrl });
     }
   };
 

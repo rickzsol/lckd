@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
 import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
-import { requireLinkedWallet } from "@/lib/api/auth";
+import { requireLaunchCreationAccess } from "@/lib/api/launchAccess";
 import { checkRateLimit } from "@/lib/api/rateLimit";
 import { requireSameOrigin } from "@/lib/api/origin";
 
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
   const limited = await checkRateLimit(request, "upload");
   if (limited) return limited;
 
-  const { error: authErr } = await requireLinkedWallet();
+  const { error: authErr } = await requireLaunchCreationAccess();
   if (authErr) return authErr;
 
   const contentLength = Number(request.headers.get("content-length"));

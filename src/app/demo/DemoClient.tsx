@@ -296,7 +296,7 @@ export default function DemoClient() {
         </div>
         <div className="-mt-20">
           <DemoGitHubContext.Provider value={DEMO_GITHUB}>
-            <WizardPanel wizard={wizard} />
+            <WizardPanel wizard={wizard} callbackUrl="/launch" />
           </DemoGitHubContext.Provider>
         </div>
       </div>

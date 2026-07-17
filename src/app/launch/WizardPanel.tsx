@@ -7,7 +7,13 @@ import StepLockConfig from "./StepLockConfig";
 import StepGitHub from "./StepGitHub";
 import StepReview from "./StepReview";
 
-export default function WizardPanel({ wizard }: { wizard: WizardContext }) {
+export default function WizardPanel({
+  wizard,
+  callbackUrl,
+}: {
+  wizard: WizardContext;
+  callbackUrl: "/launch" | "/launch-test";
+}) {
   return (
     <div className="mx-auto max-w-[680px] px-4 pt-28 pb-16 sm:px-6">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
@@ -104,7 +110,7 @@ export default function WizardPanel({ wizard }: { wizard: WizardContext }) {
       {/* Steps */}
       {wizard.step === 1 && <StepTokenDetails w={wizard} />}
       {wizard.step === 2 && <StepLockConfig w={wizard} />}
-      {wizard.step === 3 && <StepGitHub w={wizard} />}
+      {wizard.step === 3 && <StepGitHub w={wizard} callbackUrl={callbackUrl} />}
       {wizard.step === 4 && <StepReview w={wizard} />}
       </div>
     </div>
