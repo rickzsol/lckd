@@ -3,6 +3,7 @@ import {
   AddressLookupTableProgram,
   ComputeBudgetProgram,
   PublicKey,
+  TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
   type AccountInfo,
@@ -13,6 +14,9 @@ import { DEFAULT_PRIORITY_FEE_MICROLAMPORTS } from "./constants";
 
 export const LOOKUP_TABLE_ACTIVE_SLOT = BigInt("0xffffffffffffffff");
 const LOOKUP_CLEANUP_COMPUTE_UNIT_LIMIT = 25_000;
+const MAX_LOOKUP_CLEANUP_COMPUTE_UNIT_LIMIT = BigInt(100_000);
+const MAX_LOOKUP_CLEANUP_COMPUTE_UNIT_PRICE = BigInt(1_000_000);
+const MAX_LOOKUP_CLEANUP_PRIORITY_FEE_LAMPORTS = BigInt(100_000);
 
 export type LookupCleanupPhase = "deactivate" | "close";
 
@@ -76,21 +80,80 @@ export function buildLegacyLookupCleanupTransaction(
   return buildCleanupTransaction(expectation, false);
 }
 
-function assertExactCleanupMessage(
+function resolveInstruction(message: MessageV0, index: number): TransactionInstruction {
+  const compiled = message.compiledInstructions[index];
+  if (!compiled) throw new Error("Lookup table cleanup instruction is missing");
+  const programId = message.staticAccountKeys[compiled.programIdIndex];
+  if (!programId) throw new Error("Lookup table cleanup program is missing");
+  return new TransactionInstruction({
+    programId,
+    data: Buffer.from(compiled.data),
+    keys: [...compiled.accountKeyIndexes].map((accountIndex) => {
+      const pubkey = message.staticAccountKeys[accountIndex];
+      if (!pubkey) throw new Error("Lookup table cleanup account is missing");
+      return {
+        pubkey,
+        isSigner: message.isAccountSigner(accountIndex),
+        isWritable: message.isAccountWritable(accountIndex),
+      };
+    }),
+  });
+}
+
+function validateComputeBudgetPrefix(instructions: readonly TransactionInstruction[]): void {
+  if (![0, 2].includes(instructions.length)) {
+    throw new Error("Lookup table cleanup compute budget is invalid");
+  }
+  let unitLimit: bigint | null = null;
+  let unitPrice: bigint | null = null;
+  for (const instruction of instructions) {
+    const data = instruction.data;
+    if (!instruction.programId.equals(ComputeBudgetProgram.programId) || instruction.keys.length) {
+      throw new Error("Lookup table cleanup contains an unexpected program");
+    }
+    if (data.length === 5 && data[0] === 2 && unitLimit === null) {
+      unitLimit = BigInt(data.readUInt32LE(1));
+    } else if (data.length === 9 && data[0] === 3 && unitPrice === null) {
+      unitPrice = data.readBigUInt64LE(1);
+    } else {
+      throw new Error("Lookup table cleanup compute budget is invalid");
+    }
+  }
+  if (!instructions.length) return;
+  if (
+    unitLimit === null || unitPrice === null || unitLimit < BigInt(1) ||
+    unitLimit > MAX_LOOKUP_CLEANUP_COMPUTE_UNIT_LIMIT ||
+    unitPrice > MAX_LOOKUP_CLEANUP_COMPUTE_UNIT_PRICE ||
+    unitLimit * unitPrice > MAX_LOOKUP_CLEANUP_PRIORITY_FEE_LAMPORTS * BigInt(1_000_000)
+  ) {
+    throw new Error("Lookup table cleanup priority fee is invalid");
+  }
+}
+
+function assertSemanticCleanupMessage(
   message: MessageV0,
   expectation: LookupCleanupExpectation,
 ): void {
-  const expected = buildLookupCleanupTransaction(expectation).message;
-  const legacyExpected = buildCleanupTransaction(expectation, false).message;
-  if (![expected, legacyExpected].some((candidate) =>
-    Buffer.from(message.serialize()).equals(Buffer.from(candidate.serialize())))) {
-    throw new Error(`Lookup table ${expectation.phase} transaction changed`);
-  }
   if (
+    message.recentBlockhash !== expectation.blockhash ||
     message.addressTableLookups.length !== 0 ||
+    message.header.numRequiredSignatures !== 1 ||
+    !message.staticAccountKeys[0]?.equals(expectation.wallet) ||
     ![1, 3].includes(message.compiledInstructions.length)
   ) {
     throw new Error("Lookup table cleanup instruction set is invalid");
+  }
+  const instructions = message.compiledInstructions.map((_, index) =>
+    resolveInstruction(message, index));
+  const computeBudgetPrefix = instructions.slice(0, -1);
+  validateComputeBudgetPrefix(computeBudgetPrefix);
+  const expected = new TransactionMessage({
+    payerKey: expectation.wallet,
+    recentBlockhash: expectation.blockhash,
+    instructions: [...computeBudgetPrefix, cleanupInstruction(expectation)],
+  }).compileToV0Message();
+  if (!Buffer.from(message.serialize()).equals(Buffer.from(expected.serialize()))) {
+    throw new Error(`Lookup table ${expectation.phase} transaction changed`);
   }
 }
 
@@ -105,7 +168,7 @@ export function validateLookupCleanupTransaction(
   if (transaction.message.version !== 0) {
     throw new Error("Lookup table cleanup must use a v0 message");
   }
-  assertExactCleanupMessage(transaction.message, expectation);
+  assertSemanticCleanupMessage(transaction.message, expectation);
   if (transaction.signatures.length !== 1) {
     throw new Error("Lookup table cleanup has an unexpected signer set");
   }
@@ -133,7 +196,7 @@ export function validateLookupCleanupMessage(
   message: MessageV0,
   expectation: LookupCleanupExpectation,
 ): void {
-  assertExactCleanupMessage(message, expectation);
+  assertSemanticCleanupMessage(message, expectation);
 }
 
 export function assertExactLookupTableForCleanup(

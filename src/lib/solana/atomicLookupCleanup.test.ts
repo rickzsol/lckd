@@ -3,8 +3,11 @@ import test from "node:test";
 import {
   AddressLookupTableAccount,
   AddressLookupTableProgram,
+  ComputeBudgetProgram,
   Keypair,
   PublicKey,
+  TransactionMessage,
+  VersionedTransaction,
   type AccountInfo,
 } from "@solana/web3.js";
 import {
@@ -100,6 +103,79 @@ test("accepts an exact legacy cleanup issuance during rollout", () => {
   assert.equal(decoded.message.compiledInstructions.length, 1);
 });
 
+function repricedCleanup(
+  wallet: Keypair,
+  lookupTable: PublicKey,
+  units: number,
+  microLamports: bigint,
+): VersionedTransaction {
+  const transaction = new VersionedTransaction(new TransactionMessage({
+    payerKey: wallet.publicKey,
+    recentBlockhash: BLOCKHASH,
+    instructions: [
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports }),
+      ComputeBudgetProgram.setComputeUnitLimit({ units }),
+      AddressLookupTableProgram.deactivateLookupTable({
+        authority: wallet.publicKey,
+        lookupTable,
+      }),
+    ],
+  }).compileToV0Message());
+  transaction.sign([wallet]);
+  return transaction;
+}
+
+test("accepts a wallet-repriced cleanup within strict compute and fee caps", () => {
+  const wallet = Keypair.generate();
+  const lookupTable = Keypair.generate().publicKey;
+  const transaction = repricedCleanup(wallet, lookupTable, 100_000, BigInt(1_000_000));
+
+  assert.doesNotThrow(() => validateLookupCleanupTransaction(
+    Buffer.from(transaction.serialize()).toString("base64"),
+    { phase: "deactivate", wallet: wallet.publicKey, lookupTable, blockhash: BLOCKHASH },
+    true,
+  ));
+});
+
+test("rejects cleanup repricing above strict compute and fee caps", () => {
+  const wallet = Keypair.generate();
+  const lookupTable = Keypair.generate().publicKey;
+  for (const transaction of [
+    repricedCleanup(wallet, lookupTable, 100_001, BigInt(1)),
+    repricedCleanup(wallet, lookupTable, 100_000, BigInt(1_000_001)),
+  ]) {
+    assert.throws(() => validateLookupCleanupTransaction(
+      Buffer.from(transaction.serialize()).toString("base64"),
+      { phase: "deactivate", wallet: wallet.publicKey, lookupTable, blockhash: BLOCKHASH },
+      true,
+    ), /priority fee is invalid/);
+  }
+});
+
+test("rejects duplicate cleanup compute-budget instructions", () => {
+  const wallet = Keypair.generate();
+  const lookupTable = Keypair.generate().publicKey;
+  const transaction = new VersionedTransaction(new TransactionMessage({
+    payerKey: wallet.publicKey,
+    recentBlockhash: BLOCKHASH,
+    instructions: [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 25_000 }),
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 30_000 }),
+      AddressLookupTableProgram.deactivateLookupTable({
+        authority: wallet.publicKey,
+        lookupTable,
+      }),
+    ],
+  }).compileToV0Message());
+  transaction.sign([wallet]);
+
+  assert.throws(() => validateLookupCleanupTransaction(
+    Buffer.from(transaction.serialize()).toString("base64"),
+    { phase: "deactivate", wallet: wallet.publicKey, lookupTable, blockhash: BLOCKHASH },
+    true,
+  ), /compute budget is invalid/);
+});
+
 test("rejects a close transaction whose recipient is not the owner wallet", () => {
   const wallet = Keypair.generate().publicKey;
   const lookupTable = Keypair.generate().publicKey;
@@ -115,7 +191,7 @@ test("rejects a close transaction whose recipient is not the owner wallet", () =
       Buffer.from(transaction.serialize()).toString("base64"),
       { phase: "close", wallet, lookupTable, blockhash: BLOCKHASH },
     ),
-    /transaction changed/,
+    /(transaction changed|instruction set is invalid)/,
   );
 });
 

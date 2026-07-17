@@ -429,10 +429,9 @@ function validateSignedCleanupCheckpoint(
   lastValidBlockHeight: number,
 ): void {
   try {
-    const transactionBytes = Buffer.from(transactionBase64, "base64");
     if (
       intent.issuedCleanupPhase !== phase ||
-      intent.issuedCleanupMessageHash !== hashAtomicTransactionMessage(transactionBytes) ||
+      !intent.issuedCleanupMessageHash ||
       intent.issuedCleanupBlockhash !== blockhash ||
       intent.issuedCleanupLastValidBlockHeight !== lastValidBlockHeight
     ) {
@@ -447,7 +446,11 @@ function validateSignedCleanupCheckpoint(
     if (bs58.encode(transaction.signatures[0]) !== transactionSignature) {
       throw new Error("ALT cleanup signature changed");
     }
-  } catch {
+  } catch (error) {
+    console.warn(
+      "[launch/recovery] Cleanup checkpoint rejected:",
+      error instanceof Error ? error.message : "unknown validation failure",
+    );
     throw new AtomicLaunchRecoveryError("Signed ALT cleanup transaction changed", 422);
   }
 }
