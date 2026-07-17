@@ -181,8 +181,8 @@ function lighthouseGuardedCleanup(
     payerKey: wallet.publicKey,
     recentBlockhash: BLOCKHASH,
     instructions: [
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 100_000 }),
-      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: BigInt(1_000_000) }),
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: BigInt(500_000) }),
       lighthouseGuard(wallet.publicKey, 37),
       AddressLookupTableProgram.deactivateLookupTable({
         authority: wallet.publicKey,
@@ -250,7 +250,7 @@ test("rejects cleanup repricing above strict compute and fee caps", () => {
   const wallet = Keypair.generate();
   const lookupTable = Keypair.generate().publicKey;
   for (const transaction of [
-    repricedCleanup(wallet, lookupTable, 100_001, BigInt(1)),
+    repricedCleanup(wallet, lookupTable, 1_400_001, BigInt(1)),
     repricedCleanup(wallet, lookupTable, 100_000, BigInt(1_000_001)),
   ]) {
     assert.throws(() => validateLookupCleanupTransaction(
