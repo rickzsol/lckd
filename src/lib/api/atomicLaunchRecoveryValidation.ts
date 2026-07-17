@@ -243,7 +243,7 @@ export const atomicIntentSnapshotSchema = z.object({
   lockMetadataId: nullableReceiptText,
   lockAmount: nullableReceiptText,
   unlockTimestamp: nullableHeight,
-  expiresAt: z.string().datetime(),
+  expiresAt: z.string().datetime({ offset: true }),
   altStatus: z.enum([
     "planned",
     "setup_submitted",

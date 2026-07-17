@@ -167,7 +167,7 @@ test("owned intent snapshot binds immutable config, metadata, and ordered ALT", 
     issuedUnlockTimestamp: null,
     atomicTx: null, atomicBlockhash: null, atomicLastValidBlockHeight: null,
     lockMetadataId: null, lockAmount: null, unlockTimestamp: null,
-    expiresAt: "2030-01-01T00:00:00.000Z", altStatus: "ready",
+    expiresAt: "2030-01-01T00:00:00.000+00:00", altStatus: "ready",
     altStateVersion: 2, setupTx: SIGNATURE, setupBlockhash: BLOCKHASH,
     setupLastValidBlockHeight: 123, altDeactivationTx: null,
     issuedSetupMessageHash: "a".repeat(64), issuedSetupBlockhash: BLOCKHASH,
@@ -180,5 +180,9 @@ test("owned intent snapshot binds immutable config, metadata, and ordered ALT", 
   };
 
   assert.equal(atomicIntentSnapshotSchema.safeParse(snapshot).success, true);
+  assert.equal(atomicIntentSnapshotSchema.safeParse({
+    ...snapshot,
+    expiresAt: "2030-01-01T00:00:00.000Z",
+  }).success, true);
   assert.equal(atomicIntentSnapshotSchema.safeParse({ ...snapshot, setupTx: undefined }).success, false);
 });
