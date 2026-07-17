@@ -163,6 +163,33 @@ function validateLighthouseGuard(
   }
 }
 
+function validateCleanupInstruction(
+  instruction: TransactionInstruction,
+  expectation: LookupCleanupExpectation,
+): void {
+  const expected = cleanupInstruction(expectation);
+  if (
+    !instruction.programId.equals(expected.programId) ||
+    !Buffer.from(instruction.data).equals(Buffer.from(expected.data)) ||
+    instruction.keys.length !== expected.keys.length
+  ) {
+    throw new Error(`Lookup table ${expectation.phase} transaction changed`);
+  }
+  for (const [index, expectedKey] of expected.keys.entries()) {
+    const actualKey = instruction.keys[index];
+    const isPayerEscalation = actualKey?.pubkey.equals(expectation.wallet) ?? false;
+    if (
+      !actualKey?.pubkey.equals(expectedKey.pubkey) ||
+      (expectedKey.isSigner && !actualKey.isSigner) ||
+      (!expectedKey.isSigner && actualKey.isSigner && !isPayerEscalation) ||
+      (expectedKey.isWritable && !actualKey.isWritable) ||
+      (!expectedKey.isWritable && actualKey.isWritable && !isPayerEscalation)
+    ) {
+      throw new Error(`Lookup table ${expectation.phase} accounts changed`);
+    }
+  }
+}
+
 function assertSemanticCleanupMessage(
   message: MessageV0,
   expectation: LookupCleanupExpectation,
@@ -210,22 +237,10 @@ function assertSemanticCleanupMessage(
     validateLighthouseGuard(instructions[2], expectation, 37);
     validateLighthouseGuard(instructions[4], expectation, 26);
   }
-  const expectedInstructions = isLighthouseGuarded
-    ? [
-        ...computeBudgetPrefix,
-        instructions[2],
-        cleanupInstruction(expectation),
-        instructions[4],
-      ]
-    : [...computeBudgetPrefix, cleanupInstruction(expectation)];
-  const expected = new TransactionMessage({
-    payerKey: expectation.wallet,
-    recentBlockhash: expectation.blockhash,
-    instructions: expectedInstructions,
-  }).compileToV0Message();
-  if (!Buffer.from(message.serialize()).equals(Buffer.from(expected.serialize()))) {
-    throw new Error(`Lookup table ${expectation.phase} transaction changed`);
-  }
+  validateCleanupInstruction(
+    instructions[isLighthouseGuarded ? 3 : instructions.length - 1],
+    expectation,
+  );
 }
 
 export function validateLookupCleanupTransaction(
