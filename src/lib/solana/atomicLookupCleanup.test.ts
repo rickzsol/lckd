@@ -22,6 +22,7 @@ import {
 } from "./atomicLookupCleanup";
 
 const BLOCKHASH = Keypair.generate().publicKey.toBase58();
+const LIGHTHOUSE_PROGRAM_ID = new PublicKey("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
 
 function slotHashes(slots: readonly bigint[]): Buffer {
   const data = Buffer.alloc(8 + slots.length * 40);
@@ -162,6 +163,38 @@ function phantomCleanup(
   return transaction;
 }
 
+function lighthouseGuard(target: PublicKey, dataLength: number): TransactionInstruction {
+  const data = Buffer.alloc(dataLength);
+  data[0] = 6;
+  return new TransactionInstruction({
+    programId: LIGHTHOUSE_PROGRAM_ID,
+    keys: [{ pubkey: target, isSigner: false, isWritable: false }],
+    data,
+  });
+}
+
+function lighthouseGuardedCleanup(
+  wallet: Keypair,
+  lookupTable: PublicKey,
+): VersionedTransaction {
+  const transaction = new VersionedTransaction(new TransactionMessage({
+    payerKey: wallet.publicKey,
+    recentBlockhash: BLOCKHASH,
+    instructions: [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 100_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: BigInt(1_000_000) }),
+      lighthouseGuard(wallet.publicKey, 37),
+      AddressLookupTableProgram.deactivateLookupTable({
+        authority: wallet.publicKey,
+        lookupTable,
+      }),
+      lighthouseGuard(lookupTable, 26),
+    ],
+  }).compileToV0Message());
+  transaction.sign([wallet]);
+  return transaction;
+}
+
 test("accepts a wallet-repriced cleanup within strict compute and fee caps", () => {
   const wallet = Keypair.generate();
   const lookupTable = Keypair.generate().publicKey;
@@ -186,6 +219,18 @@ test("accepts Phantom loaded-account sizing within the strict cap", () => {
   ));
 });
 
+test("accepts exact Phantom Lighthouse guards around cleanup", () => {
+  const wallet = Keypair.generate();
+  const lookupTable = Keypair.generate().publicKey;
+  const transaction = lighthouseGuardedCleanup(wallet, lookupTable);
+
+  assert.doesNotThrow(() => validateLookupCleanupTransaction(
+    Buffer.from(transaction.serialize()).toString("base64"),
+    { phase: "deactivate", wallet: wallet.publicKey, lookupTable, blockhash: BLOCKHASH },
+    true,
+  ));
+});
+
 test("rejects oversized or duplicate loaded-account sizing", () => {
   const wallet = Keypair.generate();
   const lookupTable = Keypair.generate().publicKey;
@@ -197,7 +242,7 @@ test("rejects oversized or duplicate loaded-account sizing", () => {
       Buffer.from(transaction.serialize()).toString("base64"),
       { phase: "deactivate", wallet: wallet.publicKey, lookupTable, blockhash: BLOCKHASH },
       true,
-    ), /instruction set is invalid|compute budget is invalid|priority fee is invalid/);
+    ), /instruction set is invalid|compute budget is invalid|priority fee is invalid|Lighthouse guard is invalid/);
   }
 });
 

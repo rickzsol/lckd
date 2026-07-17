@@ -146,6 +146,23 @@ function validateComputeBudgetPrefix(instructions: readonly TransactionInstructi
   }
 }
 
+function validateLighthouseGuard(
+  instruction: TransactionInstruction,
+  expectation: LookupCleanupExpectation,
+  expectedDataLength: number,
+): void {
+  const target = instruction.keys[0]?.pubkey;
+  if (
+    !instruction.programId.equals(LIGHTHOUSE_PROGRAM_ID) ||
+    instruction.keys.length !== 1 ||
+    instruction.data[0] !== 6 ||
+    instruction.data.length !== expectedDataLength ||
+    (!target?.equals(expectation.wallet) && !target?.equals(expectation.lookupTable))
+  ) {
+    throw new Error("Lookup table cleanup Lighthouse guard is invalid");
+  }
+}
+
 function assertSemanticCleanupMessage(
   message: MessageV0,
   expectation: LookupCleanupExpectation,
@@ -170,7 +187,7 @@ function assertSemanticCleanupMessage(
     message.addressTableLookups.length !== 0 ||
     message.header.numRequiredSignatures !== 1 ||
     !hasExpectedPayer ||
-    ![1, 3, 4].includes(message.compiledInstructions.length)
+    ![1, 3, 4, 5].includes(message.compiledInstructions.length)
   ) {
     throw new Error([
       "Lookup table cleanup instruction set is invalid",
@@ -184,12 +201,27 @@ function assertSemanticCleanupMessage(
   }
   const instructions = message.compiledInstructions.map((_, index) =>
     resolveInstruction(message, index));
-  const computeBudgetPrefix = instructions.slice(0, -1);
+  const isLighthouseGuarded = instructions.length === 5;
+  const computeBudgetPrefix = isLighthouseGuarded
+    ? instructions.slice(0, 2)
+    : instructions.slice(0, -1);
   validateComputeBudgetPrefix(computeBudgetPrefix);
+  if (isLighthouseGuarded) {
+    validateLighthouseGuard(instructions[2], expectation, 37);
+    validateLighthouseGuard(instructions[4], expectation, 26);
+  }
+  const expectedInstructions = isLighthouseGuarded
+    ? [
+        ...computeBudgetPrefix,
+        instructions[2],
+        cleanupInstruction(expectation),
+        instructions[4],
+      ]
+    : [...computeBudgetPrefix, cleanupInstruction(expectation)];
   const expected = new TransactionMessage({
     payerKey: expectation.wallet,
     recentBlockhash: expectation.blockhash,
-    instructions: [...computeBudgetPrefix, cleanupInstruction(expectation)],
+    instructions: expectedInstructions,
   }).compileToV0Message();
   if (!Buffer.from(message.serialize()).equals(Buffer.from(expected.serialize()))) {
     throw new Error(`Lookup table ${expectation.phase} transaction changed`);
