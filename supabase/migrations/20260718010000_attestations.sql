@@ -9,6 +9,12 @@
 -- effects (which cannot be transactionally committed together). Rows are leased
 -- with backoff and dead-lettered after N attempts. The transaction signature is
 -- persisted BEFORE broadcast so an ambiguous outcome reconciles from chain.
+--
+-- Reissue is modelled as TWO durable phases: a close phase (operation 'close')
+-- followed by a create phase (operation 'issue'), each with its own persisted
+-- signature and its own reconciliation. A single-transaction close+create was
+-- deliberately NOT used because it cannot be reconciled by one signature when the
+-- send is ambiguous, and devnet verification of that path is unavailable here.
 
 begin;
 
@@ -57,13 +63,28 @@ create table if not exists public.attestation_outbox (
   mint text not null,
   operation text not null check (operation in ('issue', 'reissue', 'close')),
   -- Server-derived desired payload snapshot; NO caller input flows into this.
+  -- Both policy_version AND schema_version are pinned at enqueue so a deployment
+  -- between enqueue and processing can never make the persisted attestation
+  -- disagree with what was actually issued on chain.
   desired_tier integer not null check (desired_tier between 1 and 4),
   desired_lock_bps integer not null check (desired_lock_bps between 0 and 10000),
   desired_cliff_ts bigint not null check (desired_cliff_ts > 0),
   desired_policy_version integer not null check (desired_policy_version >= 1),
+  desired_schema_version integer not null check (desired_schema_version >= 1),
   evidence_hash text not null,
   status text not null default 'pending'
     check (status in ('pending', 'leased', 'broadcast', 'done', 'failed', 'dead')),
+  -- Durable "latest desired state" marker. When trust evidence changes while a
+  -- job is already leased/broadcast (cannot be safely mutated in place), the new
+  -- snapshot is parked here and promoted to the live columns once the current
+  -- job finishes, so a change during in-flight work is never silently lost.
+  successor_evidence_hash text,
+  successor_tier integer check (successor_tier between 1 and 4),
+  successor_lock_bps integer check (successor_lock_bps between 0 and 10000),
+  successor_cliff_ts bigint check (successor_cliff_ts > 0),
+  successor_policy_version integer check (successor_policy_version >= 1),
+  successor_schema_version integer check (successor_schema_version >= 1),
+  successor_operation text check (successor_operation in ('issue', 'reissue', 'close')),
   -- Lease + backoff columns.
   attempts integer not null default 0,
   max_attempts integer not null default 5,
@@ -90,20 +111,23 @@ create index if not exists attestation_outbox_claim_idx
 
 create index if not exists attestation_outbox_lease_idx
   on public.attestation_outbox (locked_until)
-  where status = 'leased';
+  where status in ('leased', 'broadcast');
 
 -- RLS: enabled, no anon/authenticated grants. Server routes use service_role
--- (which bypasses RLS); public reads go through the safe view below.
+-- (which bypasses RLS); public reads go through the owner-executed view below.
 alter table public.attestations enable row level security;
 alter table public.attestation_outbox enable row level security;
 
 revoke all on public.attestations from anon, authenticated;
 revoke all on public.attestation_outbox from anon, authenticated;
 
--- Safe public view: only non-sensitive columns of currently-live attestations,
--- joinable by the trust API. Excludes outbox internals and closed/failed rows.
+-- Safe public view: a TIGHTLY PROJECTED, OWNER-EXECUTED view. It runs as its
+-- postgres owner (security_invoker = false / default), so anon reads the visible
+-- columns of currently-live attestations WITHOUT any base-table grant or RLS
+-- policy on public.attestations. Only these non-sensitive columns are exposed;
+-- outbox internals, evidence hashes, and closed/failed rows never surface.
 create or replace view public.attestations_public
-with (security_invoker = true)
+with (security_invoker = false)
 as
   select
     token_id,
@@ -123,18 +147,19 @@ as
     and expiry_ts > now();
 
 alter view public.attestations_public owner to postgres;
+revoke all on public.attestations_public from public;
 grant select on public.attestations_public to anon, authenticated, service_role;
 
--- The view reads the RLS-protected base table under security_invoker, so anon
--- needs a scoped select policy matching exactly the view's visible rows.
-create policy attestations_public_read on public.attestations
-  for select to anon, authenticated
-  using (status = 'finalized' and expiry_ts > now());
-
--- Enqueue a server-derived issuance job. Idempotent per open job: a duplicate
--- enqueue while one is open is a no-op (returns the existing id). Only callable
--- by service_role; never accepts caller-supplied attestation data beyond the
--- server-derived snapshot the trust projection passes in.
+-- Enqueue a server-derived issuance job. Concurrency-safe and idempotent:
+--   * First enqueue races are resolved by an atomic INSERT ... ON CONFLICT on the
+--     partial unique index (one open job per token), so two concurrent first
+--     enqueues never both fail the index.
+--   * A pending open job is updated in place with the newer snapshot.
+--   * A leased/broadcast open job cannot be safely mutated (a worker holds it),
+--     so the newer snapshot is parked in the successor_* columns and promoted
+--     once the current job completes. Nothing is silently lost.
+-- Only callable by service_role; never accepts caller-supplied attestation data
+-- beyond the server-derived snapshot the trust projection passes in.
 create or replace function public.enqueue_attestation_job(
   p_token_id uuid,
   p_cluster text,
@@ -144,6 +169,7 @@ create or replace function public.enqueue_attestation_job(
   p_lock_bps integer,
   p_cliff_ts bigint,
   p_policy_version integer,
+  p_schema_version integer,
   p_evidence_hash text
 )
 returns uuid
@@ -152,60 +178,142 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_existing uuid;
+  v_existing public.attestation_outbox%rowtype;
   v_id uuid;
 begin
-  select id into v_existing
+  -- Lock the open row for this token, if any, so the leased/broadcast branch
+  -- observes a stable status and the successor write is race-free.
+  select * into v_existing
   from public.attestation_outbox
   where token_id = p_token_id
     and status in ('pending', 'leased', 'broadcast')
+  for update
   limit 1;
 
-  if v_existing is not null then
-    -- Refresh the desired snapshot if the open job predates this evidence.
+  if found then
+    if v_existing.status = 'pending' then
+      -- Safe to mutate in place: no worker holds a pending job.
+      if v_existing.evidence_hash <> p_evidence_hash then
+        update public.attestation_outbox
+        set desired_tier = p_tier,
+            desired_lock_bps = p_lock_bps,
+            desired_cliff_ts = p_cliff_ts,
+            desired_policy_version = p_policy_version,
+            desired_schema_version = p_schema_version,
+            evidence_hash = p_evidence_hash,
+            operation = p_operation,
+            updated_at = now()
+        where id = v_existing.id;
+      end if;
+      return v_existing.id;
+    end if;
+
+    -- Leased or broadcast: park the newer desired state as a successor. Only
+    -- overwrite when it actually differs from what the in-flight job will emit.
+    if v_existing.evidence_hash <> p_evidence_hash then
+      update public.attestation_outbox
+      set successor_evidence_hash = p_evidence_hash,
+          successor_tier = p_tier,
+          successor_lock_bps = p_lock_bps,
+          successor_cliff_ts = p_cliff_ts,
+          successor_policy_version = p_policy_version,
+          successor_schema_version = p_schema_version,
+          successor_operation = p_operation,
+          updated_at = now()
+      where id = v_existing.id;
+    end if;
+    return v_existing.id;
+  end if;
+
+  -- No open job: create one. ON CONFLICT on the partial open-job unique index
+  -- makes concurrent first enqueues idempotent instead of one hitting a 23505.
+  insert into public.attestation_outbox (
+    token_id, cluster, mint, operation,
+    desired_tier, desired_lock_bps, desired_cliff_ts,
+    desired_policy_version, desired_schema_version, evidence_hash
+  ) values (
+    p_token_id, p_cluster, p_mint, p_operation,
+    p_tier, p_lock_bps, p_cliff_ts,
+    p_policy_version, p_schema_version, p_evidence_hash
+  )
+  on conflict (token_id) where (status in ('pending', 'leased', 'broadcast'))
+  do nothing
+  returning id into v_id;
+
+  if v_id is not null then
+    return v_id;
+  end if;
+
+  -- Lost the insert race: the winner's open job now exists. Return its id and,
+  -- if it is a pending job that predates this evidence, refresh it in place.
+  select * into v_existing
+  from public.attestation_outbox
+  where token_id = p_token_id
+    and status in ('pending', 'leased', 'broadcast')
+  for update
+  limit 1;
+
+  if not found then
+    -- The winner already advanced past the open states; re-enqueue fresh.
+    insert into public.attestation_outbox (
+      token_id, cluster, mint, operation,
+      desired_tier, desired_lock_bps, desired_cliff_ts,
+      desired_policy_version, desired_schema_version, evidence_hash
+    ) values (
+      p_token_id, p_cluster, p_mint, p_operation,
+      p_tier, p_lock_bps, p_cliff_ts,
+      p_policy_version, p_schema_version, p_evidence_hash
+    )
+    returning id into v_id;
+    return v_id;
+  end if;
+
+  if v_existing.status = 'pending' and v_existing.evidence_hash <> p_evidence_hash then
     update public.attestation_outbox
     set desired_tier = p_tier,
         desired_lock_bps = p_lock_bps,
         desired_cliff_ts = p_cliff_ts,
         desired_policy_version = p_policy_version,
+        desired_schema_version = p_schema_version,
         evidence_hash = p_evidence_hash,
         operation = p_operation,
         updated_at = now()
-    where id = v_existing
-      and status = 'pending'
-      and evidence_hash <> p_evidence_hash;
-    return v_existing;
+    where id = v_existing.id;
+  elsif v_existing.status in ('leased', 'broadcast') and v_existing.evidence_hash <> p_evidence_hash then
+    update public.attestation_outbox
+    set successor_evidence_hash = p_evidence_hash,
+        successor_tier = p_tier,
+        successor_lock_bps = p_lock_bps,
+        successor_cliff_ts = p_cliff_ts,
+        successor_policy_version = p_policy_version,
+        successor_schema_version = p_schema_version,
+        successor_operation = p_operation,
+        updated_at = now()
+    where id = v_existing.id;
   end if;
-
-  insert into public.attestation_outbox (
-    token_id, cluster, mint, operation,
-    desired_tier, desired_lock_bps, desired_cliff_ts, desired_policy_version,
-    evidence_hash
-  ) values (
-    p_token_id, p_cluster, p_mint, p_operation,
-    p_tier, p_lock_bps, p_cliff_ts, p_policy_version,
-    p_evidence_hash
-  )
-  returning id into v_id;
-  return v_id;
+  return v_existing.id;
 end;
 $$;
 
--- Atomically claim one due outbox row with a lease. Returns the leased row or
--- nothing. Uses skip-locked so concurrent workers never claim the same row.
+-- Atomically claim one due outbox row with a lease. Returns the leased row and
+-- the status it was claimed FROM (so the worker reconciles a prior broadcast
+-- instead of blindly resending). Uses skip-locked so concurrent workers never
+-- claim the same row. A row claimed from 'broadcast' keeps its pending_signature
+-- and is reported via claimed_from_status = 'broadcast'.
 create or replace function public.claim_attestation_job(
   p_lease_seconds integer default 120
 )
-returns setof public.attestation_outbox
+returns table (job public.attestation_outbox, claimed_from_status text)
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
   v_id uuid;
+  v_from text;
   v_lease uuid := gen_random_uuid();
 begin
-  select id into v_id
+  select id, status into v_id, v_from
   from public.attestation_outbox
   where (
       (status in ('pending', 'failed') and next_retry_at <= now())
@@ -229,7 +337,7 @@ begin
       attempts = attempts + 1,
       updated_at = now()
   where id = v_id
-  returning *;
+  returning attestation_outbox, v_from;
 end;
 $$;
 
@@ -264,8 +372,74 @@ begin
 end;
 $$;
 
--- Finalize a job: upsert the attestation row and mark the outbox done. Runs in
--- one transaction so the attestation record and outbox completion commit atomically.
+-- Promote any parked successor snapshot into the live desired columns and reopen
+-- the job as 'pending' for the next processing pass. Returns true when a
+-- successor was promoted (the job stays open), false when there was none (the
+-- caller marks the job done). Lease-guarded; validates the row is still ours.
+create or replace function public.promote_successor_or_done(
+  p_id uuid,
+  p_lease_token uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_row public.attestation_outbox%rowtype;
+begin
+  select * into v_row
+  from public.attestation_outbox
+  where id = p_id
+  for update;
+
+  if not found then
+    raise exception 'attestation job % not found', p_id;
+  end if;
+  if v_row.lease_token is distinct from p_lease_token then
+    raise exception 'attestation job % lease mismatch', p_id;
+  end if;
+
+  if v_row.successor_evidence_hash is null then
+    return false;
+  end if;
+
+  update public.attestation_outbox
+  set operation = coalesce(v_row.successor_operation, operation),
+      desired_tier = v_row.successor_tier,
+      desired_lock_bps = v_row.successor_lock_bps,
+      desired_cliff_ts = v_row.successor_cliff_ts,
+      desired_policy_version = v_row.successor_policy_version,
+      desired_schema_version = v_row.successor_schema_version,
+      evidence_hash = v_row.successor_evidence_hash,
+      status = 'pending',
+      attempts = 0,
+      next_retry_at = now(),
+      locked_until = null,
+      lease_token = null,
+      pending_signature = null,
+      pending_close_signature = null,
+      successor_evidence_hash = null,
+      successor_tier = null,
+      successor_lock_bps = null,
+      successor_cliff_ts = null,
+      successor_policy_version = null,
+      successor_schema_version = null,
+      successor_operation = null,
+      updated_at = now()
+  where id = p_id;
+  return true;
+end;
+$$;
+
+-- Finalize a CREATE/REISSUE job: upsert the attestation generation and mark the
+-- outbox done (or reopen it if a successor is parked). Everything runs in one
+-- transaction so the attestation record and outbox state commit atomically.
+--
+-- The outbox row is locked and validated (lease token, status, and the persisted
+-- pending_signature) BEFORE any attestation mutation. A stale worker that lost
+-- its lease therefore cannot insert a generation or close a prior row: validation
+-- raises and the whole transaction rolls back.
 create or replace function public.complete_attestation_job(
   p_id uuid,
   p_lease_token uuid,
@@ -289,9 +463,30 @@ security definer
 set search_path = ''
 as $$
 declare
+  v_row public.attestation_outbox%rowtype;
   v_generation integer;
   v_attestation_id uuid;
+  v_promoted boolean;
 begin
+  -- Fence: lock and validate the outbox row before touching attestations.
+  select * into v_row
+  from public.attestation_outbox
+  where id = p_id
+  for update;
+
+  if not found then
+    raise exception 'attestation job % not found', p_id;
+  end if;
+  if v_row.lease_token is distinct from p_lease_token then
+    raise exception 'attestation job % lease mismatch (stale worker)', p_id;
+  end if;
+  if v_row.status <> 'broadcast' then
+    raise exception 'attestation job % not in broadcast status (was %)', p_id, v_row.status;
+  end if;
+  if v_row.pending_signature is distinct from p_tx_signature then
+    raise exception 'attestation job % signature mismatch', p_id;
+  end if;
+
   -- Expire any prior live rows for this slot so the active index frees.
   update public.attestations
   set status = 'closed',
@@ -319,16 +514,91 @@ begin
   )
   returning id into v_attestation_id;
 
-  update public.attestation_outbox
-  set status = 'done',
-      attestation_id = v_attestation_id,
-      locked_until = null,
-      lease_token = null,
-      updated_at = now()
-  where id = p_id
-    and lease_token = p_lease_token;
+  -- If a newer desired state arrived while we worked, reopen for another pass;
+  -- otherwise close the outbox row out.
+  if v_row.successor_evidence_hash is not null then
+    v_promoted := public.promote_successor_or_done(p_id, p_lease_token);
+    update public.attestation_outbox
+    set attestation_id = v_attestation_id
+    where id = p_id;
+  else
+    update public.attestation_outbox
+    set status = 'done',
+        attestation_id = v_attestation_id,
+        locked_until = null,
+        lease_token = null,
+        pending_signature = null,
+        pending_close_signature = null,
+        updated_at = now()
+    where id = p_id;
+  end if;
 
   return v_attestation_id;
+end;
+$$;
+
+-- Finalize a CLOSE job: close the active DB attestation row WITHOUT inserting a
+-- new generation (nothing exists on chain to record), then mark the outbox done
+-- (or reopen for a parked successor). Same lease/status/signature fence as
+-- complete_attestation_job so a stale worker cannot mutate state.
+create or replace function public.complete_close_attestation_job(
+  p_id uuid,
+  p_lease_token uuid,
+  p_cluster text,
+  p_mint text,
+  p_schema_version integer,
+  p_attestation_pda text,
+  p_close_signature text
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_row public.attestation_outbox%rowtype;
+begin
+  select * into v_row
+  from public.attestation_outbox
+  where id = p_id
+  for update;
+
+  if not found then
+    raise exception 'attestation job % not found', p_id;
+  end if;
+  if v_row.lease_token is distinct from p_lease_token then
+    raise exception 'attestation job % lease mismatch (stale worker)', p_id;
+  end if;
+  if v_row.status <> 'broadcast' then
+    raise exception 'attestation job % not in broadcast status (was %)', p_id, v_row.status;
+  end if;
+  if v_row.pending_signature is distinct from p_close_signature then
+    raise exception 'attestation job % close signature mismatch', p_id;
+  end if;
+
+  update public.attestations
+  set status = 'closed',
+      close_signature = coalesce(p_close_signature, close_signature),
+      closed_at = now(),
+      updated_at = now()
+  where cluster = p_cluster
+    and mint = p_mint
+    and schema_version = p_schema_version
+    and status in ('pending', 'submitted', 'finalized')
+    and attestation_pda = p_attestation_pda;
+
+  if v_row.successor_evidence_hash is not null then
+    perform public.promote_successor_or_done(p_id, p_lease_token);
+  else
+    update public.attestation_outbox
+    set status = 'done',
+        locked_until = null,
+        lease_token = null,
+        pending_signature = null,
+        pending_close_signature = null,
+        updated_at = now()
+    where id = p_id;
+  end if;
 end;
 $$;
 
@@ -353,7 +623,8 @@ declare
 begin
   select attempts, max_attempts into v_attempts, v_max
   from public.attestation_outbox
-  where id = p_id and lease_token = p_lease_token;
+  where id = p_id and lease_token = p_lease_token
+  for update;
 
   if v_attempts is null then
     return 'not_leased';
@@ -414,14 +685,18 @@ begin
 end;
 $$;
 
-revoke all on function public.enqueue_attestation_job(uuid, text, text, text, integer, integer, bigint, integer, text) from public, anon, authenticated;
-grant execute on function public.enqueue_attestation_job(uuid, text, text, text, integer, integer, bigint, integer, text) to service_role;
+revoke all on function public.enqueue_attestation_job(uuid, text, text, text, integer, integer, bigint, integer, integer, text) from public, anon, authenticated;
+grant execute on function public.enqueue_attestation_job(uuid, text, text, text, integer, integer, bigint, integer, integer, text) to service_role;
 revoke all on function public.claim_attestation_job(integer) from public, anon, authenticated;
 grant execute on function public.claim_attestation_job(integer) to service_role;
 revoke all on function public.mark_attestation_broadcast(uuid, uuid, text, text, integer) from public, anon, authenticated;
 grant execute on function public.mark_attestation_broadcast(uuid, uuid, text, text, integer) to service_role;
+revoke all on function public.promote_successor_or_done(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.promote_successor_or_done(uuid, uuid) to service_role;
 revoke all on function public.complete_attestation_job(uuid, uuid, uuid, text, text, text, integer, integer, integer, integer, bigint, text, timestamptz, text, text) from public, anon, authenticated;
 grant execute on function public.complete_attestation_job(uuid, uuid, uuid, text, text, text, integer, integer, integer, integer, bigint, text, timestamptz, text, text) to service_role;
+revoke all on function public.complete_close_attestation_job(uuid, uuid, text, text, integer, text, text) from public, anon, authenticated;
+grant execute on function public.complete_close_attestation_job(uuid, uuid, text, text, integer, text, text) to service_role;
 revoke all on function public.fail_attestation_job(uuid, uuid, text, boolean) from public, anon, authenticated;
 grant execute on function public.fail_attestation_job(uuid, uuid, text, boolean) to service_role;
 revoke all on function public.expire_attestations(integer) from public, anon, authenticated;
