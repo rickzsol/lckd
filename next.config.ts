@@ -29,7 +29,7 @@ const CONTENT_SECURITY_POLICY = [
   "object-src 'none'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  `connect-src 'self' https://*.helius-rpc.com https://api.mainnet-beta.solana.com https://rpc.mainnet.chain.robinhood.com https://*.supabase.co https://api.dexscreener.com https://*.ingest.sentry.io wss:${LAUNCH_MONITOR_ORIGIN ? ` ${LAUNCH_MONITOR_ORIGIN}` : ""}`,
+  `connect-src 'self' https://*.helius-rpc.com https://api.mainnet-beta.solana.com https://rpc.mainnet.chain.robinhood.com https://*.supabase.co https://api.dexscreener.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io wss:${LAUNCH_MONITOR_ORIGIN ? ` ${LAUNCH_MONITOR_ORIGIN}` : ""}`,
   "upgrade-insecure-requests",
 ].join("; ");
 

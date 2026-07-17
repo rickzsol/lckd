@@ -44,7 +44,8 @@
 
 ## Release
 
-- [ ] Merge and deploy the Sentry instrumentation draft PR, add a scoped source-map upload token, and verify the Sentry-to-Discord incident path with a controlled error.
+- [x] Merge the Sentry instrumentation, add a scoped source-map upload token, deploy a preview, and verify the Sentry-to-Discord incident path with a controlled error.
+- [ ] Merge the regional Sentry ingest CSP fix and deploy the merged instrumentation to production.
 - [ ] Authorize and configure the Double Counter dashboard, publish the verification panel, and test role assignment with a new account.
 - [ ] Restore/provision production Supabase and verify connectivity.
 - [ ] Review production data for duplicate receipt signatures and apply migration 002.
