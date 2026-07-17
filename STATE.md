@@ -4,7 +4,7 @@ Updated: 2026-07-17
 
 ## Status
 
-Production release approved after independent security review. Production Supabase is migrated through `007_atomic_cleanup_races.sql`, required Vercel environment variables are configured for `https://lckd.tech`, and the atomic launch path is ready for deployment. No transaction has been signed or sent.
+Production release approved after independent security review and deployed at `https://lckd.tech` from commit `b125e42`. Production Supabase is migrated through `007_atomic_cleanup_races.sql`, required Vercel environment variables are configured, and the atomic launch path is live. No transaction has been signed or sent.
 
 ## Launch invariants
 
@@ -29,6 +29,7 @@ Production release approved after independent security review. Production Supaba
 - TypeScript, ESLint, production build, and `git diff --check` passed.
 - Independent atomic SQL, recovery, on-chain receipt, UI lifecycle, and deployment reviews passed.
 - Production and staging aggregate RPC checks passed; anonymous atomic mutations are denied.
+- Live production home, feed, LCKD detail, image, stats, auth gates, and security headers passed.
 - Gitleaks found no committed or source/migration secrets.
 - `npm audit --omit=dev`: one underlying unpatched `bigint-buffer` advisory represented by 8 dependency nodes; 0 critical and 0 moderate.
 
