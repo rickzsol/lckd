@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getTokenByIdOrMint } from "@/lib/queries";
 import { getPendingManualLaunch } from "@/lib/pendingLaunches";
+import { getPublicAttestation, attestationExplorerUrl } from "@/lib/sas/publicAttestation";
 import TokenDetailClient from "./TokenDetailClient";
 import PendingLaunchDetail from "./PendingLaunchDetail";
 
@@ -79,5 +80,15 @@ export default async function TokenDetailPage({ params }: Props) {
     notFound();
   }
 
-  return <TokenDetailClient t={token} />;
+  const attestationRow = token.mintAddress
+    ? await getPublicAttestation(token.mintAddress)
+    : null;
+  const attestation = attestationRow
+    ? {
+        attestationPda: attestationRow.attestationPda,
+        explorerUrl: attestationExplorerUrl(attestationRow.attestationPda, attestationRow.cluster),
+      }
+    : null;
+
+  return <TokenDetailClient t={token} attestation={attestation} />;
 }

@@ -5,9 +5,16 @@ import Badge from "@/components/ui/Badge";
 import TokenImage from "@/components/ui/TokenImage";
 import DexScreenerChart from "@/components/token/DexScreenerChart";
 import JupiterSwap from "@/components/token/JupiterSwap";
+import AttestationLine, { type AttestationLineData } from "@/components/token/AttestationLine";
 import type { DisplayToken } from "@/types/display";
 
-export default function TokenDetailClient({ t }: { t: DisplayToken }) {
+export default function TokenDetailClient({
+  t,
+  attestation,
+}: {
+  t: DisplayToken;
+  attestation?: AttestationLineData | null;
+}) {
   const hasLockRecord =
     t.lock.amount !== "--" &&
     t.lock.amount !== "0" &&
@@ -175,6 +182,11 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
               {t.mintAddress && (
                 <div className="callout-success !inline-flex">
                   &#10003; lock verified on-chain &middot; streamflow #{t.mintAddress.slice(0, 4)}&hellip;{t.mintAddress.slice(-4)}
+                </div>
+              )}
+              {attestation && (
+                <div>
+                  <AttestationLine {...attestation} />
                 </div>
               )}
             </>

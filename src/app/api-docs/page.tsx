@@ -12,6 +12,7 @@ const API_SECTIONS: TocSection[] = [
   { id: "developer", label: "GET /dev/:username" },
   { id: "dex", label: "POST /verify-dex" },
   { id: "launch", label: "POST /launch" },
+  { id: "attestations", label: "Verify without trusting LCKD" },
   { id: "errors", label: "Errors and limits" },
 ];
 
@@ -241,6 +242,66 @@ Cookie: <authenticated session>
               Closing the deactivated lookup table after cooldown requires one later wallet approval
               and returns its rent to the wallet.
             </div>
+          </section>
+
+          <section className="space-y-5">
+            <SectionHeading id="attestations">Verify without trusting LCKD</SectionHeading>
+            <Prose>
+              LCKD issues an on-chain Solana Attestation Service credential when a token reaches
+              a trust tier. Anyone can verify a tier permissionlessly from any RPC. Schema and
+              credential names are not trust anchors: anyone can create a lookalike. Pin the SAS
+              program id, LCKD&rsquo;s exact credential PDA, the exact schema PDA and version, and
+              the serialized layout, then check expiry and that the payload mint matches the
+              token you are evaluating.
+            </Prose>
+            <Prose>
+              SAS program id{" "}
+              <code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">
+                22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG
+              </code>
+              . The credential PDA and schema PDA are published in the trust API response and
+              are identical for every LCKD token on a given cluster.
+            </Prose>
+            <CodeBlock
+              lang="ts"
+              code={`import { fetchMaybeSchema, fetchMaybeAttestation, deriveAttestationPda, deserializeAttestationData } from "sas-lib";
+import { createSolanaClient, address } from "gill";
+
+// Pin these to LCKD's published values for the cluster you trust.
+const SAS_PROGRAM = "22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG";
+const CREDENTIAL = address("<LCKD_CREDENTIAL_PDA>");
+const SCHEMA = address("<LCKD_SCHEMA_PDA>");
+const LAYOUT = [12, 12, 12, 0, 1, 3, 0, 12]; // lckd-trust-v1
+
+const { rpc } = createSolanaClient({ urlOrMoniker: "mainnet" });
+
+async function verifyTier(mint: string) {
+  const schema = await fetchMaybeSchema(rpc, SCHEMA);
+  if (!schema.exists) return null;
+  if (schema.programAddress !== SAS_PROGRAM) return null;      // wrong program
+  if (schema.data.credential !== CREDENTIAL) return null;      // wrong credential
+  if (schema.data.version !== 1) return null;                  // wrong version
+  if (schema.data.layout.length !== LAYOUT.length) return null;
+  if (LAYOUT.some((v, i) => schema.data.layout[i] !== v)) return null; // wrong layout
+
+  const [pda] = await deriveAttestationPda({ credential: CREDENTIAL, schema: SCHEMA, nonce: address(mint) });
+  const att = await fetchMaybeAttestation(rpc, pda);
+  if (!att.exists || att.programAddress !== SAS_PROGRAM) return null;
+  if (att.data.credential !== CREDENTIAL || att.data.schema !== SCHEMA) return null;
+  if (att.data.nonce !== address(mint)) return null;           // wrong mint
+  if (BigInt(Math.floor(Date.now() / 1000)) >= att.data.expiry) return null; // expired
+
+  const data = deserializeAttestationData(schema.data, att.data.data);
+  if (data.mint !== mint) return null;                         // payload mint mismatch
+  return data; // { mint, creator, stream_id, tier, lock_bps, cliff_ts, policy_version, github }
+}`}
+            />
+            <Prose>
+              A returned object is a proof: the tier, the locked share of supply in basis points,
+              and the cliff are bound to the mint, creator, and lock stream, so an attestation
+              cannot be misread across creators or reused across a creator&rsquo;s tokens. Expiry
+              equals the lock cliff, so the attestation dies exactly when the lock does.
+            </Prose>
           </section>
 
           <section className="space-y-5">
