@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assertJobClusterMatches, signatureHasLanded } from "./worker";
+import { assertJobClusterMatches, classifyReconcileState, signatureHasLanded } from "./worker";
 import { SasIssuerError, type SignatureState } from "./issuer";
 
 // Finding 2b: a signature is treated as landed ONLY at finalized commitment.
@@ -19,6 +19,23 @@ test("every non-finalized signature state keeps waiting", () => {
   for (const state of nonLanded) {
     assert.equal(signatureHasLanded(state), false, `${state} must not count as landed`);
   }
+});
+
+// Finding 2b decision map: finalized lands, confirmed WAITS (never re-drives a
+// landed effect), failed/unknown re-drive from live chain state.
+test("classifyReconcileState maps finalized to land", () => {
+  assert.equal(classifyReconcileState("finalized"), "land");
+});
+
+test("classifyReconcileState maps confirmed to wait, not land or reprocess", () => {
+  // The crux of finding 2b: a confirmed (not yet finalized) signature must neither
+  // advance nor re-drive. It waits for finalization.
+  assert.equal(classifyReconcileState("confirmed"), "wait");
+});
+
+test("classifyReconcileState maps never-landed states to reprocess", () => {
+  assert.equal(classifyReconcileState("failed"), "reprocess");
+  assert.equal(classifyReconcileState("unknown"), "reprocess");
 });
 
 // Finding 12: a job whose cluster differs from the worker's pinned cluster must

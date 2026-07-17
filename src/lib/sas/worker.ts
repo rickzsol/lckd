@@ -45,6 +45,11 @@ import { SCHEMA_VERSION, type TrustTierValue } from "./schema";
  * and reconciliation) followed by a create phase (its own persisted signature and
  * completion). A single close+create transaction was deliberately avoided: an
  * ambiguous send cannot be reconciled by a single signature.
+ *
+ * A persisted signature is treated as landed ONLY at FINALIZED commitment. A
+ * confirmed-but-not-finalized signature waits (backs off and re-reconciles the same
+ * signature) rather than advancing or re-driving, so a fork rollback can never leave
+ * a recorded generation or an advanced reissue phase on a reverted transaction.
  */
 
 export interface WorkerResult {
@@ -54,6 +59,8 @@ export interface WorkerResult {
   /** Reissue close phase done; the create phase runs on a later claim. */
   advanced: number;
   skipped: number;
+  /** Signature landed but not yet finalized; backed off to reconcile later. */
+  waiting: number;
   failed: number;
   deadLettered: number;
 }
@@ -67,6 +74,23 @@ export interface WorkerResult {
  */
 export function signatureHasLanded(state: SignatureState): boolean {
   return state === "finalized";
+}
+
+/**
+ * How a persisted signature's on-chain state maps to the reconcile decision:
+ *   * finalized -> "land":     irreversible; record/advance from it.
+ *   * confirmed -> "wait":     landed but not final; back off and re-reconcile the
+ *                              SAME signature later. NEVER re-drive (that resends a
+ *                              landed effect and can double-issue / double-close).
+ *   * failed / unknown -> "reprocess": never landed; re-drive from live chain state
+ *                              (idempotent: an already-present account is a skip).
+ */
+export type ReconcileDecision = "land" | "wait" | "reprocess";
+
+export function classifyReconcileState(state: SignatureState): ReconcileDecision {
+  if (state === "finalized") return "land";
+  if (state === "confirmed") return "wait";
+  return "reprocess";
 }
 
 /**
@@ -152,25 +176,30 @@ function expiryIso(cliffTs: bigint): string {
  *
  * Two shapes exist:
  *   * A reissue whose CLOSE phase persisted only pending_close_signature (create
- *     not yet started): reconcile the close and, if it landed, advance the job to
- *     its create phase. The create runs as its own later claim.
+ *     not yet started): reconcile the close and, if it FINALIZED, advance the job
+ *     to its create phase. The create runs as its own later claim.
  *   * A create (issue/reissue create phase) or a pure close whose
- *     pending_signature is set: complete/close from that signature.
+ *     pending_signature is set: complete/close from that FINALIZED signature.
  *
- * A confirmed-or-finalized signature means the effect landed; a failed or
- * never-landed signature returns "reprocess" so the caller re-drives afresh.
+ * Only a FINALIZED signature is landed. A 'confirmed' signature has landed but is
+ * not yet irreversible, so we neither advance nor re-drive: return "wait" and the
+ * caller backs the job off WITHOUT resending, retaining the persisted signature so
+ * a later claim reconciles the SAME signature once it finalizes. A failed or
+ * never-landed signature returns "reprocess" so the caller re-drives from live
+ * chain state (idempotently: an already-present account resolves to a skip).
  */
 async function reconcilePendingJob(
   ctx: AttestationContext,
   job: OutboxJob,
-): Promise<"reconciled" | "advanced" | "reprocess"> {
+): Promise<"reconciled" | "advanced" | "reprocess" | "wait"> {
   // Reissue close phase in flight: only the close signature is persisted.
   if (!job.pending_signature && job.operation === "reissue" && job.pending_close_signature) {
     const closeSig = job.pending_close_signature;
-    const state = await reconcileSignature(ctx, closeSig);
-    // Only advance the reissue to its create phase once the close is FINALIZED. A
-    // 'confirmed' close is not yet irreversible: keep waiting.
-    if (!signatureHasLanded(state)) return "reprocess";
+    const decision = classifyReconcileState(await reconcileSignature(ctx, closeSig));
+    // A confirmed-but-not-finalized close waits (never re-drive a landed close: it
+    // would double-close and dead-letter). Only a genuinely un-landed close re-drives.
+    if (decision === "wait") return "wait";
+    if (decision === "reprocess") return "reprocess";
     const pda = (await buildCloseInstruction(ctx, job.mint)).attestationPda;
     await advanceReissueToCreate({
       id: job.id,
@@ -186,13 +215,12 @@ async function reconcilePendingJob(
 
   const signature = job.pending_signature;
   if (!signature) return "reprocess";
-  const state = await reconcileSignature(ctx, signature);
-  // Landed only at FINALIZED. A 'confirmed' (not yet finalized), failed, or
-  // never-landed signature all keep waiting / re-drive rather than record a
-  // generation on a transaction a fork could still roll back.
-  if (!signatureHasLanded(state)) {
-    return "reprocess";
-  }
+  const decision = classifyReconcileState(await reconcileSignature(ctx, signature));
+  // Landed only at FINALIZED. A 'confirmed' (landed, not yet finalized) waits so a
+  // fork rollback can never leave a recorded generation on a reverted tx; a failed
+  // or never-landed signature re-drives from live chain state.
+  if (decision === "wait") return "wait";
+  if (decision === "reprocess") return "reprocess";
 
   // The landed transaction is a CREATE (issue / reissue create phase) or a pure
   // close. A reissue whose create landed carries operation 'issue' by now (the
@@ -258,7 +286,7 @@ async function broadcastFenced(
   return signature;
 }
 
-type ProcessOutcome = "completed" | "reconciled" | "advanced" | "skipped";
+type ProcessOutcome = "completed" | "reconciled" | "advanced" | "skipped" | "waiting";
 
 async function processJob(
   ctx: AttestationContext,
@@ -285,6 +313,11 @@ async function processJob(
     const outcome = await reconcilePendingJob(ctx, job);
     if (outcome === "reconciled") return "reconciled";
     if (outcome === "advanced") return "advanced";
+    // The signature landed but is not yet finalized: back off and reconcile the
+    // SAME signature on a later claim. Do NOT fall through to re-drive, which would
+    // resend a landed effect. failAttestationJob (retryable) retains the persisted
+    // signature and sets a backoff, so the next claim reconciles it again.
+    if (outcome === "wait") return "waiting";
   }
 
   const evidence = await evidenceForJob(job);
@@ -411,6 +444,7 @@ export async function runOutboxWorker(maxJobs = 5): Promise<WorkerResult> {
     reconciled: 0,
     advanced: 0,
     skipped: 0,
+    waiting: 0,
     failed: 0,
     deadLettered: 0,
   };
@@ -426,7 +460,17 @@ export async function runOutboxWorker(maxJobs = 5): Promise<WorkerResult> {
       if (outcome === "reconciled") result.reconciled++;
       else if (outcome === "advanced") result.advanced++;
       else if (outcome === "skipped") result.skipped++;
-      else result.completed++;
+      else if (outcome === "waiting") {
+        // Landed-but-not-finalized: back off (retryable) so a later claim
+        // reconciles the SAME persisted signature. Not a failure of the job.
+        result.waiting++;
+        await failAttestationJob(
+          job.id,
+          job.lease_token as string,
+          "Signature confirmed but not finalized; awaiting finalization",
+          false,
+        );
+      } else result.completed++;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown worker error";
       const permanent = error instanceof SasIssuerError && !error.retryable;
