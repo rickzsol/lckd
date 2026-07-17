@@ -9,11 +9,13 @@ import { fetchApprovedMetadata } from "@/lib/api/finalizedMetadata";
 import { isValidSolanaAddress } from "@/lib/api/validation";
 import {
   AtomicLaunchRecoveryError,
+  getOwnedAtomicLaunchIntent,
   prepareAtomicLaunchIntent,
 } from "@/lib/api/atomicLaunchRecovery";
 import {
   buildAtomicLookupPreparation,
   freezeAtomicLaunchConfig,
+  rebuildIssuedAtomicLookupPreparation,
 } from "@/lib/solana/atomicLaunchBuilder.server";
 
 export { OPTIONS };
@@ -80,13 +82,14 @@ export async function POST(request: NextRequest) {
     const mintPublicKey = new PublicKey(body.mintPublicKey);
     const metadataPublicKey = new PublicKey(body.metadataPublicKey);
     const frozenConfig = freezeAtomicLaunchConfig(body);
-    const setup = await buildAtomicLookupPreparation({
+    const identity = {
       walletPublicKey,
       mintPublicKey,
       metadataPublicKey,
       metadataUri: body.metadataUri,
       config: frozenConfig,
-    });
+    };
+    const setup = await buildAtomicLookupPreparation(identity);
     const config = {
       name: body.name,
       ticker: body.ticker,
@@ -127,21 +130,38 @@ export async function POST(request: NextRequest) {
       expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
     });
 
+    let responseSetup = setup;
+    if (intent.replayed) {
+      const persisted = await getOwnedAtomicLaunchIntent({
+        githubId: session.github_id,
+        creatorWallet: session.wallet_address,
+        mintAddress: body.mintPublicKey,
+      });
+      if (!persisted) {
+        throw new AtomicLaunchRecoveryError("Replayed launch state was not found", 409);
+      }
+      responseSetup = rebuildIssuedAtomicLookupPreparation(walletPublicKey, setup, {
+        messageHash: persisted.issuedSetupMessageHash,
+        blockhash: persisted.issuedSetupBlockhash,
+        lastValidBlockHeight: persisted.issuedSetupLastValidBlockHeight,
+      });
+    }
+
     return apiResponse({
-      transaction: Buffer.from(setup.transaction).toString("base64"),
+      transaction: Buffer.from(responseSetup.transaction).toString("base64"),
       mintPublicKey: body.mintPublicKey,
       metadataPublicKey: body.metadataPublicKey,
-      lookupTableAddress: setup.lookupTableAddress.toBase58(),
-      lookupAddresses: setup.addresses.map((address) => address.toBase58()),
-      lookupAddressesHash: setup.addressHash,
-      recentSlot: setup.recentSlot,
-      blockhash: setup.blockhash,
-      lastValidBlockHeight: setup.lastValidBlockHeight,
-      quotedTokenAmount: setup.quotedTokenAmount,
-      maxQuoteAmount: setup.maxQuoteAmount,
-      lockAmount: setup.lockAmount,
-      unlockTimestamp: setup.unlockTimestamp,
-      streamflowFeePercent: setup.streamflowFeePercent,
+      lookupTableAddress: responseSetup.lookupTableAddress.toBase58(),
+      lookupAddresses: responseSetup.addresses.map((address) => address.toBase58()),
+      lookupAddressesHash: responseSetup.addressHash,
+      recentSlot: responseSetup.recentSlot,
+      blockhash: responseSetup.blockhash,
+      lastValidBlockHeight: responseSetup.lastValidBlockHeight,
+      quotedTokenAmount: responseSetup.quotedTokenAmount,
+      maxQuoteAmount: responseSetup.maxQuoteAmount,
+      lockAmount: responseSetup.lockAmount,
+      unlockTimestamp: responseSetup.unlockTimestamp,
+      streamflowFeePercent: responseSetup.streamflowFeePercent,
       status: intent.status,
       stateVersion: intent.stateVersion,
       altStatus: intent.altStatus,

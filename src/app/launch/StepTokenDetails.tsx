@@ -34,10 +34,10 @@ export default function StepTokenDetails({ w }: { w: WizardContext }) {
             }}
           />
 
-          {w.imagePreview ? (
+          {w.imagePreview ?? w.config.imageUri ? (
             <div className="group relative inline-block">
               <Image
-                src={w.imagePreview}
+                src={w.imagePreview ?? w.config.imageUri!}
                 alt="Token preview"
                 width={90}
                 height={90}

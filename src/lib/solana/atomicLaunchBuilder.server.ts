@@ -98,6 +98,12 @@ export interface AtomicLookupPreparationBundle extends LookupTablePreparation {
   messageHash: string;
 }
 
+export interface IssuedLookupPreparation {
+  messageHash: string;
+  blockhash: string;
+  lastValidBlockHeight: number;
+}
+
 export interface AtomicLaunchBundle {
   txBytes: Uint8Array;
   blockhash: string;
@@ -391,6 +397,34 @@ export async function buildAtomicLookupPreparation(
     unlockTimestamp: plan.unlockTimestamp,
     streamflowFeePercent: plan.streamflowFeePercent,
     messageHash: hashAtomicTransactionMessage(preparation.transaction),
+  });
+}
+
+export function rebuildIssuedAtomicLookupPreparation(
+  walletPublicKey: PublicKey,
+  fresh: AtomicLookupPreparationBundle,
+  issued: IssuedLookupPreparation,
+): AtomicLookupPreparationBundle {
+  const preparation = buildLookupTablePreparation({
+    authority: walletPublicKey,
+    payer: walletPublicKey,
+    addresses: fresh.addresses,
+    recentSlot: fresh.recentSlot,
+    blockhash: issued.blockhash,
+    lastValidBlockHeight: issued.lastValidBlockHeight,
+  });
+  const messageHash = hashAtomicTransactionMessage(preparation.transaction);
+  if (
+    messageHash !== issued.messageHash ||
+    !preparation.lookupTableAddress.equals(fresh.lookupTableAddress) ||
+    preparation.addressHash !== fresh.addressHash
+  ) {
+    throw new Error("Replayed atomic setup does not match server issuance");
+  }
+  return Object.freeze({
+    ...fresh,
+    ...preparation,
+    messageHash,
   });
 }
 

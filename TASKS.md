@@ -13,6 +13,7 @@
 - [x] Configure production Vercel Supabase, Helius, Pinata, GitHub OAuth, NextAuth, origin, and mainnet settings.
 - [x] Pass tests, typecheck, lint, production build, database lint/advisors, source secret scan, and independent review.
 - [x] Restore the reviewed atomic deployment after the dirty non-ALT CLI artifact caused deterministic transaction serialization failures.
+- [x] Make ALT setup retries byte-identical to server issuance and preserve uploaded token metadata through recovery cleanup.
 - [ ] Run a disposable-wallet mainnet launch after explicit approval of a SOL spending cap.
 - [ ] Add the LCKD contract address after the manual token launch and finalized receipt review.
 - [ ] Monitor upstream remediation for the transitive `bigint-buffer` advisory.

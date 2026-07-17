@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Connection,
   Keypair,
@@ -22,6 +22,13 @@ import {
   validateLookupSetupTransaction,
 } from "@/lib/solana";
 import { validateLookupCleanupTransaction } from "@/lib/solana/atomicLookupCleanup";
+import {
+  metadataDraftMatchesConfig,
+  parseLaunchMetadataDraft,
+  readLaunchMetadataDraft,
+  writeLaunchMetadataDraft,
+  type LaunchMetadataDraft,
+} from "@/lib/launchMetadataDraft";
 
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const STORAGE_KEY = "lckd_launch_wizard";
@@ -254,6 +261,10 @@ export function useTokenLaunch(config: LaunchConfig) {
   const [, setRecoveryAltStateVersion] = useState<number | null>(null);
   const [recoveryStatus, setRecoveryStatus] = useState<string | null>(null);
   const [recoveryAltStatus, setRecoveryAltStatus] = useState<string | null>(null);
+  const [metadataDraft, setMetadataDraft] = useState<LaunchMetadataDraft | null>(
+    readLaunchMetadataDraft,
+  );
+  const isLaunchInFlight = useRef(false);
 
   const applyRecoveryState = useCallback((state: AtomicState) => {
     setRecoveryStateVersion(state.stateVersion);
@@ -270,15 +281,23 @@ export function useTokenLaunch(config: LaunchConfig) {
       altStatus: string;
       altStateVersion: number;
       config: RecoveredLaunchConfig;
+      metadata: LaunchMetadataDraft;
       imageUri: string;
       launchResult: LaunchResult;
     } }>("/api/v1/launch/recovery", { cache: "no-store" })
       .then(async ({ intent }) => {
         if (isCancelled || !intent) return;
         applyRecoveryState(intent);
+        const recoveredMetadata = parseLaunchMetadataDraft(intent.metadata);
+        if (recoveredMetadata) {
+          setMetadataDraft(recoveredMetadata);
+          writeLaunchMetadataDraft(recoveredMetadata);
+        }
         setRecoveredConfig({ ...intent.config, imageUri: intent.imageUri });
         setLaunchResult(intent.launchResult);
         if (intent.status === "completed") {
+          setMetadataDraft(null);
+          writeLaunchMetadataDraft(null);
           setLaunchStatus("success");
           return;
         }
@@ -328,6 +347,8 @@ export function useTokenLaunch(config: LaunchConfig) {
   }, [applyRecoveryState]);
 
   const launch = useCallback(async ({ publicKey, signTransaction, connection }: LaunchDeps) => {
+    if (isLaunchInFlight.current) return;
+    isLaunchInFlight.current = true;
     setLaunchStatus("launching");
     setLaunchPhase(0);
     setErrorMessage(null);
@@ -342,22 +363,35 @@ export function useTokenLaunch(config: LaunchConfig) {
       if (walletSol < requiredSol) {
         throw new Error(`Insufficient SOL. You have ${walletSol.toFixed(4)} SOL but need ~${requiredSol.toFixed(4)} SOL.`);
       }
-      if (!config.image) throw new Error("Token image is required");
-
-      const metadataForm = new FormData();
-      metadataForm.append("file", config.image);
-      metadataForm.append("name", config.name);
-      metadataForm.append("symbol", config.ticker);
-      metadataForm.append("description", config.description);
-      if (config.twitterUrl) metadataForm.append("twitter", config.twitterUrl);
-      if (config.telegramUrl) metadataForm.append("telegram", config.telegramUrl);
-      if (config.websiteUrl) metadataForm.append("website", config.websiteUrl);
-      const uploaded = await requestJson<{ metadataUri: string; imageUri: string }>(
-        "/api/v1/metadata/upload",
-        { method: "POST", body: metadataForm },
-      );
-      if (typeof uploaded.metadataUri !== "string" || typeof uploaded.imageUri !== "string") {
-        throw new Error("Metadata upload returned an invalid response");
+      let uploaded = !config.image && metadataDraft && metadataDraftMatchesConfig(metadataDraft, config)
+        ? metadataDraft
+        : null;
+      if (!uploaded) {
+        if (!config.image) throw new Error("Token image is required");
+        const metadataForm = new FormData();
+        metadataForm.append("file", config.image);
+        metadataForm.append("name", config.name);
+        metadataForm.append("symbol", config.ticker);
+        metadataForm.append("description", config.description);
+        if (config.twitterUrl) metadataForm.append("twitter", config.twitterUrl);
+        if (config.telegramUrl) metadataForm.append("telegram", config.telegramUrl);
+        if (config.websiteUrl) metadataForm.append("website", config.websiteUrl);
+        const result = await requestJson<{ metadataUri: string; imageUri: string }>(
+          "/api/v1/metadata/upload",
+          { method: "POST", body: metadataForm },
+        );
+        uploaded = parseLaunchMetadataDraft({
+          ...result,
+          name: config.name,
+          ticker: config.ticker,
+          description: config.description,
+          twitterUrl: config.twitterUrl,
+          telegramUrl: config.telegramUrl,
+          websiteUrl: config.websiteUrl,
+        });
+        if (!uploaded) throw new Error("Metadata upload returned an invalid response");
+        setMetadataDraft(uploaded);
+        writeLaunchMetadataDraft(uploaded);
       }
 
       setLaunchPhase(1);
@@ -563,6 +597,8 @@ export function useTokenLaunch(config: LaunchConfig) {
       );
       applyRecoveryState(completed);
       setLaunchStatus("success");
+      setMetadataDraft(null);
+      writeLaunchMetadataDraft(null);
       sessionStorage.removeItem(STORAGE_KEY);
     } catch (error) {
       console.error("[launch] Error:", error);
@@ -596,8 +632,10 @@ export function useTokenLaunch(config: LaunchConfig) {
         setLaunchStatus("error");
         setErrorMessage(message);
       }
+    } finally {
+      isLaunchInFlight.current = false;
     }
-  }, [applyRecoveryState, config]);
+  }, [applyRecoveryState, config, metadataDraft]);
 
   const cleanupLookup = useCallback(async ({
     publicKey,
@@ -706,7 +744,6 @@ export function useTokenLaunch(config: LaunchConfig) {
           setRecoveryAltStateVersion(null);
           setRecoveryStatus(null);
           setRecoveryAltStatus(null);
-          sessionStorage.removeItem(STORAGE_KEY);
         }
       } catch (error) {
         setLaunchStatus("partial");
@@ -751,6 +788,8 @@ export function useTokenLaunch(config: LaunchConfig) {
       );
       applyRecoveryState(completed);
       setLaunchStatus("success");
+      setMetadataDraft(null);
+      writeLaunchMetadataDraft(null);
       sessionStorage.removeItem(STORAGE_KEY);
     } catch (error) {
       setLaunchStatus("partial");
@@ -794,6 +833,8 @@ export function useTokenLaunch(config: LaunchConfig) {
     setRecoveryAltStateVersion(null);
     setRecoveryStatus(null);
     setRecoveryAltStatus(null);
+    setMetadataDraft(null);
+    writeLaunchMetadataDraft(null);
     return true;
   }, [applyRecoveryState, launchResult, launchStatus, recoveryStateVersion]);
 

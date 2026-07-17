@@ -13,7 +13,9 @@ import {
   buildAtomicLaunchInstructions,
   calculateAtomicUnlockTimestamp,
   freezeAtomicLaunchConfig,
+  hashAtomicTransactionMessage,
   LOCK_SUBMISSION_BUFFER_SECONDS,
+  rebuildIssuedAtomicLookupPreparation,
   validateAtomicLaunchTransaction,
 } from "./atomicLaunchBuilder.server";
 import { buildLookupTablePreparation, canonicalLookupAddresses } from "./lookupTable";
@@ -186,4 +188,44 @@ test("buffers the unlock time so finalized duration does not floor one day short
     Math.floor((unlockTimestamp - finalizedBlockTime) / 86_400),
     requestedDays,
   );
+});
+
+test("rebuilds the exact persisted setup transaction on an API replay", async () => {
+  const fixture = await buildFixture();
+  const originalBlockhash = seededKeypair(6).publicKey.toBase58();
+  const freshBlockhash = seededKeypair(7).publicKey.toBase58();
+  const original = buildLookupTablePreparation({
+    authority: fixture.wallet,
+    payer: fixture.wallet,
+    addresses: fixture.lookupAddresses,
+    recentSlot: 100,
+    blockhash: originalBlockhash,
+    lastValidBlockHeight: 200,
+  });
+  const freshPreparation = buildLookupTablePreparation({
+    authority: fixture.wallet,
+    payer: fixture.wallet,
+    addresses: fixture.lookupAddresses,
+    recentSlot: 100,
+    blockhash: freshBlockhash,
+    lastValidBlockHeight: 201,
+  });
+  const fresh = {
+    ...freshPreparation,
+    quotedTokenAmount: fixture.plan.quotedTokenAmount.toString(),
+    maxQuoteAmount: fixture.plan.maxQuoteAmount.toString(),
+    lockAmount: fixture.plan.lockAmount.toString(),
+    unlockTimestamp: fixture.plan.unlockTimestamp,
+    streamflowFeePercent: fixture.plan.streamflowFeePercent,
+    messageHash: hashAtomicTransactionMessage(freshPreparation.transaction),
+  };
+  const replay = rebuildIssuedAtomicLookupPreparation(fixture.wallet, fresh, {
+    messageHash: hashAtomicTransactionMessage(original.transaction),
+    blockhash: originalBlockhash,
+    lastValidBlockHeight: 200,
+  });
+
+  assert.deepEqual(replay.transaction, original.transaction);
+  assert.equal(replay.blockhash, originalBlockhash);
+  assert.equal(replay.lastValidBlockHeight, 200);
 });

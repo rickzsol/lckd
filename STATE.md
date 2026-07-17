@@ -6,6 +6,8 @@ Updated: 2026-07-17
 
 Production release approved after independent security review and deployed at `https://lckd.tech` from commit `b0c216e` as Vercel deployment `dpl_31qvzg5rQKXHSfazajBFRNVgdDdB`. Production Supabase is migrated through `007_atomic_cleanup_races.sql`, required Vercel environment variables are configured, and the atomic launch path is live. No transaction has been signed or sent.
 
+The launch retry hotfix reconstructs the exact persisted ALT setup transaction on an idempotent API replay, retains recovered IPFS metadata and its image through cleanup, invalidates stale image metadata after edits, and prevents concurrent launch calls. The server still enforces the immutable issued message hash, blockhash, signer vector, and signature checks.
+
 On 2026-07-17, a dirty CLI deployment from `a142b1f` temporarily replaced production, removed the atomic route, and failed every Pump V2 launch because its non-ALT message exceeded Solana's transaction size limit. The reviewed atomic deployment was restored and its route, client bundle, and production alias were verified.
 
 ## Launch invariants
@@ -27,7 +29,7 @@ On 2026-07-17, a dirty CLI deployment from `a142b1f` temporarily replaced produc
 
 ## Verification
 
-- 62 tests passed.
+- 65 tests passed.
 - TypeScript, ESLint, production build, and `git diff --check` passed.
 - Independent atomic SQL, recovery, on-chain receipt, UI lifecycle, and deployment reviews passed.
 - Production and staging aggregate RPC checks passed; anonymous atomic mutations are denied.

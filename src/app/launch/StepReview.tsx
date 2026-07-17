@@ -45,9 +45,9 @@ function ReviewForm({ w }: { w: WizardContext }) {
           Token
         </div>
         <div className="flex items-center gap-3">
-          {w.imagePreview && (
+          {(w.imagePreview ?? w.config.imageUri) && (
             <Image
-              src={w.imagePreview}
+              src={w.imagePreview ?? w.config.imageUri!}
               alt={`${w.config.name} token preview`}
               width={40}
               height={40}
