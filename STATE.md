@@ -4,7 +4,9 @@ Updated: 2026-07-17
 
 ## Status
 
-Production release approved after independent security review and deployed at `https://lckd.tech` from commit `b125e42`. Production Supabase is migrated through `007_atomic_cleanup_races.sql`, required Vercel environment variables are configured, and the atomic launch path is live. No transaction has been signed or sent.
+Production release approved after independent security review and deployed at `https://lckd.tech` from commit `b0c216e` as Vercel deployment `dpl_31qvzg5rQKXHSfazajBFRNVgdDdB`. Production Supabase is migrated through `007_atomic_cleanup_races.sql`, required Vercel environment variables are configured, and the atomic launch path is live. No transaction has been signed or sent.
+
+On 2026-07-17, a dirty CLI deployment from `a142b1f` temporarily replaced production, removed the atomic route, and failed every Pump V2 launch because its non-ALT message exceeded Solana's transaction size limit. The reviewed atomic deployment was restored and its route, client bundle, and production alias were verified.
 
 ## Launch invariants
 
