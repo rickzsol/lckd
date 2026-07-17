@@ -57,6 +57,9 @@ sigs*.json
 *tx_debug*.json
 /public/Untitled*.png
 
+# local Supabase CLI state
+/supabase/.temp/
+
 .vercel
 
 .design-handoff/

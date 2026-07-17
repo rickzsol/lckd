@@ -5,12 +5,20 @@ import Link from "next/link";
 import Badge from "@/components/ui/Badge";
 import TokenImage from "@/components/ui/TokenImage";
 import Bar from "@/components/ui/Bar";
+import PendingLaunchCard from "@/components/token/PendingLaunchCard";
 import type { DisplayToken } from "@/types/display";
+import type { PendingManualLaunch } from "@/lib/pendingLaunches";
 
 
 type Filter = "all" | "builders" | "shipped";
 
-export default function FeedClient({ tokens }: { tokens: DisplayToken[] }) {
+export default function FeedClient({
+  tokens,
+  pendingLaunches,
+}: {
+  tokens: DisplayToken[];
+  pendingLaunches: readonly PendingManualLaunch[];
+}) {
   const [filter, setFilter] = useState<Filter>("all");
 
   const list = tokens.filter((t) =>
@@ -54,6 +62,27 @@ export default function FeedClient({ tokens }: { tokens: DisplayToken[] }) {
         </div>
       </div>
 
+      {filter === "all" && pendingLaunches.length > 0 && (
+        <section className="mb-6" aria-labelledby="pending-launches-heading">
+          <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
+            <h2
+              id="pending-launches-heading"
+              className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-text-2"
+            >
+              Pending launches
+            </h2>
+            <span className="font-mono text-[10px] text-text-3">
+              Not included in verified platform totals
+            </span>
+          </div>
+          <div className="flex flex-col gap-2.5">
+            {pendingLaunches.map((launch) => (
+              <PendingLaunchCard key={launch.id} launch={launch} />
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Empty state */}
       {list.length === 0 && (
         <div className="flex flex-col items-center py-16">
@@ -63,7 +92,7 @@ export default function FeedClient({ tokens }: { tokens: DisplayToken[] }) {
           {tokens.length === 0 ? (
             <>
               <p className="mt-3 font-mono text-sm text-text-3">
-                No launch records are available.
+                No verified launch records are available.
               </p>
               <Link
                 href="/launch"

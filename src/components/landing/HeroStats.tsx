@@ -4,19 +4,21 @@ import { useEffect, useState } from "react";
 import CountUp from "@/components/ui/CountUp";
 
 interface StatsResponse {
-  launched: number;
-  totalLocked: number;
-  devsVerified: number;
-  buildingNow: number;
+  launched: number | null;
+  totalLockedTokens: number | null;
+  devsVerified: number | null;
+  buildingNow: number | null;
+  asOf: string | null;
   available: boolean;
 }
 
-const FALLBACK: StatsResponse = {
-  launched: 128,
-  totalLocked: 4_200_000,
-  devsVerified: 96,
-  buildingNow: 31,
-  available: true,
+const UNAVAILABLE_STATS: StatsResponse = {
+  launched: null,
+  totalLockedTokens: null,
+  devsVerified: null,
+  buildingNow: null,
+  asOf: null,
+  available: false,
 };
 
 function compactParts(n: number): { value: number; suffix: string } {
@@ -30,46 +32,68 @@ const LABEL_CLASS =
   "mt-[3px] font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3";
 const VALUE_CLASS = "font-mono text-[22px] font-bold tabular-nums text-text-1";
 
+function StatValue({ value }: { value: number | null }) {
+  return value === null ? "N/A" : <CountUp to={value} duration={1.4} />;
+}
+
+function CompactStatValue({ value }: { value: number | null }) {
+  if (value === null) return "N/A";
+  const compact = compactParts(value);
+  return (
+    <>
+      <CountUp to={compact.value} duration={1.4} />
+      {compact.suffix}
+    </>
+  );
+}
+
+function isAvailableStats(value: unknown): value is StatsResponse {
+  if (!value || typeof value !== "object") return false;
+  const stats = value as Partial<StatsResponse>;
+  return stats.available === true &&
+    typeof stats.launched === "number" &&
+    typeof stats.totalLockedTokens === "number" &&
+    typeof stats.devsVerified === "number" &&
+    typeof stats.buildingNow === "number" &&
+    typeof stats.asOf === "string";
+}
+
 export default function HeroStats() {
-  const [stats, setStats] = useState<StatsResponse>(FALLBACK);
+  const [stats, setStats] = useState<StatsResponse>(UNAVAILABLE_STATS);
 
   useEffect(() => {
     fetch("/api/v1/stats")
       .then((response) => (response.ok ? response.json() : null))
-      .then((data: StatsResponse | null) => {
-        if (data && data.available) setStats(data);
+      .then((data: unknown) => {
+        setStats(isAvailableStats(data) ? data : UNAVAILABLE_STATS);
       })
-      .catch(() => {
-        /* keep fallback values */
-      });
+      .catch(() => setStats(UNAVAILABLE_STATS));
   }, []);
 
   return (
     <div className="grid w-[min(100%,560px)] grid-cols-[repeat(auto-fit,minmax(118px,1fr))] gap-[clamp(14px,3vw,24px)]">
       <div className="text-center">
         <div className={VALUE_CLASS}>
-          <CountUp to={stats.launched} duration={1.4} />
+          <StatValue value={stats.launched} />
         </div>
         <div className={LABEL_CLASS}>launched</div>
       </div>
       <div className="text-center">
         <div className={`${VALUE_CLASS} text-accent-400`}>
-          {"$"}
-          <CountUp to={compactParts(stats.totalLocked).value} duration={1.4} />
-          {compactParts(stats.totalLocked).suffix}
+          <CompactStatValue value={stats.totalLockedTokens} />
         </div>
-        <div className={LABEL_CLASS}>total locked</div>
+        <div className={LABEL_CLASS}>tokens locked</div>
       </div>
       <div className="text-center">
         <div className={VALUE_CLASS}>
-          <CountUp to={stats.devsVerified} duration={1.4} />
+          <StatValue value={stats.devsVerified} />
         </div>
         <div className={LABEL_CLASS}>devs verified</div>
       </div>
       <div className="text-center">
         <div className="inline-flex items-center gap-[7px] font-mono text-[22px] font-bold tabular-nums text-text-1">
           <span className="pulse-dot h-[5px] w-[5px] rounded-full bg-accent shadow-[0_0_8px_rgba(43,209,126,0.6)]" />
-          <CountUp to={stats.buildingNow} duration={1.4} />
+          <StatValue value={stats.buildingNow} />
         </div>
         <div className={LABEL_CLASS}>building now</div>
       </div>

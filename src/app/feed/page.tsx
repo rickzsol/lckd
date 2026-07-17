@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getTokens } from "@/lib/queries";
+import { PENDING_MANUAL_LAUNCHES } from "@/lib/pendingLaunches";
 import FeedClient from "./FeedClient";
 
 export const metadata: Metadata = {
@@ -22,5 +23,5 @@ export const dynamic = "force-dynamic";
 export default async function FeedPage() {
   const tokens = await getTokens();
 
-  return <FeedClient tokens={tokens} />;
+  return <FeedClient tokens={tokens} pendingLaunches={PENDING_MANUAL_LAUNCHES} />;
 }

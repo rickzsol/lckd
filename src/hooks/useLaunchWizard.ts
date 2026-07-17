@@ -26,7 +26,7 @@ const INITIAL_CONFIG: LaunchConfig = {
   imageUri: null,
   buyAmountSol: 1,
   lockDurationDays: 90,
-  lockPercentage: 100,
+  lockPercentage: 99,
   githubUsername: null,
   githubRepo: null,
   liveUrl: null,
@@ -55,6 +55,7 @@ function loadSavedState(): { config: LaunchConfig; step: number } {
         ? {
             ...INITIAL_CONFIG,
             ...parsed.config,
+            lockPercentage: Math.min(Number(parsed.config.lockPercentage ?? 99), 99),
             image: null,
           }
         : INITIAL_CONFIG,
@@ -83,6 +84,9 @@ export function useLaunchWizard() {
     errorMessage,
     launch,
     retryLock,
+    cleanupLookup,
+    recoveryStatus,
+    recoveryAltStatus,
     resetLaunch,
   } = useTokenLaunch(config);
 
@@ -265,6 +269,9 @@ export function useLaunchWizard() {
     goToStep,
     launch,
     retryLock,
+    cleanupLookup,
+    recoveryStatus,
+    recoveryAltStatus,
     reset,
   };
 }

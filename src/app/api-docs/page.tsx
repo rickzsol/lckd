@@ -205,10 +205,10 @@ export default function ApiDocsPage() {
           <section className="space-y-5">
             <SectionHeading id="launch"><Method>POST</Method>/launch</SectionHeading>
             <Prose>
-              This authenticated endpoint validates launch input and returns a serialized
-              pump.fun create-and-buy transaction. The browser generates the mint keypair and
-              supplies its public key. The endpoint does not return a private key and does not
-              build the Streamflow lock.
+              This authenticated endpoint validates launch input, freezes the reviewed economics,
+              and returns the wallet-authorized address lookup table setup transaction. The browser
+              generates the mint and Streamflow metadata keypairs. Private keys remain in browser
+              memory and are never sent to the server.
             </Prose>
             <CodeBlock lang="json" code={`POST /api/v1/launch
 Content-Type: application/json
@@ -217,23 +217,29 @@ Cookie: <authenticated session>
 {
   "walletPublicKey": "<wallet-public-key>",
   "mintPublicKey": "<client-generated-mint-public-key>",
+  "metadataPublicKey": "<client-generated-streamflow-metadata-public-key>",
   "metadataUri": "https://...",
   "name": "Example",
   "ticker": "EX",
   "description": "Example token",
   "buyAmountSol": 1,
   "lockDurationDays": 90,
-  "lockPercentage": 100
+  "lockPercentage": 99
 }`} />
             <CodeBlock lang="json" code={`{
-  "transaction": "<base64 transaction bytes>",
-  "mintPublicKey": "<client-generated-mint-public-key>"
+  "transaction": "<base64 lookup-table transaction>",
+  "mintPublicKey": "<client-generated-mint-public-key>",
+  "lookupTableAddress": "<derived-address>",
+  "quotedTokenAmount": "<reviewed-token-amount>",
+  "lockAmount": "<exact-streamflow-deposit>"
 }`} />
             <div className="error-box block text-[13px] leading-7">
-              The client must co-sign the create transaction with the locally generated mint
-              keypair and the connected wallet. After confirmation, the browser builds and
-              signs a separate Streamflow lock transaction. A lock failure does not roll back
-              the confirmed create transaction.
+              After the lookup table finalizes, <code>/api/v1/launch/atomic</code> returns one
+              versioned transaction that atomically creates the token, executes the exact reviewed
+              buy, deposits the selected amount into an immutable Streamflow cliff lock, and
+              deactivates the lookup table. Any instruction failure rolls back the entire launch.
+              Closing the deactivated lookup table after cooldown requires one later wallet approval
+              and returns its rent to the wallet.
             </div>
           </section>
 
