@@ -20,7 +20,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid code" }, { status: 401 });
   }
 
-  const expected = sha256Hex(process.env.LCKD_ACCESS_CODE ?? "nulllckd");
+  // Fail closed in production: the fallback code is public in this repo.
+  const accessCode =
+    process.env.LCKD_ACCESS_CODE ??
+    (process.env.NODE_ENV === "production" ? null : "nulllckd");
+  if (!accessCode) {
+    return NextResponse.json({ error: "invalid code" }, { status: 401 });
+  }
+
+  const expected = sha256Hex(accessCode);
   const provided = sha256Hex(code);
   const isValid = timingSafeEqual(Buffer.from(expected), Buffer.from(provided));
 

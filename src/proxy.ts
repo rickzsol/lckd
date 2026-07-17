@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const ACCESS_COOKIE = "lckd_access";
 
-let expectedHashPromise: Promise<string> | null = null;
+let expectedHashPromise: Promise<string | null> | null = null;
 
 async function sha256Hex(value: string): Promise<string> {
   const data = new TextEncoder().encode(value);
@@ -12,16 +12,23 @@ async function sha256Hex(value: string): Promise<string> {
     .join("");
 }
 
-function getExpectedHash(): Promise<string> {
+function getExpectedHash(): Promise<string | null> {
   if (!expectedHashPromise) {
-    expectedHashPromise = sha256Hex(process.env.LCKD_ACCESS_CODE ?? "nulllckd");
+    // Fail closed in production: the fallback code is public in this repo.
+    const accessCode =
+      process.env.LCKD_ACCESS_CODE ??
+      (process.env.NODE_ENV === "production" ? null : "nulllckd");
+    expectedHashPromise = accessCode
+      ? sha256Hex(accessCode)
+      : Promise.resolve(null);
   }
   return expectedHashPromise;
 }
 
 export async function proxy(request: NextRequest) {
   const cookie = request.cookies.get(ACCESS_COOKIE)?.value;
-  if (cookie && cookie === (await getExpectedHash())) {
+  const expectedHash = await getExpectedHash();
+  if (cookie && expectedHash && cookie === expectedHash) {
     return NextResponse.next();
   }
 

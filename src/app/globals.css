@@ -618,6 +618,9 @@
 }
 
 .footer-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
   color: var(--color-text-3);
   transition: color var(--duration-hover) ease;
 }

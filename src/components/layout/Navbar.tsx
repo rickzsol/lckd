@@ -82,7 +82,7 @@ export default function Navbar() {
               </svg>
             </a>
             <a
-              href="https://discord.gg/QNFe8zT5rt"
+              href="https://discord.gg/r7bCZ575Cb"
               target="_blank"
               rel="noopener noreferrer"
               className="focus-ring hidden h-11 items-center justify-center text-[#B8C2BC] transition-colors hover:text-text-1 lg:flex"
@@ -186,7 +186,7 @@ export default function Navbar() {
                 </svg>
               </a>
               <a
-                href="https://discord.gg/QNFe8zT5rt"
+                href="https://discord.gg/r7bCZ575Cb"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="focus-ring flex h-11 w-11 items-center justify-center text-[#B8C2BC] transition-colors hover:text-text-1"

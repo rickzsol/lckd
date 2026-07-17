@@ -4,7 +4,7 @@ export function SectionHeading({ id, children }: { id: string; children: ReactNo
   return (
     <h2
       id={id}
-      className="scroll-mt-24 font-sans text-2xl font-bold tracking-[-0.01em] text-text-1"
+      className="scroll-mt-36 font-sans text-2xl font-bold tracking-[-0.01em] text-text-1 lg:scroll-mt-24"
     >
       {children}
     </h2>
