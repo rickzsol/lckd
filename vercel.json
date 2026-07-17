@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/refresh-github",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/sas-outbox",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
