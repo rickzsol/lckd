@@ -15,9 +15,11 @@ type Filter = "all" | "builders" | "shipped";
 export default function FeedClient({
   tokens,
   pendingLaunches,
+  nextUnlockLabel,
 }: {
   tokens: DisplayToken[];
   pendingLaunches: readonly PendingManualLaunch[];
+  nextUnlockLabel?: string | null;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -39,6 +41,15 @@ export default function FeedClient({
           Platform records can be incomplete or stale. Profile labels are not audits. Verify
           mint addresses, market data, and lock contracts before relying on them.
         </p>
+        {nextUnlockLabel && (
+          <Link
+            href="/unlocks"
+            className="focus-ring mt-3 inline-flex items-center gap-1.5 font-mono text-[11px] text-text-3 transition-colors hover:text-accent-400"
+          >
+            <span className="tabular-nums">next unlock in {nextUnlockLabel}</span>
+            <span aria-hidden="true">&rarr;</span>
+          </Link>
+        )}
       </div>
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-y border-line py-3">
