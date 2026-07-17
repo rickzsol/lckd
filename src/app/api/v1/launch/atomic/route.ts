@@ -11,12 +11,14 @@ import {
   getOwnedAtomicLaunchIntent,
   issueAtomicTransaction,
 } from "@/lib/api/atomicLaunchRecovery";
+import { hashOrderedAddresses } from "@/lib/api/atomicLaunchRecoveryValidation";
 import {
   buildAtomicLaunchTransaction,
   freezeAtomicLaunchConfig,
   type AtomicLaunchPlanSnapshot,
   type IssuedAtomicLaunchTransaction,
 } from "@/lib/solana/atomicLaunchBuilder.server";
+import { hashLookupAddresses } from "@/lib/solana/lookupTable";
 
 export { OPTIONS };
 
@@ -146,8 +148,12 @@ export async function POST(request: NextRequest) {
       frozenPlan(intent),
       issuedAtomicTransaction(intent),
     );
+    const immutableLookupHash = hashLookupAddresses(
+      intent.altAddresses.map((addressValue) => new PublicKey(addressValue)),
+    );
     if (
-      bundle.addressHash !== intent.altAddressesHash ||
+      hashOrderedAddresses(intent.altAddresses) !== intent.altAddressesHash ||
+      bundle.addressHash !== immutableLookupHash ||
       bundle.lookupTableAddress.toBase58() !== intent.altAddress ||
       bundle.quotedTokenAmount !== intent.quotedTokenAmount ||
       bundle.maxQuoteAmount !== intent.maxQuoteAmount

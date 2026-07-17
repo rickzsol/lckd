@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { PublicKey } from "@solana/web3.js";
+import { hashLookupAddresses } from "../solana/lookupTable";
 import {
   atomicRpcResultSchema,
   atomicIntentSnapshotSchema,
@@ -55,6 +57,14 @@ test("ALT vector hash preserves address order", () => {
     hashOrderedAddresses([WALLET, MINT]),
     hashOrderedAddresses([MINT, WALLET]),
   );
+});
+
+test("builder lookup hash is derived separately from the persisted ALT vector hash", () => {
+  const addresses = [WALLET, MINT];
+  const builderHash = hashLookupAddresses(addresses.map((address) => new PublicKey(address)));
+
+  assert.match(builderHash, /^[a-f0-9]{64}$/);
+  assert.notEqual(builderHash, hashOrderedAddresses(addresses));
 });
 
 test("atomic state transitions reject skipped launch phases", () => {
