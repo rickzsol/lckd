@@ -3,6 +3,7 @@ import type { DisplayToken } from "@/types/display";
 import type { DexMarketData } from "./dexscreener";
 import { hasSupabaseConfig } from "./supabase";
 import { isValidSolanaAddress } from "./api/validation";
+import { projectTrust } from "./trust/projection";
 
 const TIER_LABELS: Record<TrustTier, string> = {
   [TrustTier.LOCKED]: "LOCKED",
@@ -26,9 +27,29 @@ function formatTokenAmount(raw: string): string {
 export function tokenToDisplay(t: Token, market?: DexMarketData | null): DisplayToken {
   const lockStartDate = new Date(t.lock_verified_at ?? t.created_at);
   const lockEndDate = new Date(t.lock_unlock_at ?? "");
-  const isUnlocked = Number.isFinite(lockEndDate.getTime()) && Date.now() >= lockEndDate.getTime();
+  const hasCliff = Number.isFinite(lockEndDate.getTime());
+  const nowMs = Date.now();
+  // Read the single trust projection instead of a standalone wall-clock
+  // downgrade: an eligible-but-unwithdrawn lock floors the display tier to
+  // LOCKED, and the lock progress bar reads full only once the cliff passes.
+  const lockEvidence = hasCliff
+    ? {
+        status: (nowMs >= lockEndDate.getTime()
+          ? "unlock_eligible"
+          : "locked") as "locked" | "unlock_eligible",
+        cliffTs: lockEndDate.toISOString(),
+        lastVerifiedAt: null,
+      }
+    : null;
+  const projection = projectTrust(
+    lockEvidence,
+    { githubTier: t.trust_tier },
+    nowMs,
+    new Date(nowMs).toISOString(),
+  );
+  const isUnlocked = projection.isExpired;
   const lockPct = isUnlocked ? 100 : 0;
-  const displayTier = isUnlocked ? TrustTier.LOCKED : t.trust_tier;
+  const displayTier = projection.tier;
 
   const fmtDate = (d: Date) =>
     d.toLocaleDateString("en-US", { month: "short", day: "numeric" });

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
 import { getServerClient } from "@/lib/supabase";
+import { isValidCronSecret } from "@/lib/api/cronAuth";
 import { getGitHubRepoDetails, getRecentCommits, getCommitCountSinceLaunch } from "@/lib/github/api";
 import { calculateTrustTier } from "@/lib/github/tierCalculator";
 import { verifyLiveUrl } from "@/lib/github/urlVerifier";
+import { projectTrust, TRUST_POLICY_VERSION } from "@/lib/trust/projection";
 import { type Token, type GitHubProfile } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -12,23 +13,8 @@ export const maxDuration = 60;
 const PAGE_SIZE = 50;
 const BATCH_CONCURRENCY = 5;
 
-function isValidSecret(received: string | null | undefined): boolean {
-  const expected = process.env.CRON_SECRET;
-  if (!received || !expected) return false;
-
-  const expectedBuf = Buffer.from(expected);
-  const receivedBuf = Buffer.from(received);
-
-  if (expectedBuf.length !== receivedBuf.length) return false;
-  return timingSafeEqual(expectedBuf, receivedBuf);
-}
-
 export async function GET(req: Request) {
-  const authorization = req.headers.get("authorization");
-  const secret = authorization?.startsWith("Bearer ")
-    ? authorization.slice("Bearer ".length)
-    : null;
-  if (!isValidSecret(secret)) {
+  if (!isValidCronSecret(req.headers.get("authorization"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -41,18 +27,10 @@ export async function GET(req: Request) {
   }
   const githubToken = process.env.GITHUB_PAT;
   const now = new Date();
-  const { data: downgradedTokens, error: downgradeError } = await supabase
-    .from("tokens")
-    .update({ trust_tier: 1 })
-    .not("lock_verified_at", "is", null)
-    .lte("lock_unlock_at", now.toISOString())
-    .gt("trust_tier", 1)
-    .select("id");
-  if (downgradeError) {
-    console.error("[cron] Expired lock downgrade failed:", downgradeError.message);
-    return NextResponse.json({ error: "Failed to downgrade expired locks" }, { status: 500 });
-  }
-  const expiredDowngrades = downgradedTokens?.length ?? 0;
+  // The standalone wall-clock downgrade is retired: tier flooring for expired
+  // locks is a property of the single trust projection (see refreshToken), which
+  // the reconcile-locks sweep and this GitHub refresh both compute.
+  const expiredDowngrades = 0;
 
   let refreshed = 0;
   let tierChanges = 0;
@@ -160,7 +138,7 @@ async function refreshToken(
     isLiveUrlVerified = await verifyLiveUrl(token.live_url);
   }
 
-  const newTier = calculateTrustTier(token, profile, {
+  const githubTier = calculateTrustTier(token, profile, {
     repoData,
     hasRecentCommits,
     hasPostLaunchCommits,
@@ -168,11 +146,32 @@ async function refreshToken(
     isLockVerified: true,
   });
 
-  const isChanged = newTier !== token.trust_tier;
+  // Single projection: the GitHub-derived tier only holds while the lock is
+  // genuinely locked. An eligible-but-unwithdrawn lock (cliff passed) floors to
+  // LOCKED here rather than in a separate wall-clock downgrade pass.
+  const lockUnlockAt = (token as Token & { lock_unlock_at: string | null }).lock_unlock_at;
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const lockEvidence = lockUnlockAt
+    ? {
+        status: (nowMs >= new Date(lockUnlockAt).getTime()
+          ? "unlock_eligible"
+          : "locked") as "locked" | "unlock_eligible",
+        cliffTs: lockUnlockAt,
+        lastVerifiedAt: null,
+      }
+    : null;
+  const projection = projectTrust(lockEvidence, { githubTier }, nowMs, nowIso);
+
+  const isChanged = projection.tier !== token.trust_tier;
 
   const { error: updateError } = await supabase
     .from("tokens")
-    .update({ trust_tier: newTier })
+    .update({
+      trust_tier: projection.tier,
+      tier_computed_at: projection.tierComputedAt,
+      policy_version: TRUST_POLICY_VERSION,
+    })
     .eq("id", token.id)
     .not("lock_verified_at", "is", null);
 
