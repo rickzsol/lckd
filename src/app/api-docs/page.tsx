@@ -7,6 +7,8 @@ const API_SECTIONS: TocSection[] = [
   { id: "overview", label: "Overview" },
   { id: "authentication", label: "Authentication" },
   { id: "feed", label: "GET /feed" },
+  { id: "trust", label: "GET /token/:ca/trust" },
+  { id: "unlocks", label: "GET /unlocks" },
   { id: "token", label: "GET /token/:ca" },
   { id: "lock", label: "GET /token/:ca/lock" },
   { id: "developer", label: "GET /dev/:username" },
@@ -132,6 +134,104 @@ export default function ApiDocsPage() {
   "tokens": [],
   "meta": { "total": 0, "limit": 20, "offset": 0, "sort": "newest" }
 }`} />
+          </section>
+
+          <section className="space-y-5">
+            <SectionHeading id="trust"><Method>GET</Method>/token/:ca/trust</SectionHeading>
+            <Prose>
+              Public, no auth, no cookies. Cross-origin allowed for bots and other platforms
+              (Access-Control-Allow-Origin: *, GET/HEAD/OPTIONS). Returns a versioned envelope
+              with the derived trust tier, the canonical lock evidence, public GitHub aggregates,
+              and an attestation block (null until the on-chain attestation ships).
+            </Prose>
+            <CodeBlock lang="bash" code={`curl "https://lckd.tech/api/v1/token/<mint-address>/trust"`} />
+            <CodeBlock lang="json" code={`{
+  "asOf": "2026-07-17T12:00:00.000Z",
+  "source": "https://lckd.tech/token/<mint>",
+  "stale": false,
+  "policyVersion": 1,
+  "data": {
+    "mint": "<mint-address>",
+    "tier": "builder",
+    "tierComputedAt": "2026-07-17T11:00:00.000Z",
+    "lock": {
+      "verified": true,
+      "streamId": "<streamflow-metadata-account>",
+      "streamProgram": "<pinned-streamflow-program-id>",
+      "amount": "998103000000",
+      "withdrawnAmount": "0",
+      "pctOfSupply": 12.5,
+      "lockBps": 1250,
+      "cliffTs": "2026-10-15T12:02:00.000Z",
+      "status": "locked",
+      "unlockEligibleAt": "2026-10-15T12:02:00.000Z",
+      "lastVerifiedAt": "2026-07-17T11:59:00.000Z"
+    },
+    "github": { "username": "octocat", "accountCreatedAt": "2011-01-25T18:44:36.000Z", "repo": "octocat/hello" },
+    "attestation": null
+  }
+}`} />
+            <SubHeading>Status vocabulary</SubHeading>
+            <ul className="space-y-2 pl-5 text-sm leading-7 text-text-2">
+              <li className="list-disc marker:text-text-3"><code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">locked</code>: cliff has not passed</li>
+              <li className="list-disc marker:text-text-3"><code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">unlock_eligible</code>: cliff passed, tokens not yet fully withdrawn</li>
+              <li className="list-disc marker:text-text-3"><code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">withdrawn</code>: a finalized withdrawal drained the lock</li>
+              <li className="list-disc marker:text-text-3"><code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">anomalous</code>: on-chain state does not match the recorded lock</li>
+            </ul>
+            <div className="warning-box block text-[13px] leading-7">
+              A passed cliff is never reported as withdrawn without a finalized withdrawal
+              observation. 404 means confirmed not-found, 502 means invalid upstream data, and
+              503 means verification is temporarily unavailable. A dependency failure is never
+              serialized as an absent lock or absent attestation.
+            </div>
+            <Prose>
+              pctOfSupply and lockBps derive from the finalized mint supply captured at
+              verification, not from a deposited-basis percentage. lockBps can be null while the
+              denominator backfill is pending; treat null as unknown, not zero.
+            </Prose>
+          </section>
+
+          <section className="space-y-5">
+            <SectionHeading id="unlocks"><Method>GET</Method>/unlocks</SectionHeading>
+            <Prose>
+              Public, no auth. Upcoming and recently-overdue cliffs, keyset-paginated on
+              (cliffTs, mint, id). Overdue unlock_eligible rows stay visible for a trailing
+              30 day window.
+            </Prose>
+            <SubHeading>Query parameters</SubHeading>
+            <ul className="space-y-2 pl-5 text-sm leading-7 text-text-2">
+              <li className="list-disc marker:text-text-3"><code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">days</code>: forward window, 1 to 90, default 30</li>
+              <li className="list-disc marker:text-text-3"><code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">limit</code>: 1 to 100, default 50</li>
+              <li className="list-disc marker:text-text-3"><code className="rounded-md bg-surface-2 px-1.5 font-mono text-[13px] text-accent-300">cursor</code>: opaque keyset cursor from a prior nextCursor</li>
+            </ul>
+            <CodeBlock lang="bash" code={`curl "https://lckd.tech/api/v1/unlocks?days=30&limit=50"`} />
+            <CodeBlock lang="json" code={`{
+  "asOf": "2026-07-17T12:00:00.000Z",
+  "source": "https://lckd.tech/unlocks",
+  "stale": false,
+  "policyVersion": 1,
+  "data": {
+    "items": [
+      {
+        "mint": "<mint-address>",
+        "name": "Example",
+        "ticker": "EX",
+        "amount": "998103000000",
+        "withdrawnAmount": "0",
+        "pctOfSupply": 12.5,
+        "cliffTs": "2026-10-15T12:02:00.000Z",
+        "status": "locked",
+        "unlockEligibleAt": "2026-10-15T12:02:00.000Z"
+      }
+    ],
+    "nextCursor": null,
+    "days": 30,
+    "limit": 50
+  }
+}`} />
+            <Prose>
+              Page forward by passing the returned nextCursor back as cursor until it is null.
+            </Prose>
           </section>
 
           <section className="space-y-5">
