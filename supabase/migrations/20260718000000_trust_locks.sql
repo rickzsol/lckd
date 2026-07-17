@@ -80,10 +80,12 @@ create unique index if not exists locks_canonical_per_token
   on public.locks (token_id)
   where canonical;
 
--- Calendar/keyset index. Ordering column set matches the (cliff_ts, mint, id)
--- pagination cursor; only rows still visible in the calendar are indexed.
+-- Calendar/keyset index. Ordering column set matches the (cliff_ts, mint)
+-- pagination cursor; only rows still visible in the calendar are indexed. mint is
+-- unique per token and the calendar reads only canonical locks, so no internal id
+-- tiebreaker is needed and the public view exposes none (finding 12).
 create index if not exists locks_cliff_idx
-  on public.locks (cliff_ts, mint, id)
+  on public.locks (cliff_ts, mint)
   where status in ('locked', 'unlock_eligible');
 
 -- ---------------------------------------------------------------------------
@@ -162,10 +164,12 @@ alter table public.webhook_inbox enable row level security;
 revoke all on public.webhook_inbox from public, anon, authenticated;
 
 -- Safe public view: only lock rows whose token is publicly visible (matches the
--- tokens_select policy: launch + lock verified). Exposes ONLY the columns the
--- trust API and unlock calendar consume; `recipient`, escrow, signatures, and
--- slots are intentionally omitted so anon sees no internal not already in the
--- documented trust response (finding 12).
+-- tokens_select policy: launch + lock verified). Exposes ONLY the documented
+-- fields the trust API and unlock calendar consume. The internal surrogate keys
+-- `id` and `token_id` are NOT exposed (finding 12): callers key off the public
+-- `mint` instead. `recipient`, escrow, signatures, and slots stay omitted too.
+-- The token display fields (name/ticker/image_uri/trust_tier) are joined in so
+-- the calendar needs no separate embed through an internal id.
 --
 -- Gated on trust_kv.backfill_complete = 'true': until the staged backfill records
 -- a complete pass, the view returns nothing, so partially-backfilled locks with
@@ -179,8 +183,6 @@ revoke all on public.webhook_inbox from public, anon, authenticated;
 -- zero rows because anon has neither a grant nor a select policy on `locks`.
 create or replace view public.locks_public as
 select
-  l.id,
-  l.token_id,
   l.mint,
   l.stream_program,
   l.stream_id,
@@ -195,7 +197,13 @@ select
   l.cliff_ts,
   l.status,
   l.canonical,
-  l.last_verified_at
+  l.last_verified_at,
+  -- Documented token display fields, already anon-visible via tokens_select, so
+  -- the calendar reads them here instead of embedding through an internal id.
+  t.name as token_name,
+  t.ticker as token_ticker,
+  t.image_uri as token_image_uri,
+  t.trust_tier as token_trust_tier
 from public.locks l
 join public.tokens t on t.id = l.token_id
 where t.launch_verified_at is not null
@@ -206,6 +214,29 @@ where t.launch_verified_at is not null
   );
 
 grant select on public.locks_public to anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- is_backfill_complete: anon-callable gate read. trust_kv is RLS-locked with no
+-- anon grant, but the public trust route must distinguish "backfill incomplete"
+-- (withhold with 503) from "no lock" (finding 10). This definer function exposes
+-- ONLY the single boolean, never the table, so anon can branch without a grant on
+-- trust_kv itself.
+-- ---------------------------------------------------------------------------
+create or replace function public.is_backfill_complete()
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select coalesce(
+    (select value = 'true' from public.trust_kv where key = 'backfill_complete'),
+    false
+  );
+$$;
+
+revoke all on function public.is_backfill_complete() from public;
+grant execute on function public.is_backfill_complete() to anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- claim_webhook_inbox: atomically lease a batch of claimable rows for the cron

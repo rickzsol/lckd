@@ -102,8 +102,6 @@ test("unlockEligibleAt returns cliff unless withdrawn or anomalous", () => {
 
 test("lockEvidenceFromRow maps canonical columns", () => {
   const evidence = lockEvidenceFromRow({
-    id: "lock-1",
-    token_id: "tok-1",
     mint: "mint-1",
     stream_program: "prog",
     stream_id: "stream-1",
@@ -116,6 +114,10 @@ test("lockEvidenceFromRow maps canonical columns", () => {
     status: "locked",
     canonical: true,
     last_verified_at: "2026-06-01T00:00:00.000Z",
+    token_name: null,
+    token_ticker: null,
+    token_image_uri: null,
+    token_trust_tier: null,
   });
   assert.deepEqual(evidence, {
     status: "locked",

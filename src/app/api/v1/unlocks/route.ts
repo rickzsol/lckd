@@ -49,8 +49,8 @@ function clampInt(raw: string | null, fallback: number, max: number): number {
 }
 
 /**
- * Upcoming and recently-overdue cliffs, keyset-paginated on (cliff_ts, mint, id)
- * over the partial locks_cliff_idx. `days` <= 90, `limit` <= 100. A trailing 30d
+ * Upcoming and recently-overdue cliffs, keyset-paginated on (cliff_ts, mint) over
+ * the partial locks_cliff_idx. `days` <= 90, `limit` <= 100. A trailing 30d
  * window keeps overdue unlock_eligible rows visible.
  */
 export async function GET(request: NextRequest) {
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
     let query = getSupabase()
       .from("locks_public")
       .select(
-        "id, mint, deposited_amount, withdrawn_amount, total_supply_raw, cliff_ts, status, canonical, tokens:token_id(name, ticker)",
+        "mint, deposited_amount, withdrawn_amount, total_supply_raw, cliff_ts, status, canonical, token_name, token_ticker",
       )
       .in("status", ["locked", "unlock_eligible"])
       .eq("canonical", true)
@@ -86,7 +86,6 @@ export async function GET(request: NextRequest) {
       .lte("cliff_ts", windowEnd)
       .order("cliff_ts", { ascending: true })
       .order("mint", { ascending: true })
-      .order("id", { ascending: true })
       .limit(limit + 1);
 
     if (cursor) query = query.or(keysetFilter(cursor));
@@ -115,23 +114,28 @@ export async function GET(request: NextRequest) {
   });
 }
 
-interface RawUnlockRow extends Pick<
+type RawUnlockRow = Pick<
   LockPublicRow,
-  "id" | "mint" | "deposited_amount" | "withdrawn_amount" | "total_supply_raw" | "cliff_ts" | "status"
-> {
-  tokens: { name: string | null; ticker: string | null } | null;
-}
+  | "mint"
+  | "deposited_amount"
+  | "withdrawn_amount"
+  | "total_supply_raw"
+  | "cliff_ts"
+  | "status"
+  | "token_name"
+  | "token_ticker"
+>;
 
 function cursorFromRow(row: RawUnlockRow): UnlockCursor {
-  return { cliffTs: row.cliff_ts, mint: row.mint, id: row.id };
+  return { cliffTs: row.cliff_ts, mint: row.mint };
 }
 
 function toUnlockRow(row: RawUnlockRow, now: number): UnlockRow {
   const status = deriveLockStatus(row.status, row.cliff_ts, now);
   return {
     mint: row.mint,
-    name: row.tokens?.name ?? null,
-    ticker: row.tokens?.ticker ?? null,
+    name: row.token_name ?? null,
+    ticker: row.token_ticker ?? null,
     amount: row.deposited_amount,
     withdrawnAmount: row.withdrawn_amount,
     pctOfSupply: pctOfSupply(row.deposited_amount, row.total_supply_raw),

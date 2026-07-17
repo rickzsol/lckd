@@ -27,26 +27,28 @@ export interface UnlockCalendarRow {
   unlockEligibleAt: string | null;
 }
 
-interface RawRow extends Pick<
+type RawRow = Pick<
   LockPublicRow,
-  "id" | "mint" | "deposited_amount" | "withdrawn_amount" | "total_supply_raw" | "cliff_ts" | "status"
-> {
-  tokens: {
-    name: string | null;
-    ticker: string | null;
-    image_uri: string | null;
-    trust_tier: TrustTier | null;
-  } | null;
-}
+  | "mint"
+  | "deposited_amount"
+  | "withdrawn_amount"
+  | "total_supply_raw"
+  | "cliff_ts"
+  | "status"
+  | "token_name"
+  | "token_ticker"
+  | "token_image_uri"
+  | "token_trust_tier"
+>;
 
 function toRow(row: RawRow, now: number): UnlockCalendarRow {
   const status = deriveLockStatus(row.status, row.cliff_ts, now);
   return {
     mint: row.mint,
-    name: row.tokens?.name ?? null,
-    ticker: row.tokens?.ticker ?? null,
-    image: row.tokens?.image_uri ?? null,
-    tier: row.tokens?.trust_tier ?? TrustTier.LOCKED,
+    name: row.token_name ?? null,
+    ticker: row.token_ticker ?? null,
+    image: row.token_image_uri ?? null,
+    tier: (row.token_trust_tier as TrustTier | null) ?? TrustTier.LOCKED,
     amount: row.deposited_amount,
     withdrawnAmount: row.withdrawn_amount,
     pctOfSupply: pctOfSupply(row.deposited_amount, row.total_supply_raw),
@@ -84,7 +86,7 @@ export async function getUpcomingUnlocks(): Promise<UnlockCalendarResult> {
     const { data, error } = await getSupabase()
       .from("locks_public")
       .select(
-        "id, mint, deposited_amount, withdrawn_amount, total_supply_raw, cliff_ts, status, canonical, tokens:token_id(name, ticker, image_uri, trust_tier)",
+        "mint, deposited_amount, withdrawn_amount, total_supply_raw, cliff_ts, status, canonical, token_name, token_ticker, token_image_uri, token_trust_tier",
       )
       .in("status", ["locked", "unlock_eligible"])
       .eq("canonical", true)

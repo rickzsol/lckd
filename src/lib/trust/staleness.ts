@@ -18,17 +18,22 @@ function isOlderThan(iso: string | null, windowMs: number, now: number): boolean
 }
 
 /**
- * Computes staleness from the projected tier's compute time and (when a lock is
- * present) its last finalized verification time. A missing tier timestamp is
- * stale; a lock timestamp is only checked when a canonical lock exists.
+ * Computes staleness from the projected tier's compute time and (when a canonical
+ * lock is present) its last finalized verification time. A missing tier timestamp
+ * is stale. A canonical lock whose last_verified_at is null is UNVERIFIED, not
+ * fresh: it is indistinguishable from a lock that has never been checked on chain,
+ * so it must degrade to stale rather than pass silently (finding 11).
  */
 export function isTrustStale(
   tierComputedAt: string | null,
+  hasCanonicalLock: boolean,
   lockVerifiedAt: string | null,
   now: number,
 ): boolean {
   if (isOlderThan(tierComputedAt, TIER_FRESH_MS, now)) return true;
-  if (lockVerifiedAt !== null && isOlderThan(lockVerifiedAt, LOCK_FRESH_MS, now)) {
+  if (hasCanonicalLock && isOlderThan(lockVerifiedAt, LOCK_FRESH_MS, now)) {
+    // isOlderThan treats null as not-fresh, so a null-verified canonical lock is
+    // stale here rather than skipped.
     return true;
   }
   return false;

@@ -6,9 +6,34 @@ export type LockStatus = "locked" | "unlock_eligible" | "withdrawn" | "anomalous
 
 /** Row shape from the `locks_public` view (anon-safe subset). All raw token
  * amounts are decimal strings: the view casts numeric/bigint to text so no u64
- * value is ever narrowed through a JS number (finding 9). `recipient` is NOT
- * exposed by the view (finding 12). */
+ * value is ever narrowed through a JS number (finding 9). The internal surrogate
+ * keys `id` and `token_id`, plus `recipient`, are NOT exposed by the view; anon
+ * keys off the public `mint` (finding 12). Token display fields are joined in by
+ * the view so the calendar needs no embed through an internal id. */
 export interface LockPublicRow {
+  mint: string;
+  stream_program: string;
+  stream_id: string;
+  deposited_amount: string;
+  withdrawn_amount: string;
+  total_supply_raw: string | null;
+  decimals: number | null;
+  lock_bps: number | null;
+  cliff_ts: string;
+  status: LockStatus;
+  canonical: boolean;
+  last_verified_at: string | null;
+  token_name: string | null;
+  token_ticker: string | null;
+  token_image_uri: string | null;
+  token_trust_tier: number | null;
+}
+
+/** Full `locks` row (service-role reads only). Reads select raw amounts cast to
+ * text so bigint/numeric columns arrive as decimal strings, never JS numbers.
+ * The service-role client reads the base `locks` table (not the public view), so
+ * it carries the internal id/token_id and provenance columns. */
+export interface LockRow {
   id: string;
   token_id: string;
   mint: string;
@@ -23,11 +48,6 @@ export interface LockPublicRow {
   status: LockStatus;
   canonical: boolean;
   last_verified_at: string | null;
-}
-
-/** Full `locks` row (service-role reads only). Reads select raw amounts cast to
- * text so bigint/numeric columns arrive as decimal strings, never JS numbers. */
-export interface LockRow extends LockPublicRow {
   recipient: string;
   cluster: string;
   escrow_ata: string;

@@ -65,12 +65,27 @@ export async function GET(
     const now = Date.now();
     const mint = token.mint_address as string;
 
+    // Backfill gating: the public view returns nothing until the staged backfill
+    // completes. Without this check an incomplete backfill would surface as
+    // lock:null, misreporting an unverified token as unlocked. When backfill is
+    // incomplete we withhold the whole snapshot with an explicit 503 instead
+    // (finding 10).
+    const backfillComplete = await isBackfillComplete(supabase);
+    if (backfillComplete === null) {
+      return publicError("Trust verification unavailable", 503);
+    }
+    if (!backfillComplete) {
+      return publicError("Trust verification is backfilling; try again shortly", 503);
+    }
+
+    // Filter by the public `mint`, not an internal id: the view no longer exposes
+    // id/token_id (finding 12). mint is unique per token.
     const { data: lockRows, error: lockError } = await supabase
       .from("locks_public")
       .select(
-        "id, token_id, mint, stream_program, stream_id, recipient, deposited_amount, withdrawn_amount, total_supply_raw, decimals, lock_bps, cliff_ts, status, canonical, last_verified_at",
+        "mint, stream_program, stream_id, deposited_amount, withdrawn_amount, total_supply_raw, decimals, lock_bps, cliff_ts, status, canonical, last_verified_at, token_name, token_ticker, token_image_uri, token_trust_tier",
       )
-      .eq("token_id", token.id)
+      .eq("mint", mint)
       .eq("canonical", true)
       .limit(1);
 
@@ -97,10 +112,11 @@ export async function GET(
 
     // stale reflects real verification freshness, not a hardcoded false: a tier
     // computed long ago, a lock whose on-chain state was last verified beyond the
-    // freshness window, or a degraded GitHub lookup are all served with
-    // stale=true so consumers know to treat it with caution (finding 11).
+    // freshness window, a canonical lock never yet verified (last_verified_at
+    // null), or a degraded GitHub lookup are all served with stale=true so
+    // consumers know to treat it with caution (finding 11).
     const stale =
-      isTrustStale(tierComputedAt, canonicalLock?.last_verified_at ?? null, now) ||
+      isTrustStale(tierComputedAt, canonicalLock !== null, canonicalLock?.last_verified_at ?? null, now) ||
       github?.degraded === true;
 
     return publicJson(
@@ -109,6 +125,25 @@ export async function GET(
       { "Cache-Control": "public, s-maxage=15, stale-while-revalidate=45" },
     );
   });
+}
+
+/**
+ * Reads the trust_kv backfill gate. Returns true/false for a confirmed state, or
+ * null when the read itself failed (so the caller returns 503 rather than
+ * guessing). The public view is empty until this flips to 'true'; the route must
+ * distinguish "incomplete backfill" from "no lock" and withhold (finding 10).
+ */
+async function isBackfillComplete(
+  supabase: ReturnType<typeof getSupabase>,
+): Promise<boolean | null> {
+  // trust_kv is RLS-locked with no anon grant; read the gate through the
+  // anon-callable definer function, which exposes only the boolean.
+  const { data, error } = await supabase.rpc("is_backfill_complete");
+  if (error) {
+    console.error("[trust] backfill gate lookup failed:", error.message);
+    return null;
+  }
+  return data === true;
 }
 
 async function loadGithub(
