@@ -233,13 +233,18 @@ async function processJob(
 ): Promise<ProcessOutcome> {
   // A job carrying ANY persisted signature (create or reissue-close phase) is
   // reconciled from chain first, regardless of the status it was claimed from.
-  // Only fall through to fresh processing when nothing landed.
-  if (job.pending_signature || job.pending_close_signature) {
+  // Reconciliation keys on the persisted signature, not the claimed status, so a
+  // job claimed from 'broadcast' reconciles rather than resends. We still assert
+  // the claimed-from invariant: a 'broadcast' claim MUST carry a signature.
+  const hasSignature = Boolean(job.pending_signature || job.pending_close_signature);
+  if (claimedFromStatus === "broadcast" && !hasSignature) {
+    throw new SasIssuerError("Broadcast job claimed without a persisted signature", false);
+  }
+  if (hasSignature) {
     const outcome = await reconcilePendingJob(ctx, job);
     if (outcome === "reconciled") return "reconciled";
     if (outcome === "advanced") return "advanced";
   }
-  void claimedFromStatus;
 
   const evidence = await evidenceForJob(job);
 
