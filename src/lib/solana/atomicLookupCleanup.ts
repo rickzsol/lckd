@@ -100,6 +100,14 @@ function resolveInstruction(message: MessageV0, index: number): TransactionInstr
   });
 }
 
+function readLittleEndian(data: Uint8Array, offset: number, length: number): bigint {
+  let value = BigInt(0);
+  for (let index = offset + length - 1; index >= offset; index -= 1) {
+    value = value * BigInt(256) + BigInt(data[index]);
+  }
+  return value;
+}
+
 function validateComputeBudgetPrefix(instructions: readonly TransactionInstruction[]): void {
   if (![0, 2].includes(instructions.length)) {
     throw new Error("Lookup table cleanup compute budget is invalid");
@@ -112,9 +120,9 @@ function validateComputeBudgetPrefix(instructions: readonly TransactionInstructi
       throw new Error("Lookup table cleanup contains an unexpected program");
     }
     if (data.length === 5 && data[0] === 2 && unitLimit === null) {
-      unitLimit = BigInt(data.readUInt32LE(1));
+      unitLimit = readLittleEndian(data, 1, 4);
     } else if (data.length === 9 && data[0] === 3 && unitPrice === null) {
-      unitPrice = data.readBigUInt64LE(1);
+      unitPrice = readLittleEndian(data, 1, 8);
     } else {
       throw new Error("Lookup table cleanup compute budget is invalid");
     }
