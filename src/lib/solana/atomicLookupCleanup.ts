@@ -1,6 +1,7 @@
 import {
   AddressLookupTableAccount,
   AddressLookupTableProgram,
+  ComputeBudgetProgram,
   PublicKey,
   TransactionMessage,
   VersionedTransaction,
@@ -8,8 +9,10 @@ import {
   type MessageV0,
 } from "@solana/web3.js";
 import nacl from "tweetnacl";
+import { DEFAULT_PRIORITY_FEE_MICROLAMPORTS } from "./constants";
 
 export const LOOKUP_TABLE_ACTIVE_SLOT = BigInt("0xffffffffffffffff");
+const LOOKUP_CLEANUP_COMPUTE_UNIT_LIMIT = 25_000;
 
 export type LookupCleanupPhase = "deactivate" | "close";
 
@@ -43,12 +46,34 @@ function cleanupInstruction(expectation: LookupCleanupExpectation) {
 export function buildLookupCleanupTransaction(
   expectation: LookupCleanupExpectation,
 ): VersionedTransaction {
+  return buildCleanupTransaction(expectation, true);
+}
+
+function buildCleanupTransaction(
+  expectation: LookupCleanupExpectation,
+  isFeePinned: boolean,
+): VersionedTransaction {
+  const instructions = isFeePinned
+    ? [
+        ComputeBudgetProgram.setComputeUnitLimit({ units: LOOKUP_CLEANUP_COMPUTE_UNIT_LIMIT }),
+        ComputeBudgetProgram.setComputeUnitPrice({
+          microLamports: DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
+        }),
+        cleanupInstruction(expectation),
+      ]
+    : [cleanupInstruction(expectation)];
   const message = new TransactionMessage({
     payerKey: expectation.wallet,
     recentBlockhash: expectation.blockhash,
-    instructions: [cleanupInstruction(expectation)],
+    instructions,
   }).compileToV0Message();
   return new VersionedTransaction(message);
+}
+
+export function buildLegacyLookupCleanupTransaction(
+  expectation: LookupCleanupExpectation,
+): VersionedTransaction {
+  return buildCleanupTransaction(expectation, false);
 }
 
 function assertExactCleanupMessage(
@@ -56,11 +81,16 @@ function assertExactCleanupMessage(
   expectation: LookupCleanupExpectation,
 ): void {
   const expected = buildLookupCleanupTransaction(expectation).message;
-  if (!Buffer.from(message.serialize()).equals(Buffer.from(expected.serialize()))) {
+  const legacyExpected = buildCleanupTransaction(expectation, false).message;
+  if (![expected, legacyExpected].some((candidate) =>
+    Buffer.from(message.serialize()).equals(Buffer.from(candidate.serialize())))) {
     throw new Error(`Lookup table ${expectation.phase} transaction changed`);
   }
-  if (message.addressTableLookups.length !== 0 || message.compiledInstructions.length !== 1) {
-    throw new Error("Lookup table cleanup must contain one instruction and no lookups");
+  if (
+    message.addressTableLookups.length !== 0 ||
+    ![1, 3].includes(message.compiledInstructions.length)
+  ) {
+    throw new Error("Lookup table cleanup instruction set is invalid");
   }
 }
 

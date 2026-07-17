@@ -2,12 +2,17 @@ import { createHash } from "node:crypto";
 import {
   AddressLookupTableAccount,
   AddressLookupTableProgram,
+  ComputeBudgetProgram,
   Connection,
   PublicKey,
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
+import {
+  DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
+  LOOKUP_SETUP_COMPUTE_UNIT_LIMIT,
+} from "./constants";
 
 const MAX_LOOKUP_ADDRESSES = 256;
 const U64_MAX = BigInt("0xffffffffffffffff");
@@ -100,9 +105,41 @@ function buildPreparationMessages(
   const message = new TransactionMessage({
     payerKey: params.payer,
     recentBlockhash: params.blockhash,
-    instructions: [createInstruction, extendInstruction],
+    instructions: [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: LOOKUP_SETUP_COMPUTE_UNIT_LIMIT }),
+      ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
+      }),
+      createInstruction,
+      extendInstruction,
+    ],
   }).compileToV0Message();
   return { lookupTableAddress, message };
+}
+
+function buildLegacyPreparationMessage(
+  params: LookupTablePreparationParams,
+): ReturnType<TransactionMessage["compileToV0Message"]> {
+  const [createInstruction] = AddressLookupTableProgram.createLookupTable({
+    authority: params.authority,
+    payer: params.payer,
+    recentSlot: params.recentSlot,
+  });
+  const extendInstruction = AddressLookupTableProgram.extendLookupTable({
+    authority: params.authority,
+    payer: params.payer,
+    lookupTable: AddressLookupTableProgram.createLookupTable({
+      authority: params.authority,
+      payer: params.payer,
+      recentSlot: params.recentSlot,
+    })[1],
+    addresses: [...params.addresses],
+  });
+  return new TransactionMessage({
+    payerKey: params.payer,
+    recentBlockhash: params.blockhash,
+    instructions: [createInstruction, extendInstruction],
+  }).compileToV0Message();
 }
 
 export function buildLookupTablePreparation(
@@ -129,6 +166,7 @@ export function validateLookupTablePreparation(
   params: LookupTablePreparationParams,
 ): PublicKey {
   const { lookupTableAddress, message: expected } = buildPreparationMessages(params);
+  const legacyExpected = buildLegacyPreparationMessage(params);
   if (transactionBytes.length > 1_232) {
     throw new Error("Lookup table preparation transaction is too large");
   }
@@ -139,7 +177,8 @@ export function validateLookupTablePreparation(
       message.addressTableLookups.length !== 0 ||
       message.header.numRequiredSignatures !== 1 ||
       !message.staticAccountKeys[0]?.equals(params.authority) ||
-      !Buffer.from(message.serialize()).equals(Buffer.from(expected.serialize()))
+      ![expected, legacyExpected].some((candidate) =>
+        Buffer.from(message.serialize()).equals(Buffer.from(candidate.serialize())))
     ) {
       throw new Error("mismatch");
     }

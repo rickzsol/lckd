@@ -13,9 +13,10 @@ import {
   buildAtomicLaunchInstructions,
   freezeAtomicLaunchConfig,
 } from "./atomicLaunchBuilder.server";
-import { canonicalLookupAddresses } from "./lookupTable";
+import { buildLookupTablePreparation, canonicalLookupAddresses } from "./lookupTable";
 import {
   validateAtomicLaunchTransactionClient,
+  validateLookupSetupTransaction,
   validateReviewedUnlockTimestamp,
 } from "./atomicLaunchValidation";
 
@@ -101,6 +102,30 @@ test("client accepts the exact resolved atomic transaction", async () => {
     value.expectation,
   );
   assert.equal(transaction.message.compiledInstructions.length, 7);
+});
+
+test("client accepts the server fee-pinned lookup setup transaction", async () => {
+  const value = await fixture();
+  const preparation = buildLookupTablePreparation({
+    authority: value.wallet,
+    payer: value.wallet,
+    addresses: value.expectation.lookupAddresses,
+    recentSlot: 100,
+    blockhash: value.blockhash,
+    lastValidBlockHeight: 200,
+  });
+  const transaction = validateLookupSetupTransaction(
+    Buffer.from(preparation.transaction).toString("base64"),
+    {
+      wallet: value.wallet,
+      lookupTable: preparation.lookupTableAddress,
+      addresses: value.expectation.lookupAddresses,
+      recentSlot: 100,
+      blockhash: value.blockhash,
+      lastValidBlockHeight: 200,
+    },
+  );
+  assert.equal(transaction.message.compiledInstructions.length, 4);
 });
 
 test("client rejects changed global account privileges", async () => {

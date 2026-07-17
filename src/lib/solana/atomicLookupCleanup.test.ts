@@ -11,6 +11,7 @@ import {
   LOOKUP_TABLE_ACTIVE_SLOT,
   assertExactLookupTableForCleanup,
   assertLookupTableCanClose,
+  buildLegacyLookupCleanupTransaction,
   buildLookupCleanupTransaction,
   parseSlotHashes,
   validateLookupCleanupTransaction,
@@ -61,7 +62,7 @@ function tableAccount(
   };
 }
 
-test("builds exact unsigned single-instruction deactivate and owner-recipient close", () => {
+test("builds exact unsigned fee-pinned deactivate and owner-recipient close", () => {
   const wallet = Keypair.generate().publicKey;
   const lookupTable = Keypair.generate().publicKey;
   for (const phase of ["deactivate", "close"] as const) {
@@ -71,7 +72,7 @@ test("builds exact unsigned single-instruction deactivate and owner-recipient cl
       Buffer.from(transaction.serialize()).toString("base64"),
       expectation,
     );
-    assert.equal(decoded.message.compiledInstructions.length, 1);
+    assert.equal(decoded.message.compiledInstructions.length, 3);
     assert.equal(decoded.message.addressTableLookups.length, 0);
     assert.deepEqual(decoded.message.staticAccountKeys[0], wallet);
     transaction.signatures[0][0] = 1;
@@ -81,6 +82,22 @@ test("builds exact unsigned single-instruction deactivate and owner-recipient cl
       true,
     ), /signature is invalid/);
   }
+});
+
+test("accepts an exact legacy cleanup issuance during rollout", () => {
+  const wallet = Keypair.generate().publicKey;
+  const expectation = {
+    phase: "deactivate" as const,
+    wallet,
+    lookupTable: Keypair.generate().publicKey,
+    blockhash: BLOCKHASH,
+  };
+  const transaction = buildLegacyLookupCleanupTransaction(expectation);
+  const decoded = validateLookupCleanupTransaction(
+    Buffer.from(transaction.serialize()).toString("base64"),
+    expectation,
+  );
+  assert.equal(decoded.message.compiledInstructions.length, 1);
 });
 
 test("rejects a close transaction whose recipient is not the owner wallet", () => {
