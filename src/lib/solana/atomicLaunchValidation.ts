@@ -21,7 +21,11 @@ import {
   PUMP_SDK,
 } from "@pump-fun/pump-sdk";
 import BN from "bn.js";
-import { DEFAULT_PRIORITY_FEE_MICROLAMPORTS, PUMPFUN_PROGRAM_ID } from "./constants";
+import {
+  DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
+  LOOKUP_SETUP_COMPUTE_UNIT_LIMIT,
+  PUMPFUN_PROGRAM_ID,
+} from "./constants";
 import { validatePumpBuyInstruction } from "./pumpBuyValidation";
 import { validatePumpCreateInstruction } from "./pumpCreateValidation";
 import {
@@ -172,10 +176,22 @@ export function validateLookupSetupTransaction(
     lookupTable: expectation.lookupTable,
     addresses: [...expectation.addresses],
   });
-  const expectedMessage = new TransactionMessage({
+  const legacyExpectedMessage = new TransactionMessage({
     payerKey: expectation.wallet,
     recentBlockhash: expectation.blockhash,
     instructions: [createInstruction, extendInstruction],
+  }).compileToV0Message();
+  const expectedMessage = new TransactionMessage({
+    payerKey: expectation.wallet,
+    recentBlockhash: expectation.blockhash,
+    instructions: [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: LOOKUP_SETUP_COMPUTE_UNIT_LIMIT }),
+      ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
+      }),
+      createInstruction,
+      extendInstruction,
+    ],
   }).compileToV0Message();
   const transaction = VersionedTransaction.deserialize(decodeBase64(transactionBase64));
   assertUnsigned(transaction);
@@ -184,7 +200,8 @@ export function validateLookupSetupTransaction(
     transaction.message.addressTableLookups.length !== 0 ||
     transaction.message.header.numRequiredSignatures !== 1 ||
     !transaction.message.staticAccountKeys[0]?.equals(expectation.wallet) ||
-    !Buffer.from(transaction.message.serialize()).equals(Buffer.from(expectedMessage.serialize()))
+    ![expectedMessage, legacyExpectedMessage].some((candidate) =>
+      Buffer.from(transaction.message.serialize()).equals(Buffer.from(candidate.serialize())))
   ) {
     throw new Error("Lookup table setup transaction does not match the reviewed launch");
   }

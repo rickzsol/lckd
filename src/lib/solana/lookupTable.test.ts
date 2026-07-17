@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AddressLookupTableAccount,
+  AddressLookupTableProgram,
+  ComputeBudgetProgram,
   Keypair,
   SystemProgram,
   TransactionInstruction,
+  TransactionMessage,
+  VersionedTransaction,
 } from "@solana/web3.js";
 import {
   buildLookupTablePreparation,
@@ -55,7 +59,32 @@ test("builds and strictly validates wallet-authorized create and extend transact
   const preparation = buildLookupTablePreparation(params);
 
   assert(preparation.transaction.length <= 1_232);
+  const message = VersionedTransaction.deserialize(preparation.transaction).message;
+  assert.equal(message.compiledInstructions.length, 4);
+  assert(message.staticAccountKeys[message.compiledInstructions[0].programIdIndex]
+    .equals(ComputeBudgetProgram.programId));
+  assert(message.staticAccountKeys[message.compiledInstructions[1].programIdIndex]
+    .equals(ComputeBudgetProgram.programId));
   assert(validateLookupTablePreparation(preparation.transaction, params).equals(
+    preparation.lookupTableAddress,
+  ));
+  const [legacyCreate, legacyAddress] = AddressLookupTableProgram.createLookupTable({
+    authority: wallet,
+    payer: wallet,
+    recentSlot: params.recentSlot,
+  });
+  const legacyExtend = AddressLookupTableProgram.extendLookupTable({
+    authority: wallet,
+    payer: wallet,
+    lookupTable: legacyAddress,
+    addresses: params.addresses,
+  });
+  const legacyTransaction = new VersionedTransaction(new TransactionMessage({
+    payerKey: wallet,
+    recentBlockhash: blockhash,
+    instructions: [legacyCreate, legacyExtend],
+  }).compileToV0Message());
+  assert(validateLookupTablePreparation(legacyTransaction.serialize(), params).equals(
     preparation.lookupTableAddress,
   ));
 

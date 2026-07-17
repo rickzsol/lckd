@@ -1073,6 +1073,8 @@ export async function verifyFinalizedAtomicLaunchTransaction(
   const depositedAmount = BigInt(parsedLock.amount);
   const walletDelta = postWalletBalance - preWalletBalance;
   const debitedAmount = tradeEvent.tokenAmount - postWalletBalance;
+  const reviewedDebit =
+    (tradeEvent.tokenAmount * BigInt(expectation.lockPercentage)) / BigInt(100);
   if (
     preWalletBalance !== BigInt(0) ||
     preEscrowBalance !== BigInt(0) ||
@@ -1081,8 +1083,8 @@ export async function verifyFinalizedAtomicLaunchTransaction(
     postEscrowBalance !== depositedAmount ||
     depositedAmount <= BigInt(0) ||
     depositedAmount > debitedAmount ||
-    depositedAmount + LOCK_COVERAGE_TOLERANCE <
-      (tradeEvent.tokenAmount * BigInt(expectation.lockPercentage)) / BigInt(100)
+    debitedAmount + LOCK_COVERAGE_TOLERANCE < reviewedDebit ||
+    debitedAmount > reviewedDebit + LOCK_COVERAGE_TOLERANCE
   ) {
     throw new OnChainVerificationError("Atomic Streamflow deposit does not cover the purchase", 422);
   }

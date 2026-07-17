@@ -41,6 +41,7 @@ import {
   LOOKUP_TABLE_ACTIVE_SLOT,
   assertExactLookupTableForCleanup,
   assertLookupTableCanClose,
+  buildLegacyLookupCleanupTransaction,
   buildLookupCleanupTransaction,
   validateLookupCleanupMessage,
   validateLookupCleanupTransaction,
@@ -167,17 +168,15 @@ async function verifyFinalizedAltSetup(intent: AtomicIntent): Promise<void> {
     throw new AtomicLaunchRecoveryError("ALT setup signature mismatch", 422);
   }
   const message = receipt.transaction.message as MessageV0;
-  const firstInstruction = message.compiledInstructions[0];
-  if (!firstInstruction || firstInstruction.data.length < 12) {
+  if (intent.issuedSetupRecentSlot === null) {
     throw new AtomicLaunchRecoveryError("ALT setup instruction is invalid", 422);
   }
-  const recentSlot = Number(Buffer.from(firstInstruction.data).readBigUInt64LE(4));
   const unsigned = new VersionedTransaction(message);
   validateLookupTablePreparation(unsigned.serialize(), {
     authority: new PublicKey(intent.creatorWallet),
     payer: new PublicKey(intent.creatorWallet),
     addresses: intent.altAddresses.map((value) => new PublicKey(value)),
-    recentSlot,
+    recentSlot: intent.issuedSetupRecentSlot,
     blockhash: intent.setupBlockhash,
     lastValidBlockHeight: intent.setupLastValidBlockHeight,
   });
@@ -576,6 +575,7 @@ async function cleanupTransactionResponse(
   const finalizedBlockHeight = await connection.getBlockHeight("finalized");
   let blockhash: string;
   let lastValidBlockHeight: number;
+  let isReplayingIssuedCleanup = false;
   if (
     intent.issuedCleanupPhase === phase && intent.issuedCleanupMessageHash &&
     intent.issuedCleanupBlockhash && intent.issuedCleanupLastValidBlockHeight !== null
@@ -586,6 +586,7 @@ async function cleanupTransactionResponse(
     if (validity.value) {
       blockhash = intent.issuedCleanupBlockhash;
       lastValidBlockHeight = intent.issuedCleanupLastValidBlockHeight;
+      isReplayingIssuedCleanup = true;
     } else {
       if (finalizedBlockHeight <= intent.issuedCleanupLastValidBlockHeight) {
         throw new AtomicLaunchRecoveryError("ALT cleanup issuance cannot be replaced yet", 409);
@@ -599,12 +600,25 @@ async function cleanupTransactionResponse(
     blockhash = latest.blockhash;
     lastValidBlockHeight = latest.lastValidBlockHeight;
   }
-  const transaction = buildLookupCleanupTransaction({
+  const expectation = {
     phase,
     wallet: new PublicKey(intent.creatorWallet),
     lookupTable: new PublicKey(intent.altAddress),
     blockhash,
-  });
+  };
+  let transaction = buildLookupCleanupTransaction(expectation);
+  if (
+    isReplayingIssuedCleanup &&
+    intent.issuedCleanupPhase === phase &&
+    intent.issuedCleanupMessageHash &&
+    hashAtomicTransactionMessage(transaction.serialize()) !== intent.issuedCleanupMessageHash
+  ) {
+    const legacyTransaction = buildLegacyLookupCleanupTransaction(expectation);
+    if (hashAtomicTransactionMessage(legacyTransaction.serialize()) !== intent.issuedCleanupMessageHash) {
+      throw new AtomicLaunchRecoveryError("ALT cleanup issuance changed", 422);
+    }
+    transaction = legacyTransaction;
+  }
   await issueAtomicAltCleanup({
     githubId: intent.githubId,
     creatorWallet: intent.creatorWallet,
