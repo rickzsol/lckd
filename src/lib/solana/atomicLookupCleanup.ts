@@ -18,6 +18,7 @@ const MAX_LOOKUP_CLEANUP_COMPUTE_UNIT_LIMIT = BigInt(100_000);
 const MAX_LOOKUP_CLEANUP_COMPUTE_UNIT_PRICE = BigInt(1_000_000);
 const MAX_LOOKUP_CLEANUP_PRIORITY_FEE_LAMPORTS = BigInt(100_000);
 const MAX_LOOKUP_CLEANUP_LOADED_ACCOUNTS_BYTES = BigInt(64 * 1024 * 1024);
+const LIGHTHOUSE_PROGRAM_ID = new PublicKey("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
 
 export type LookupCleanupPhase = "deactivate" | "close";
 
@@ -151,6 +152,19 @@ function assertSemanticCleanupMessage(
 ): void {
   const hasExpectedBlockhash = message.recentBlockhash === expectation.blockhash;
   const hasExpectedPayer = message.staticAccountKeys[0]?.equals(expectation.wallet) ?? false;
+  const instructionShape = message.compiledInstructions.map((instruction) => {
+    const programId = message.staticAccountKeys[instruction.programIdIndex];
+    const program = programId?.equals(ComputeBudgetProgram.programId)
+      ? "compute"
+      : programId?.equals(AddressLookupTableProgram.programId)
+        ? "lookup"
+        : programId?.equals(LIGHTHOUSE_PROGRAM_ID)
+          ? "lighthouse"
+          : programId
+            ? "other"
+            : "missing";
+    return `${program}:${instruction.data[0] ?? "empty"}:${instruction.data.length}:${instruction.accountKeyIndexes.length}`;
+  }).join(",");
   if (
     !hasExpectedBlockhash ||
     message.addressTableLookups.length !== 0 ||
@@ -165,6 +179,7 @@ function assertSemanticCleanupMessage(
       `lookups=${message.addressTableLookups.length}`,
       `payer=${hasExpectedPayer}`,
       `blockhash=${hasExpectedBlockhash}`,
+      `shape=${instructionShape}`,
     ].join("; "));
   }
   const instructions = message.compiledInstructions.map((_, index) =>
