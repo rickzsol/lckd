@@ -12,6 +12,7 @@ import {
   reconcileSignature,
   SasIssuerError,
   type AttestationContext,
+  type SignatureState,
 } from "./issuer";
 import {
   advanceReissueToCreate,
@@ -55,6 +56,35 @@ export interface WorkerResult {
   skipped: number;
   failed: number;
   deadLettered: number;
+}
+
+/**
+ * A persisted signature counts as LANDED only at FINALIZED commitment. A merely
+ * 'confirmed' signature is not yet irreversible, so treating it as landed would
+ * record a generation / advance the reissue create phase on a transaction that a
+ * fork could still roll back. Anything short of finalized keeps waiting: the job
+ * stays in flight and reconciles again on a later claim.
+ */
+export function signatureHasLanded(state: SignatureState): boolean {
+  return state === "finalized";
+}
+
+/**
+ * The job's cluster (bound at enqueue) MUST match the cluster the worker's RPC is
+ * pinned to. A devnet job queued before a switch to mainnet would otherwise be
+ * signed and broadcast on mainnet with a devnet label. Genesis-hash binding only
+ * proves the RPC serves ctx.config.cluster; it cannot catch a job that belongs to
+ * the OTHER cluster. Mismatch is a permanent (non-retryable) failure: the job can
+ * never be valid on this cluster, so it must fail without broadcasting rather than
+ * dead-letter after burning retries.
+ */
+export function assertJobClusterMatches(jobCluster: string, configCluster: string): void {
+  if (jobCluster !== configCluster) {
+    throw new SasIssuerError(
+      `Job cluster ${jobCluster} does not match worker cluster ${configCluster}; refusing to sign`,
+      false,
+    );
+  }
 }
 
 /**
@@ -138,7 +168,9 @@ async function reconcilePendingJob(
   if (!job.pending_signature && job.operation === "reissue" && job.pending_close_signature) {
     const closeSig = job.pending_close_signature;
     const state = await reconcileSignature(ctx, closeSig);
-    if (state !== "confirmed" && state !== "finalized") return "reprocess";
+    // Only advance the reissue to its create phase once the close is FINALIZED. A
+    // 'confirmed' close is not yet irreversible: keep waiting.
+    if (!signatureHasLanded(state)) return "reprocess";
     const pda = (await buildCloseInstruction(ctx, job.mint)).attestationPda;
     await advanceReissueToCreate({
       id: job.id,
@@ -155,8 +187,10 @@ async function reconcilePendingJob(
   const signature = job.pending_signature;
   if (!signature) return "reprocess";
   const state = await reconcileSignature(ctx, signature);
-  if (state !== "confirmed" && state !== "finalized") {
-    // Failed or never landed: re-drive with a fresh blockhash.
+  // Landed only at FINALIZED. A 'confirmed' (not yet finalized), failed, or
+  // never-landed signature all keep waiting / re-drive rather than record a
+  // generation on a transaction a fork could still roll back.
+  if (!signatureHasLanded(state)) {
     return "reprocess";
   }
 
@@ -231,6 +265,13 @@ async function processJob(
   job: OutboxJob,
   claimedFromStatus: string,
 ): Promise<ProcessOutcome> {
+  // Cluster fence FIRST, before any chain read or signature: a job enqueued for a
+  // different cluster than this worker is pinned to must never be signed here. The
+  // genesis-hash check only proves the RPC serves ctx.config.cluster, not that the
+  // job belongs to it, so a devnet job left in the queue across a switch to mainnet
+  // would otherwise issue on mainnet with a devnet label. Permanent failure.
+  assertJobClusterMatches(job.cluster, ctx.config.cluster);
+
   // A job carrying ANY persisted signature (create or reissue-close phase) is
   // reconciled from chain first, regardless of the status it was claimed from.
   // Reconciliation keys on the persisted signature, not the claimed status, so a
