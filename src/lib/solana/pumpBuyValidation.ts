@@ -36,17 +36,17 @@ const BUYBACK_FEE_RECIPIENTS = new Set([
 ]);
 
 interface PumpBuyLayout {
-  accountCount: number;
+  accountCounts: readonly number[];
   spendOffset: number;
   dataLength: number;
   version: "legacy" | "v2";
 }
 
 const BUY_LAYOUTS = new Map<string, PumpBuyLayout>([
-  [PUMP_BUY_DISCRIMINATOR, { accountCount: 16, spendOffset: 16, dataLength: 25, version: "legacy" }],
-  [PUMP_BUY_EXACT_SOL_DISCRIMINATOR, { accountCount: 16, spendOffset: 8, dataLength: 25, version: "legacy" }],
-  [PUMP_BUY_V2_DISCRIMINATOR, { accountCount: 27, spendOffset: 16, dataLength: 24, version: "v2" }],
-  [PUMP_BUY_EXACT_QUOTE_V2_DISCRIMINATOR, { accountCount: 27, spendOffset: 8, dataLength: 24, version: "v2" }],
+  [PUMP_BUY_DISCRIMINATOR, { accountCounts: [16, 18], spendOffset: 16, dataLength: 25, version: "legacy" }],
+  [PUMP_BUY_EXACT_SOL_DISCRIMINATOR, { accountCounts: [16, 18], spendOffset: 8, dataLength: 25, version: "legacy" }],
+  [PUMP_BUY_V2_DISCRIMINATOR, { accountCounts: [27], spendOffset: 16, dataLength: 24, version: "v2" }],
+  [PUMP_BUY_EXACT_QUOTE_V2_DISCRIMINATOR, { accountCounts: [27], spendOffset: 8, dataLength: 24, version: "v2" }],
 ]);
 
 function derivePda(programId: PublicKey, ...seeds: Uint8Array[]): PublicKey {
@@ -114,6 +114,14 @@ function validateLegacyAccounts(
     derivePda(PUMP_FEE_PROGRAM_ID, Buffer.from("fee_config"), PUMPFUN_PROGRAM_ID.toBuffer()),
   );
   assertAccount(accounts, 15, PUMP_FEE_PROGRAM_ID);
+  if (accounts.length === 18) {
+    assertAccount(
+      accounts,
+      16,
+      derivePda(PUMPFUN_PROGRAM_ID, Buffer.from("bonding-curve-v2"), mint.toBuffer()),
+    );
+    assertRecipient(accounts, 17, BUYBACK_FEE_RECIPIENTS, "buyback fee recipient");
+  }
 }
 
 function validateV2Accounts(
@@ -185,7 +193,11 @@ export function validatePumpBuyInstruction(
 ): bigint {
   const discriminator = data.subarray(0, 8).toString("hex");
   const layout = BUY_LAYOUTS.get(discriminator);
-  if (!layout || data.length !== layout.dataLength || accounts.length !== layout.accountCount) {
+  if (
+    !layout ||
+    data.length !== layout.dataLength ||
+    !layout.accountCounts.includes(accounts.length)
+  ) {
     throw new Error("Pump buy instruction layout mismatch");
   }
   if (layout.version === "legacy" && data[24] > 1) {
