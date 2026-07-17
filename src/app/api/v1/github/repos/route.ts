@@ -17,7 +17,7 @@ interface GitHubRepo {
 }
 
 export async function GET(req: NextRequest) {
-  const limited = checkRateLimit(req, "github");
+  const limited = await checkRateLimit(req, "github");
   if (limited) return limited;
 
   const { session, error: authErr } = await requireAuth();

@@ -14,6 +14,10 @@ import type { PumpCreateData } from "./pumpCreateValidation";
 import { parsePumpTradeEvent } from "./pumpTradeEvent";
 
 const FEE_PROGRAM = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
+const FEE_RECIPIENT = new PublicKey("62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV");
+const BUYBACK_FEE_RECIPIENT = new PublicKey(
+  "5YxQFdt3Tr9zJLvkFccqXVUwhdTWJQc1fFg2YPbxvxeD",
+);
 
 function pda(programId: PublicKey, ...seeds: Uint8Array[]): PublicKey {
   return PublicKey.findProgramAddressSync(seeds.map((seed) => Buffer.from(seed)), programId)[0];
@@ -39,7 +43,7 @@ function legacyAccounts(wallet: PublicKey, mint: PublicKey, tokenProgram: Public
   const curve = pda(PUMPFUN_PROGRAM_ID, Buffer.from("bonding-curve"), mint.toBuffer());
   return [
     pda(PUMPFUN_PROGRAM_ID, Buffer.from("global")),
-    Keypair.generate().publicKey,
+    FEE_RECIPIENT,
     mint,
     curve,
     getAssociatedTokenAddressSync(mint, curve, true, tokenProgram),
@@ -54,13 +58,15 @@ function legacyAccounts(wallet: PublicKey, mint: PublicKey, tokenProgram: Public
     pda(PUMPFUN_PROGRAM_ID, Buffer.from("user_volume_accumulator"), wallet.toBuffer()),
     pda(FEE_PROGRAM, Buffer.from("fee_config"), PUMPFUN_PROGRAM_ID.toBuffer()),
     FEE_PROGRAM,
+    pda(PUMPFUN_PROGRAM_ID, Buffer.from("bonding-curve-v2"), mint.toBuffer()),
+    BUYBACK_FEE_RECIPIENT,
   ];
 }
 
 function v2Accounts(wallet: PublicKey, mint: PublicKey): PublicKey[] {
   const curve = pda(PUMPFUN_PROGRAM_ID, Buffer.from("bonding-curve"), mint.toBuffer());
-  const feeRecipient = Keypair.generate().publicKey;
-  const buybackRecipient = Keypair.generate().publicKey;
+  const feeRecipient = FEE_RECIPIENT;
+  const buybackRecipient = BUYBACK_FEE_RECIPIENT;
   const creatorVault = pda(PUMPFUN_PROGRAM_ID, Buffer.from("creator-vault"), wallet.toBuffer());
   const userVolume = pda(
     PUMPFUN_PROGRAM_ID,
@@ -75,9 +81,9 @@ function v2Accounts(wallet: PublicKey, mint: PublicKey): PublicKey[] {
     TOKEN_PROGRAM_ID,
     ASSOCIATED_TOKEN_PROGRAM_ID,
     feeRecipient,
-    getAssociatedTokenAddressSync(NATIVE_MINT, feeRecipient),
+    getAssociatedTokenAddressSync(NATIVE_MINT, feeRecipient, true),
     buybackRecipient,
-    getAssociatedTokenAddressSync(NATIVE_MINT, buybackRecipient),
+    getAssociatedTokenAddressSync(NATIVE_MINT, buybackRecipient, true),
     curve,
     getAssociatedTokenAddressSync(mint, curve, true, TOKEN_2022_PROGRAM_ID),
     getAssociatedTokenAddressSync(NATIVE_MINT, curve, true),
@@ -151,6 +157,27 @@ test("rejects an extra Pump buy account", () => {
       createData(wallet, "create"),
     ),
     /layout mismatch/,
+  );
+});
+
+test("rejects an unauthorized Pump fee recipient", () => {
+  const wallet = Keypair.generate().publicKey;
+  const mint = Keypair.generate().publicKey;
+  const accounts = v2Accounts(wallet, mint);
+  accounts[6] = Keypair.generate().publicKey;
+  assert.throws(
+    () => validatePumpBuyInstruction(
+      Buffer.concat([
+        Buffer.from("b817ee6167c5d33d", "hex"),
+        u64(BigInt(1)),
+        u64(BigInt(2)),
+      ]),
+      accounts,
+      wallet,
+      mint,
+      createData(wallet, "create_v2"),
+    ),
+    /fee recipient mismatch/,
   );
 });
 

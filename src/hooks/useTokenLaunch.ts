@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { LaunchConfig } from "@/types/index";
 import {
   Connection,
@@ -53,6 +53,25 @@ interface PersistLaunchInput {
   createTxSignature: string;
   lockTxSignature: string;
   lockAmount: string;
+}
+
+type RecoveredLaunchConfig = Omit<LaunchConfig, "image">;
+
+async function saveLaunchCheckpoint(body: Record<string, unknown>): Promise<void> {
+  const response = await fetch("/api/v1/launch/recovery", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw await responseError(response, "Launch recovery checkpoint failed");
+}
+
+async function abandonLaunchIntent(mintAddress: string): Promise<Response> {
+  return fetch("/api/v1/launch/recovery", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mintAddress }),
+  });
 }
 
 export const LAUNCH_PHASES_WITH_LOCK = [
@@ -110,6 +129,56 @@ export function useTokenLaunch(config: LaunchConfig) {
   const [pendingImageUri, setPendingImageUri] = useState<string | null>(null);
   const [pendingSignedLockTransaction, setPendingSignedLockTransaction] =
     useState<Uint8Array | null>(null);
+  const [recoveredConfig, setRecoveredConfig] =
+    useState<RecoveredLaunchConfig | null>(null);
+  const [isRecoveredLockReady, setIsRecoveredLockReady] = useState(true);
+  const [previousLockTxSignature, setPreviousLockTxSignature] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+    void fetch("/api/v1/launch/recovery", { cache: "no-store" })
+      .then(async (response) => {
+        if (response.status === 401 || response.status === 403) return null;
+        if (!response.ok) throw await responseError(response, "Launch recovery is unavailable");
+        return response.json();
+      })
+      .then((body) => {
+        const intent = body?.intent;
+        const result = intent?.launchResult;
+        if (
+          !isCancelled &&
+          intent?.status === "prepared" &&
+          typeof result?.mintAddress === "string"
+        ) {
+          void abandonLaunchIntent(result.mintAddress);
+          return;
+        }
+        if (
+          isCancelled ||
+          !intent ||
+          typeof intent.imageUri !== "string" ||
+          !intent.config ||
+          typeof result?.mintAddress !== "string" ||
+          typeof result?.createTxSignature !== "string"
+        ) return;
+
+        setRecoveredConfig({ ...intent.config, imageUri: intent.imageUri });
+        setPendingImageUri(intent.imageUri);
+        setLaunchResult(result as LaunchResult);
+        setIsRecoveredLockReady(intent.canRetryLock === true);
+        setLaunchStatus("partial");
+        setErrorMessage(
+          intent.canRetryLock
+            ? "Recovered a finalized token creation that still requires its mandatory lock."
+            : "Recovered a submitted token creation. Wait for finalization before retrying the lock.",
+        );
+      })
+      .catch((error) => {
+        if (!isCancelled) console.error("[launch/recovery] Restore failed:", error);
+      });
+    return () => { isCancelled = true; };
+  }, []);
 
   const launch = useCallback(async (deps: LaunchDeps) => {
     const { publicKey, signTransaction, connection } = deps;
@@ -118,6 +187,7 @@ export function useTokenLaunch(config: LaunchConfig) {
     setErrorMessage(null);
 
     let isCreateConfirmed = false;
+    let isCreateCheckpointed = false;
     let isLockVerified = false;
     let createTxSignature = "";
     let lockTxSignature = "";
@@ -171,6 +241,7 @@ export function useTokenLaunch(config: LaunchConfig) {
           walletPublicKey: publicKey.toBase58(),
           mintPublicKey: mintAddress,
           metadataUri: metadata.metadataUri,
+          imageUri,
           name: config.name,
           ticker: config.ticker,
           description: config.description,
@@ -220,10 +291,24 @@ export function useTokenLaunch(config: LaunchConfig) {
       );
 
       setLaunchPhase(3);
-      createTxSignature = await connection.sendRawTransaction(
+      const createSignatureBytes = createTransaction.signatures[0];
+      if (!createSignatureBytes) throw new Error("Wallet did not sign the creation transaction");
+      createTxSignature = bs58.encode(createSignatureBytes);
+      await saveLaunchCheckpoint({
+        phase: "create_submitted",
+        mintAddress,
+        createTxSignature,
+        createBlockhash: createBlockhash.blockhash,
+        createLastValidBlockHeight: createBlockhash.lastValidBlockHeight,
+      });
+      isCreateCheckpointed = true;
+      const submittedCreateSignature = await connection.sendRawTransaction(
         createTransaction.serialize(),
         { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 },
       );
+      if (submittedCreateSignature !== createTxSignature) {
+        throw new Error("RPC returned an unexpected creation transaction signature");
+      }
       setLaunchResult({
         mintAddress,
         createTxSignature,
@@ -241,7 +326,13 @@ export function useTokenLaunch(config: LaunchConfig) {
         createBlockhash.blockhash,
         createBlockhash.lastValidBlockHeight,
       );
+      await saveLaunchCheckpoint({
+        phase: "create_finalized",
+        mintAddress,
+        createTxSignature,
+      });
       isCreateConfirmed = true;
+      setIsRecoveredLockReady(true);
       setLaunchResult({
         mintAddress,
         createTxSignature,
@@ -299,6 +390,16 @@ export function useTokenLaunch(config: LaunchConfig) {
         lockLastValidBlockHeight: lockBundle.lastValidBlockHeight,
       };
       setLaunchResult(submittedLockResult);
+      await saveLaunchCheckpoint({
+        phase: "lock_submitted",
+        mintAddress,
+        lockTxSignature,
+        lockMetadataId,
+        lockAmount,
+        unlockTimestamp,
+        lockBlockhash: lockBundle.blockhash,
+        lockLastValidBlockHeight: lockBundle.lastValidBlockHeight,
+      });
       const submittedSignature = await connection.sendRawTransaction(
         serializedLockTransaction,
         { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 5 },
@@ -338,6 +439,10 @@ export function useTokenLaunch(config: LaunchConfig) {
       sessionStorage.removeItem(STORAGE_KEY);
     } catch (error) {
       console.error("[launch] Error:", error);
+      if (!isCreateCheckpointed && mintAddress) {
+        const abandonResponse = await abandonLaunchIntent(mintAddress).catch(() => null);
+        if (abandonResponse?.ok) createTxSignature = "";
+      }
       const raw = error instanceof Error ? error.message : String(error);
       const message = parseTransactionError(raw, config.buyAmountSol);
 
@@ -361,9 +466,18 @@ export function useTokenLaunch(config: LaunchConfig) {
   const retryLock = useCallback(async (deps: LaunchDeps) => {
     if (!launchResult?.createTxSignature || !pendingImageUri) return;
     const { publicKey, signTransaction, connection } = deps;
+    const retryConfig: LaunchConfig = recoveredConfig
+      ? { ...recoveredConfig, image: null }
+      : config;
     setLaunchStatus("launching");
     setLaunchPhase(5);
     setErrorMessage(null);
+
+    if (!isRecoveredLockReady) {
+      setLaunchStatus("partial");
+      setErrorMessage("Token creation is not finalized yet. Check its receipt and retry shortly.");
+      return;
+    }
 
     try {
       if (launchResult.lockTxSignature) {
@@ -398,7 +512,7 @@ export function useTokenLaunch(config: LaunchConfig) {
               unlockTimestamp: launchResult.unlockTimestamp,
             });
             await persistLaunch({
-              config,
+              config: retryConfig,
               publicKey,
               mintAddress: launchResult.mintAddress,
               imageUri: pendingImageUri,
@@ -413,6 +527,7 @@ export function useTokenLaunch(config: LaunchConfig) {
           }
         }
         if (status.value?.err || (!status.value && hasExpired)) {
+          setPreviousLockTxSignature(launchResult.lockTxSignature);
           setLaunchResult({
             ...launchResult,
             lockTxSignature: null,
@@ -452,7 +567,7 @@ export function useTokenLaunch(config: LaunchConfig) {
           unlockTimestamp: launchResult.unlockTimestamp,
         });
         await persistLaunch({
-          config,
+          config: retryConfig,
           publicKey,
           mintAddress: launchResult.mintAddress,
           imageUri: pendingImageUri,
@@ -462,7 +577,7 @@ export function useTokenLaunch(config: LaunchConfig) {
         });
       } else {
         const mint = new PublicKey(launchResult.mintAddress);
-        const lockBundle = await buildLockTransaction(config, publicKey, mint, connection);
+        const lockBundle = await buildLockTransaction(retryConfig, publicKey, mint, connection);
         setLaunchPhase(6);
         for (const signer of lockBundle.additionalSigners) {
           lockBundle.transaction.partialSign(signer);
@@ -491,6 +606,18 @@ export function useTokenLaunch(config: LaunchConfig) {
           lockLastValidBlockHeight: lockBundle.lastValidBlockHeight,
         };
         setLaunchResult(result);
+        await saveLaunchCheckpoint({
+          phase: "lock_submitted",
+          mintAddress: result.mintAddress,
+          lockTxSignature,
+          lockMetadataId: lockBundle.metadataId,
+          lockAmount: lockBundle.lockAmount,
+          unlockTimestamp: lockBundle.unlockTimestamp,
+          lockBlockhash: lockBundle.blockhash,
+          lockLastValidBlockHeight: lockBundle.lastValidBlockHeight,
+          replacesLockTxSignature: previousLockTxSignature,
+        });
+        setPreviousLockTxSignature(null);
         const submittedSignature = await connection.sendRawTransaction(
           serializedLockTransaction,
           { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 5 },
@@ -515,7 +642,7 @@ export function useTokenLaunch(config: LaunchConfig) {
         });
 
         await persistLaunch({
-          config,
+          config: retryConfig,
           publicKey,
           mintAddress: result.mintAddress,
           imageUri: pendingImageUri,
@@ -531,24 +658,44 @@ export function useTokenLaunch(config: LaunchConfig) {
     } catch (error) {
       const raw = error instanceof Error ? error.message : "Unknown error occurred";
       setLaunchStatus("partial");
-      setErrorMessage(`Lock retry failed: ${parseTransactionError(raw, config.buyAmountSol)}`);
+      setErrorMessage(`Lock retry failed: ${parseTransactionError(raw, retryConfig.buyAmountSol)}`);
     }
-  }, [config, launchResult, pendingImageUri, pendingSignedLockTransaction]);
+  }, [
+    config,
+    isRecoveredLockReady,
+    launchResult,
+    pendingImageUri,
+    pendingSignedLockTransaction,
+    previousLockTxSignature,
+    recoveredConfig,
+  ]);
 
-  const resetLaunch = useCallback(() => {
+  const resetLaunch = useCallback(async () => {
+    if (launchResult?.mintAddress && launchStatus === "partial") {
+      const response = await abandonLaunchIntent(launchResult.mintAddress);
+      if (!response.ok) {
+        setErrorMessage((await responseError(response, "Launch recovery cannot be abandoned")).message);
+        return false;
+      }
+    }
     setLaunchStatus("idle");
     setLaunchPhase(0);
     setLaunchResult(null);
     setErrorMessage(null);
     setPendingImageUri(null);
     setPendingSignedLockTransaction(null);
-  }, []);
+    setRecoveredConfig(null);
+    setIsRecoveredLockReady(true);
+    setPreviousLockTxSignature(null);
+    return true;
+  }, [launchResult, launchStatus]);
 
   return {
     launchStatus,
     launchPhase,
     launchPhases: LAUNCH_PHASES_WITH_LOCK,
     launchResult,
+    recoveredConfig,
     errorMessage,
     launch,
     retryLock,

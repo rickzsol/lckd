@@ -4,40 +4,43 @@ Updated: 2026-07-17
 
 ## Status
 
-The repository is not approved for production launch. The hardened candidate is on `main`; production serves safe unavailable responses because its Supabase data plane is offline. No on-chain transaction or database migration was executed during this work.
+Production remains fail-closed and is not approved for public launches. The code-side release candidate is isolated on `codex/production-hardening`; production Supabase access and the locking-guarantee decision remain external gates. No on-chain transaction or database migration was executed.
 
-## Verified behavior
+## Completed in this release lane
 
-- Launch uses two explicit wallet approvals: pump.fun create and buy, then Streamflow lock.
-- The Streamflow v13 instruction is a cliff-based token lock. Unlockable amount is zero before the selected timestamp and the full locked amount at that timestamp.
-- The lock is non-cancelable, non-transferable, cannot be topped up, cannot be paused, cannot change rate, and does not auto-withdraw.
-- Browser construction, pre-sign instruction decoding, finalized chain verification, and persisted receipt checks enforce the same lock invariants.
-- Retry rebroadcasts the same signed lock transaction and checks the metadata account before permitting a rebuild.
-- GitHub identity, signed wallet ownership, selected wallet, launch receipt, mint configuration, and lock receipt must agree before persistence.
-- Public data is shown as unavailable or unverified when its source cannot be confirmed. No production mock fallback remains.
-- Pump create/create_v2 and all four current buy variants use exact official account, PDA, ATA, program, payload, signer, and spend validation.
-- Finalized launch verification rejects extra outer programs and binds the Pump TradeEvent, actual token purchase, metadata document, and persisted SOL spend.
-- Wallet linking is immutable after the first verified link.
+- Replaced the broken PumpPortal create endpoint with official Pump SDK 1.36.0 construction.
+- Live unsigned mainnet construction simulated successfully at 198,375 CU and 1,162 serialized bytes.
+- Added shared atomic rate limiting with production fail-closed behavior.
+- Added authenticated durable launch recovery with immutable intent preparation, CAS checkpoints, finality reconciliation, safe expiry handling, and one active intent per owner.
+- Made verified token persistence plus recovery completion one database transaction.
+- Bound approved IPFS metadata and the reviewed lock percentage to finalized receipts.
+- Configured and validated Production `PINATA_JWT`, `HELIUS_RPC_URL`, and `ALLOWED_ORIGIN`; Preview has a dedicated Helius value.
+- Built a protected Vercel Preview successfully.
 
-## Verification completed
+## Verification
 
-- `npm test`: 16 passed
+- `npm test`: 21 passed
 - `npm run typecheck`: passed
 - `npm run lint`: passed
 - `npm run build`: passed with Next.js 16.2.10
-- Playwright: desktop and mobile routes, responsive menu, reduced motion, no horizontal overflow, no page console warnings
-- Gitleaks: 14 commits scanned, no leaks
-- Independent authentication, on-chain, deployment, and final patch reviews completed
+- Vercel Preview build: passed
+- Independent reviews: Pump construction, atomic feasibility, distributed limiter, recovery state machine
+- No transaction signed or sent
 
-## Known release gates
+## Open release gates
 
-- Restore or provision the production Supabase project. The configured host no longer resolves; live stats/feed return `available: false` and cron cannot refresh data.
-- Configure and validate `PINATA_JWT`, `HELIUS_RPC_URL`, `ALLOWED_ORIGIN`, Supabase, OAuth, and cron production values. Do not reuse credentials from another project without an explicit rotation decision.
-- Review existing production rows, then apply `supabase/migrations/002_backend_hardening.sql`.
-- Resolve the two-transaction guarantee: Pump creation finalizes before a separate lock approval, and launch recovery is not durable across refresh/crash.
-- Replace or supplement in-memory API throttling with a distributed deployment-layer rate limit.
-- Resolve the current PumpPortal unsigned create HTTP 400 and repeat live construction against the strict validator.
-- Deploy this commit to a preview and verify OAuth, wallet linking, metadata upload, RPC, finalized persistence, and runtime logs.
-- Production dependency audit reports 5 high and 21 moderate transitive findings. Suggested automated fixes are unsafe downgrades or unavailable upstream fixes.
-- After every gate above is green, run a disposable-wallet mainnet launch and lock. This needs explicit approval because it spends funds.
-- Context7 documentation lookup is unavailable until its monthly quota resets; official primary documentation was used instead.
+- Restore the intended Supabase project or provide a new production and staging project.
+- Inspect existing data, dry-run, then apply migrations 002, 003, and 004 in order.
+- Run database integration, OAuth, wallet-link, upload, recovery, and finalized persistence tests on staging.
+- Choose the production guarantee:
+  - Listing-gated: LCKD records and publishes only finalized locked launches, but a Pump token can exist unlocked if the user abandons approval two.
+  - Chain-atomic: hold launch while a per-launch ALT/custom-program design is built and independently audited.
+- Accept or defer the 8 high and 21 moderate unpatched transitive advisories.
+- Merge the isolated branch only after the concurrent Claude worktree is clean and reviewed.
+- After all gates pass, request explicit approval for a disposable-wallet mainnet launch and lock.
+
+## Tooling constraints
+
+- Context7 quota is exhausted.
+- The in-app Browser is unavailable.
+- Local Docker is not running, so migration 004 has static and independent review but not local Postgres execution.

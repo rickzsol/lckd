@@ -79,11 +79,21 @@ export function useLaunchWizard() {
     launchPhase,
     launchPhases,
     launchResult,
+    recoveredConfig,
     errorMessage,
     launch,
     retryLock,
     resetLaunch,
   } = useTokenLaunch(config);
+
+  useEffect(() => {
+    if (!recoveredConfig) return;
+    const timeout = window.setTimeout(() => {
+      setConfig((current) => ({ ...current, ...recoveredConfig, image: null }));
+      setStep(STEP_COUNT);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [recoveredConfig]);
 
   // Persist state to sessionStorage on change
   useEffect(() => {
@@ -226,12 +236,12 @@ export function useLaunchWizard() {
     return map[computedTier];
   }, [computedTier]);
 
-  const reset = useCallback(() => {
+  const reset = useCallback(async () => {
+    if (!await resetLaunch()) return;
     setStep(1);
     setConfig(INITIAL_CONFIG);
     setImagePreview(null);
     setErrors({});
-    resetLaunch();
     sessionStorage.removeItem(STORAGE_KEY);
   }, [resetLaunch]);
 

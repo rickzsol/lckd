@@ -6,12 +6,18 @@ import { requireLinkedWallet } from "@/lib/api/auth";
 import { requireSameOrigin } from "@/lib/api/origin";
 import { checkRateLimit } from "@/lib/api/rateLimit";
 import { isValidSolanaAddress } from "@/lib/api/validation";
-import { buildCreateTransaction } from "@/lib/solana/launchTransaction";
+import { buildCreateTransaction } from "@/lib/solana/pumpCreateBuilder.server";
+import {
+  LaunchRecoveryError,
+  savePreparedLaunchIntent,
+} from "@/lib/api/launchRecovery";
+import { fetchApprovedMetadata } from "@/lib/api/finalizedMetadata";
+import { OnChainVerificationError } from "@/lib/api/onchain";
 
 export { OPTIONS };
 
 const solanaAddress = z.string().refine(isValidSolanaAddress, "Invalid Solana address");
-const nullableHttpsUrl = z.string().url().refine(
+const nullableHttpsUrl = z.string().url().max(500).refine(
   (value) => new URL(value).protocol === "https:",
   "URL must use HTTPS",
 ).nullable().optional();
@@ -23,14 +29,18 @@ const launchSchema = z.object({
     (value) => new URL(value).protocol === "https:",
     "Metadata URI must use HTTPS",
   ),
+  imageUri: z.string().url().max(500).refine(
+    (value) => new URL(value).protocol === "https:",
+    "Image URI must use HTTPS",
+  ),
   name: z.string().trim().min(1).max(32),
   ticker: z.string().trim().min(1).max(13),
   description: z.string().max(1000).default(""),
   buyAmountSol: z.number().finite().min(0.01).max(100),
   lockDurationDays: z.number().int().min(7).max(365),
   lockPercentage: z.number().int().min(51).max(100),
-  githubUsername: z.string().nullable().optional(),
-  githubRepo: z.string().nullable().optional(),
+  githubUsername: z.string().max(39).nullable().optional(),
+  githubRepo: z.string().max(200).nullable().optional(),
   liveUrl: nullableHttpsUrl,
   twitterUrl: nullableHttpsUrl,
   telegramUrl: nullableHttpsUrl,
@@ -41,7 +51,7 @@ export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
 
-  const limited = checkRateLimit(request, "launch");
+  const limited = await checkRateLimit(request, "launch");
   if (limited) return limited;
 
   const { session, error: authErr } = await requireLinkedWallet();
@@ -58,8 +68,23 @@ export async function POST(request: NextRequest) {
     if (body.walletPublicKey !== session.wallet_address) {
       return apiError("walletPublicKey does not match the linked wallet", 403);
     }
+    if (body.githubUsername && body.githubUsername !== session.github_username) {
+      return apiError("githubUsername does not match the authenticated user", 403);
+    }
     const walletPubkey = new PublicKey(body.walletPublicKey);
     const mintPubkey = new PublicKey(body.mintPublicKey);
+    const metadata = await fetchApprovedMetadata(body.metadataUri);
+    if (
+      metadata.name !== body.name.trim() ||
+      metadata.symbol !== body.ticker.trim() ||
+      metadata.description !== body.description ||
+      metadata.image !== body.imageUri ||
+      (metadata.twitter ?? null) !== (body.twitterUrl ?? null) ||
+      (metadata.telegram ?? null) !== (body.telegramUrl ?? null) ||
+      (metadata.website ?? null) !== (body.websiteUrl ?? null)
+    ) {
+      return apiError("Launch details do not match the approved metadata", 422);
+    }
 
     const config = {
       name: body.name.trim(),
@@ -70,7 +95,7 @@ export async function POST(request: NextRequest) {
       buyAmountSol: body.buyAmountSol,
       lockDurationDays: body.lockDurationDays,
       lockPercentage: body.lockPercentage,
-      githubUsername: body.githubUsername ?? null,
+      githubUsername: session.github_username,
       githubRepo: body.githubRepo ?? null,
       liveUrl: body.liveUrl ?? null,
       twitterUrl: body.twitterUrl ?? null,
@@ -85,6 +110,27 @@ export async function POST(request: NextRequest) {
       body.metadataUri,
     );
 
+    await savePreparedLaunchIntent({
+      session,
+      mintAddress: body.mintPublicKey,
+      metadataUri: body.metadataUri,
+      imageUri: body.imageUri,
+      config: {
+        name: config.name,
+        ticker: config.ticker,
+        description: config.description,
+        buyAmountSol: config.buyAmountSol,
+        lockDurationDays: config.lockDurationDays,
+        lockPercentage: config.lockPercentage,
+        githubUsername: config.githubUsername,
+        githubRepo: config.githubRepo,
+        liveUrl: config.liveUrl,
+        twitterUrl: config.twitterUrl,
+        telegramUrl: config.telegramUrl,
+        websiteUrl: config.websiteUrl,
+      },
+    });
+
     const txBase64 = Buffer.from(txBytes).toString("base64");
 
     return apiResponse({
@@ -92,6 +138,8 @@ export async function POST(request: NextRequest) {
       mintPublicKey: body.mintPublicKey,
     }, 201);
   } catch (err) {
+    if (err instanceof LaunchRecoveryError) return apiError(err.message, err.status);
+    if (err instanceof OnChainVerificationError) return apiError(err.message, err.status);
     const message = err instanceof Error ? err.message : "Launch transaction build failed";
     console.error("[launch] Error:", message);
     return apiError("Launch transaction build failed", 500);

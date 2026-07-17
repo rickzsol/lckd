@@ -13,7 +13,6 @@ import {
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import type { LaunchConfig } from "@/types/index";
-import { fetchPumpPortalCreateTx } from "./pumpfun";
 import {
   buildStreamflowLockInstructions,
   calculateLockAmount,
@@ -33,10 +32,6 @@ import {
 const BALANCE_MAX_RETRIES = 10;
 const BALANCE_RETRY_DELAY_MS = 1_500;
 
-export interface CreateTxBundle {
-  txBytes: Uint8Array;
-}
-
 export interface LockTxBundle {
   transaction: Transaction;
   additionalSigners: Keypair[];
@@ -47,7 +42,7 @@ export interface LockTxBundle {
   lastValidBlockHeight: number;
 }
 
-function pumpCreateExpectation(config: LaunchConfig, metadataUri: string) {
+export function pumpCreateExpectation(config: LaunchConfig, metadataUri: string) {
   return {
     name: config.name,
     symbol: config.ticker,
@@ -56,34 +51,6 @@ function pumpCreateExpectation(config: LaunchConfig, metadataUri: string) {
     slippagePercent: DEFAULT_SLIPPAGE_BPS / 100,
     priorityFeeSol: DEFAULT_PRIORITY_FEE_SOL,
   };
-}
-
-export async function buildCreateTransaction(
-  config: LaunchConfig,
-  walletPublicKey: PublicKey,
-  mintPublicKey: PublicKey,
-  metadataUri: string,
-): Promise<CreateTxBundle> {
-  if (!Number.isFinite(config.buyAmountSol) || config.buyAmountSol <= 0) {
-    throw new Error("Initial buy amount must be greater than 0 SOL");
-  }
-
-  const txBytes = await fetchPumpPortalCreateTx({
-    creatorPublicKey: walletPublicKey.toBase58(),
-    mintPublicKey: mintPublicKey.toBase58(),
-    name: config.name,
-    symbol: config.ticker,
-    metadataUri,
-    buyAmountSol: config.buyAmountSol,
-    priorityFeeSol: DEFAULT_PRIORITY_FEE_SOL,
-  });
-  validatePumpPortalCreateTransaction(
-    txBytes,
-    walletPublicKey,
-    mintPublicKey,
-    pumpCreateExpectation(config, metadataUri),
-  );
-  return { txBytes };
 }
 
 export function prepareCreateTxForSigning(

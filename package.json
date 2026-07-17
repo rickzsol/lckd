@@ -8,10 +8,11 @@
     "start": "next start",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/solana/streamflow.test.ts src/lib/solana/pumpBuyValidation.test.ts src/lib/solana/transactionValidation.test.ts"
+    "test": "tsx --test src/lib/api/rateLimit.test.ts src/lib/api/launchRecoveryValidation.test.ts src/lib/solana/streamflow.test.ts src/lib/solana/pumpBuyValidation.test.ts src/lib/solana/transactionValidation.test.ts"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
+    "@pump-fun/pump-sdk": "1.36.0",
     "@solana/spl-token": "^0.4.15",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-phantom": "^0.9.29",

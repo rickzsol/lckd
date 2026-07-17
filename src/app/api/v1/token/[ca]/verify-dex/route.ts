@@ -28,7 +28,7 @@ export async function POST(
 
     if (!isValidSolanaAddress(ca)) return apiError("A valid token address is required", 400);
 
-    const limited = checkRateLimit(request);
+    const limited = await checkRateLimit(request);
     if (limited) return limited;
 
     const response = await fetch(`${DEXSCREENER_API}/${encodeURIComponent(ca)}`, {

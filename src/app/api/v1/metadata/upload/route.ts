@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
 
-  const limited = checkRateLimit(request, "upload");
+  const limited = await checkRateLimit(request, "upload");
   if (limited) return limited;
 
   const { error: authErr } = await requireLinkedWallet();

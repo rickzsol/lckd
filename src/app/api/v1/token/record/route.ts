@@ -11,6 +11,8 @@ import {
   verifyFinalizedLaunchTransaction,
   verifyFinalizedLockTransaction,
 } from "@/lib/api/onchain";
+import { fetchApprovedMetadata } from "@/lib/api/finalizedMetadata";
+import { hasRequiredLockCoverage } from "@/lib/api/launchRecoveryValidation";
 
 export { OPTIONS };
 
@@ -21,17 +23,6 @@ const httpsUrl = z.string().url().max(500).refine(
   "URL must use HTTPS",
 );
 const nullableUrl = httpsUrl.nullable().default(null);
-const MAX_METADATA_BYTES = 16 * 1024;
-
-const finalizedMetadataSchema = z.object({
-  name: z.string().trim().min(1).max(32),
-  symbol: z.string().trim().min(1).max(13),
-  description: z.string().max(1000).default(""),
-  image: httpsUrl,
-  twitter: nullableUrl.optional(),
-  telegram: nullableUrl.optional(),
-  website: nullableUrl.optional(),
-}).passthrough();
 
 const fullRecordSchema = z.object({
   mintAddress: solanaAddress,
@@ -62,82 +53,11 @@ function verificationError(error: unknown) {
   return apiError("On-chain verification is unavailable", 503);
 }
 
-function pinataGatewayOrigin(): string {
-  const configured = process.env.PINATA_GATEWAY?.trim();
-  if (!configured) return "https://gateway.pinata.cloud";
-  const gateway = new URL(configured.startsWith("http") ? configured : `https://${configured}`);
-  const isApprovedHost =
-    gateway.hostname === "gateway.pinata.cloud" ||
-    gateway.hostname.endsWith(".mypinata.cloud");
-  if (gateway.protocol !== "https:" || !isApprovedHost) {
-    throw new OnChainVerificationError("PINATA_GATEWAY is not an approved Pinata host", 503);
-  }
-  return gateway.origin;
-}
-
-async function readLimitedBody(response: Response): Promise<string> {
-  if (!response.body) {
-    throw new OnChainVerificationError("Finalized launch metadata has no body", 422);
-  }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    totalBytes += value.byteLength;
-    if (totalBytes > MAX_METADATA_BYTES) {
-      await reader.cancel();
-      throw new OnChainVerificationError("Finalized launch metadata is too large", 422);
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString("utf8");
-}
-
-async function fetchFinalizedMetadata(metadataUri: string) {
-  const url = new URL(metadataUri);
-  if (
-    url.protocol !== "https:" ||
-    url.origin !== pinataGatewayOrigin() ||
-    !/^\/ipfs\/[A-Za-z0-9]+$/.test(url.pathname) ||
-    url.search ||
-    url.hash
-  ) {
-    throw new OnChainVerificationError("Launch metadata URI is not an approved IPFS gateway URL", 422);
-  }
-
-  const response = await fetch(url, {
-    cache: "no-store",
-    redirect: "error",
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (!response.ok) {
-    throw new OnChainVerificationError("Finalized launch metadata is unavailable", 422);
-  }
-  const declaredLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_METADATA_BYTES) {
-    throw new OnChainVerificationError("Finalized launch metadata is too large", 422);
-  }
-  const text = await readLimitedBody(response);
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    throw new OnChainVerificationError("Finalized launch metadata is invalid JSON", 422);
-  }
-  const parsed = finalizedMetadataSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new OnChainVerificationError("Finalized launch metadata is invalid", 422);
-  }
-  return parsed.data;
-}
-
 export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
 
-  const limited = checkRateLimit(request, "record");
+  const limited = await checkRateLimit(request, "record");
   if (limited) return limited;
 
   const { session, error: authError } = await requireLinkedWallet();
@@ -173,7 +93,7 @@ export async function POST(request: NextRequest) {
       session.wallet_address,
       body.mintAddress,
     );
-    metadata = await fetchFinalizedMetadata(launch.metadataUri);
+    metadata = await fetchApprovedMetadata(launch.metadataUri);
     lock = await verifyFinalizedLockTransaction(
       body.lockTxSignature,
       session.wallet_address,
@@ -186,10 +106,7 @@ export async function POST(request: NextRequest) {
 
   if (
     lock.durationDays !== body.lockDurationDays ||
-    lock.percentage < 50 ||
-    lock.percentage > body.lockPercentage ||
-    BigInt(lock.debitedAmount) + BigInt(10) <
-      (launch.purchasedAmount * BigInt(body.lockPercentage)) / BigInt(100)
+    lock.percentage < 50
   ) {
     return apiError("Submitted lock terms do not match the finalized transaction", 422);
   }
@@ -207,66 +124,66 @@ export async function POST(request: NextRequest) {
     return apiError("Submitted token details do not match finalized metadata", 422);
   }
 
-  const supabase = getServerClient();
-  const { data: existing, error: lookupError } = await supabase
-    .from("tokens")
-    .select("id, creator_wallet, launch_tx")
+  const { data: intent, error: intentError } = await getServerClient()
+    .from("launch_intents")
+    .select("status, create_tx, lock_tx, config")
+    .eq("github_id", session.github_id)
+    .eq("creator_wallet", session.wallet_address)
     .eq("mint_address", body.mintAddress)
     .maybeSingle();
-
-  if (lookupError) {
-    console.error("[token/record] Token lookup failed:", lookupError.message);
-    return apiError("Failed to verify token ownership", 503);
-  }
-  if (existing?.creator_wallet && existing.creator_wallet !== session.wallet_address) {
-    return apiError("Token is owned by another wallet", 403);
-  }
-  if (existing?.launch_tx && existing.launch_tx !== body.launchTxSignature) {
-    return apiError("Launch transaction cannot be replaced", 409);
+  const requestedLockPercentage = Number(intent?.config?.lockPercentage);
+  if (intentError) return apiError("Launch recovery is unavailable", 503);
+  if (
+    !intent ||
+    intent.status !== "lock_submitted" ||
+    intent.create_tx !== body.launchTxSignature ||
+    intent.lock_tx !== body.lockTxSignature ||
+    !hasRequiredLockCoverage(
+      lock.debitedAmount,
+      launch.purchasedAmount,
+      requestedLockPercentage,
+    )
+  ) {
+    return apiError("Finalized lock does not satisfy the reviewed launch intent", 422);
   }
 
   const verifiedAt = new Date().toISOString();
-  const values = {
-    name: launch.name,
-    ticker: launch.symbol,
-    description: metadata.description,
-    image_uri: metadata.image,
-    creator_wallet: session.wallet_address,
-    launch_tx: body.launchTxSignature,
-    lock_tx: body.lockTxSignature,
-    lock_duration_days: lock.durationDays,
-    lock_percentage: lock.percentage,
-    lock_unlock_at: lock.unlockAt,
-    lock_amount: lock.amount,
-    buy_amount_sol: Number(launch.buyAmountLamports) / 1_000_000_000,
-    github_username: session.github_username,
-    github_repo: body.githubRepo,
-    live_url: body.liveUrl,
-    twitter_url: metadata.twitter ?? null,
-    telegram_url: metadata.telegram ?? null,
-    website_url: metadata.website ?? null,
-    launch_verified_at: verifiedAt,
-    lock_verified_at: verifiedAt,
-  };
-
-  const query = existing
-    ? supabase
-        .from("tokens")
-        .update(values)
-        .eq("id", existing.id)
-        .eq("creator_wallet", session.wallet_address)
-    : supabase.from("tokens").insert({
-        ...values,
-        mint_address: body.mintAddress,
-        trust_tier: 1,
-      });
-
-  const { data, error } = await query.select("id").maybeSingle();
+  const { data: wasUpdated, error } = await getServerClient().rpc(
+    "record_verified_launch",
+    {
+      p_github_id: session.github_id,
+      p_creator_wallet: session.wallet_address,
+      p_mint_address: body.mintAddress,
+      p_metadata_uri: launch.metadataUri,
+      p_launch_tx: body.launchTxSignature,
+      p_lock_tx: body.lockTxSignature,
+      p_name: launch.name,
+      p_ticker: launch.symbol,
+      p_description: metadata.description,
+      p_image_uri: metadata.image,
+      p_lock_duration_days: lock.durationDays,
+      p_lock_percentage: lock.percentage,
+      p_lock_unlock_at: lock.unlockAt,
+      p_lock_amount: lock.amount,
+      p_lock_debited_amount: lock.debitedAmount,
+      p_purchased_amount: launch.purchasedAmount.toString(),
+      p_buy_amount_sol: Number(launch.buyAmountLamports) / 1_000_000_000,
+      p_github_username: session.github_username,
+      p_github_repo: body.githubRepo,
+      p_live_url: body.liveUrl,
+      p_twitter_url: metadata.twitter ?? null,
+      p_telegram_url: metadata.telegram ?? null,
+      p_website_url: metadata.website ?? null,
+      p_verified_at: verifiedAt,
+    },
+  );
   if (error) {
     console.error("[token/record] Persistence failed:", error.message);
-    return apiError(error.code === "23505" ? "Token or transaction is already recorded" : "Failed to record token", error.code === "23505" ? 409 : 503);
+    const isConflict = error.code === "23505" || error.code === "23514";
+    return apiError(
+      isConflict ? "Launch recovery state does not match finalized receipts" : "Failed to record token",
+      isConflict ? 409 : 503,
+    );
   }
-  if (!data) return apiError("Token ownership changed during update", 409);
-
-  return apiResponse({ success: true, updated: Boolean(existing) }, existing ? 200 : 201);
+  return apiResponse({ success: true, updated: wasUpdated === true }, wasUpdated ? 200 : 201);
 }

@@ -36,7 +36,7 @@ const RISKS = [
   },
   {
     title: "Third-party and protocol risk",
-    body: "LCKD depends on wallet adapters, RPC providers, pump.fun, PumpPortal, Streamflow, IPFS services, GitHub, Supabase, DexScreener, Jupiter, Solana, and other infrastructure. Outages, upgrades, defects, or changed fees can affect results.",
+    body: "LCKD depends on wallet adapters, RPC providers, pump.fun, the official Pump SDK, Streamflow, IPFS services, GitHub, Supabase, DexScreener, Jupiter, Solana, and other infrastructure. Outages, upgrades, defects, or changed fees can affect results.",
   },
   {
     title: "Platform record risk",

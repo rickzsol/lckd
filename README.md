@@ -1,6 +1,6 @@
 # LCKD
 
-LCKD is a Solana launch interface that creates a token through PumpPortal, then places the creator's purchased tokens into a separate, time-based Streamflow lock. GitHub identity, wallet ownership, launch receipts, and lock receipts are verified before a token is recorded.
+LCKD is a Solana launch interface that constructs a pump.fun create-and-buy transaction with the official Pump SDK, then places the creator's purchased tokens into a separate, time-based Streamflow lock. GitHub identity, wallet ownership, launch receipts, and lock receipts are verified before a token is recorded.
 
 ## Transaction flow
 

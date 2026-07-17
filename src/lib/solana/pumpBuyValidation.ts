@@ -14,6 +14,26 @@ const PUMP_BUY_EXACT_SOL_DISCRIMINATOR = "38fc74089edfcd5f";
 const PUMP_BUY_V2_DISCRIMINATOR = "b817ee6167c5d33d";
 const PUMP_BUY_EXACT_QUOTE_V2_DISCRIMINATOR = "c2ab1c46684d5b2f";
 const PUMP_FEE_PROGRAM_ID = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
+const FEE_RECIPIENTS = new Set([
+  "62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV",
+  "7VtfL8fvgNfhz17qKRMjzQEXgbdpnHHHQRh54R9jP2RJ",
+  "7hTckgnGnLQR6sdH7YkqFTAA7VwTfYFaZ6EhEsU3saCX",
+  "9rPYyANsfQZw3DnDmKE3YCQF5E8oD89UXoHn9JFEhJUz",
+  "AVmoTthdrX6tKt4nDjco2D775W2YK3sDhxPcMmzUAmTY",
+  "CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM",
+  "FWsW1xNtWscwNmKv6wVsU1iTzRN6wmmk3MjxRP5tT7hz",
+  "G5UZAVbAf46s7cKWoyKu8kYTip9DGTpbLZ2qa9Aq69dP",
+]);
+const BUYBACK_FEE_RECIPIENTS = new Set([
+  "5YxQFdt3Tr9zJLvkFccqXVUwhdTWJQc1fFg2YPbxvxeD",
+  "9M4giFFMxmFGXtc3feFzRai56WbBqehoSeRE5GK7gf7",
+  "GXPFM2caqTtQYC2cJ5yJRi9VDkpsYZXzYdwYpGnLmtDL",
+  "3BpXnfJaUTiwXnJNe7Ej1rcbzqTTQUvLShZaWazebsVR",
+  "5cjcW9wExnJJiqgLjq7DEG75Pm6JBgE1hNv4B2vHXUW6",
+  "EHAAiTxcdDwQ3U4bU6YcMsQGaekdzLS3B5SmYo46kJtL",
+  "5eHhjP8JaYkz83CWwvGU2uMUXefd3AazWGx4gpcuEEYD",
+  "A7hAgCzFw14fejgCp387JUJRMNyz4j89JKnhtKU8piqW",
+]);
 
 interface PumpBuyLayout {
   accountCount: number;
@@ -23,8 +43,8 @@ interface PumpBuyLayout {
 }
 
 const BUY_LAYOUTS = new Map<string, PumpBuyLayout>([
-  [PUMP_BUY_DISCRIMINATOR, { accountCount: 16, spendOffset: 16, dataLength: 25, version: "legacy" }],
-  [PUMP_BUY_EXACT_SOL_DISCRIMINATOR, { accountCount: 16, spendOffset: 8, dataLength: 25, version: "legacy" }],
+  [PUMP_BUY_DISCRIMINATOR, { accountCount: 18, spendOffset: 16, dataLength: 25, version: "legacy" }],
+  [PUMP_BUY_EXACT_SOL_DISCRIMINATOR, { accountCount: 18, spendOffset: 8, dataLength: 25, version: "legacy" }],
   [PUMP_BUY_V2_DISCRIMINATOR, { accountCount: 27, spendOffset: 16, dataLength: 24, version: "v2" }],
   [PUMP_BUY_EXACT_QUOTE_V2_DISCRIMINATOR, { accountCount: 27, spendOffset: 8, dataLength: 24, version: "v2" }],
 ]);
@@ -36,6 +56,17 @@ function derivePda(programId: PublicKey, ...seeds: Uint8Array[]): PublicKey {
 function assertAccount(accounts: PublicKey[], index: number, expected: PublicKey): void {
   if (!accounts[index]?.equals(expected)) {
     throw new Error(`Pump buy account ${index} mismatch`);
+  }
+}
+
+function assertRecipient(
+  accounts: PublicKey[],
+  index: number,
+  recipients: Set<string>,
+  label: string,
+): void {
+  if (!accounts[index] || !recipients.has(accounts[index].toBase58())) {
+    throw new Error(`Pump buy ${label} mismatch`);
   }
 }
 
@@ -52,6 +83,7 @@ function validateLegacyAccounts(
   const tokenProgram = tokenProgramFor(create);
   const bondingCurve = derivePda(PUMPFUN_PROGRAM_ID, Buffer.from("bonding-curve"), mint.toBuffer());
   assertAccount(accounts, 0, derivePda(PUMPFUN_PROGRAM_ID, Buffer.from("global")));
+  assertRecipient(accounts, 1, FEE_RECIPIENTS, "fee recipient");
   assertAccount(accounts, 2, mint);
   assertAccount(accounts, 3, bondingCurve);
   assertAccount(accounts, 4, getAssociatedTokenAddressSync(mint, bondingCurve, true, tokenProgram));
@@ -82,6 +114,12 @@ function validateLegacyAccounts(
     derivePda(PUMP_FEE_PROGRAM_ID, Buffer.from("fee_config"), PUMPFUN_PROGRAM_ID.toBuffer()),
   );
   assertAccount(accounts, 15, PUMP_FEE_PROGRAM_ID);
+  assertAccount(
+    accounts,
+    16,
+    derivePda(PUMPFUN_PROGRAM_ID, Buffer.from("bonding-curve-v2"), mint.toBuffer()),
+  );
+  assertRecipient(accounts, 17, BUYBACK_FEE_RECIPIENTS, "buyback fee recipient");
 }
 
 function validateV2Accounts(
@@ -109,7 +147,9 @@ function validateV2Accounts(
   assertAccount(accounts, 3, baseTokenProgram);
   assertAccount(accounts, 4, TOKEN_PROGRAM_ID);
   assertAccount(accounts, 5, ASSOCIATED_TOKEN_PROGRAM_ID);
+  assertRecipient(accounts, 6, FEE_RECIPIENTS, "fee recipient");
   assertAccount(accounts, 7, getAssociatedTokenAddressSync(NATIVE_MINT, accounts[6], true));
+  assertRecipient(accounts, 8, BUYBACK_FEE_RECIPIENTS, "buyback fee recipient");
   assertAccount(accounts, 9, getAssociatedTokenAddressSync(NATIVE_MINT, accounts[8], true));
   assertAccount(accounts, 10, bondingCurve);
   assertAccount(accounts, 11, getAssociatedTokenAddressSync(mint, bondingCurve, true, baseTokenProgram));

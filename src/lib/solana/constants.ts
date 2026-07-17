@@ -11,7 +11,6 @@ export const MPL_TOKEN_METADATA_PROGRAM_ID = new PublicKey(
 );
 
 export const PUMPFUN_TOKEN_DECIMALS = 6;
-export const PUMPPORTAL_TRADE_URL = "https://pumpportal.fun/api/trade-local";
 
 export const DEFAULT_PRIORITY_FEE_MICROLAMPORTS = 100_000;
 export const DEFAULT_SLIPPAGE_BPS = 1_000;

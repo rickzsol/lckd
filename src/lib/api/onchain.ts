@@ -114,6 +114,10 @@ async function getConnection(): Promise<Connection> {
   return connectionPromise;
 }
 
+export async function getFinalizedBlockHeight(): Promise<number> {
+  return (await getConnection()).getBlockHeight("finalized");
+}
+
 function decodeBase58(value: string): Buffer {
   let decoded = BigInt(0);
   for (const character of value) {
