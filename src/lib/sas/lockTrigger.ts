@@ -2,7 +2,7 @@ import "server-only";
 
 import { getServerClient } from "@/lib/supabase";
 import { isSasEnabled } from "./config";
-import { triggerAttestation } from "./trigger";
+import { triggerAttestation, triggerCloseAttestation } from "./trigger";
 import { TRUST_TIER, type TrustTierValue } from "./schema";
 import { type LockChainFacts } from "./evidence";
 
@@ -152,5 +152,81 @@ export async function triggerTierTransitionAttestation(input: TierTransitionInpu
     });
   } catch (err) {
     console.error("[sas] tier-transition attestation trigger failed:", err);
+  }
+}
+
+/**
+ * Expired-lock revocation trigger, called from the tier-recompute cron when a
+ * lock's cliff has passed. The finalized claim has ended, so the on-chain
+ * attestation must be CLOSED, not reissued: a reissue would derive a past cliff,
+ * close the old account, then dead-letter the impossible past-expiry create.
+ * Behind SAS_ENABLED and NON-BLOCKING. No-ops when there is no live attestation.
+ */
+export interface ExpiredLockInput {
+  tokenId: string;
+}
+
+export async function triggerExpiredLockClose(input: ExpiredLockInput): Promise<void> {
+  if (!isSasEnabled()) return;
+  try {
+    const client = getServerClient();
+    const { data, error } = await client
+      .from("tokens")
+      .select("mint_address, creator_wallet, lock_metadata_id, github_username, lock_amount, sas_supply_basis, lock_unlock_at")
+      .eq("id", input.tokenId)
+      .maybeSingle();
+    if (error || !data) return;
+    const row = data as {
+      mint_address: string;
+      creator_wallet: string;
+      lock_metadata_id: string | null;
+      github_username: string | null;
+      lock_amount: string | null;
+      sas_supply_basis: string | null;
+      lock_unlock_at: string | null;
+    };
+
+    // Only close a live attestation; if there is none there is nothing to revoke.
+    const { data: liveRow } = await client
+      .from("attestations")
+      .select("evidence_hash")
+      .eq("mint", row.mint_address)
+      .in("status", ["pending", "submitted", "finalized"])
+      .order("generation", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const currentEvidenceHash = (liveRow as { evidence_hash: string } | null)?.evidence_hash ?? null;
+    if (!currentEvidenceHash) return;
+
+    // The facts only satisfy the outbox payload constraints; the worker's close
+    // path never issues from them. Fall back to safe placeholders when the lock
+    // fields are absent so the positive-value constraints still hold.
+    const supplyBasis =
+      row.sas_supply_basis && /^\d+$/.test(row.sas_supply_basis) ? BigInt(row.sas_supply_basis) : BigInt(1);
+    const lockedAmount =
+      row.lock_amount && /^\d+$/.test(row.lock_amount) ? BigInt(row.lock_amount) : BigInt(0);
+    const cliffTs = row.lock_unlock_at
+      ? BigInt(Math.floor(new Date(row.lock_unlock_at).getTime() / 1000))
+      : BigInt(1);
+
+    const facts: LockChainFacts = {
+      mint: row.mint_address,
+      creator: row.creator_wallet,
+      streamId: row.lock_metadata_id ?? "",
+      lockedAmount,
+      totalSupply: supplyBasis,
+      cliffTs: cliffTs > BigInt(0) ? cliffTs : BigInt(1),
+    };
+
+    await triggerCloseAttestation({
+      tokenId: input.tokenId,
+      mint: row.mint_address,
+      facts,
+      tier: TRUST_TIER.LOCKED,
+      github: row.github_username ?? "",
+      currentEvidenceHash,
+    });
+  } catch (err) {
+    console.error("[sas] expired-lock close trigger failed:", err);
   }
 }

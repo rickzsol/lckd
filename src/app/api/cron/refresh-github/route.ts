@@ -4,7 +4,9 @@ import { getServerClient } from "@/lib/supabase";
 import { getGitHubRepoDetails, getRecentCommits, getCommitCountSinceLaunch } from "@/lib/github/api";
 import { calculateTrustTier } from "@/lib/github/tierCalculator";
 import { verifyLiveUrl } from "@/lib/github/urlVerifier";
-import { triggerTierTransitionAttestation } from "@/lib/sas/lockTrigger";
+import { triggerTierTransitionAttestation, triggerExpiredLockClose } from "@/lib/sas/lockTrigger";
+import { isSasEnabled } from "@/lib/sas/config";
+import { POLICY_VERSION, SCHEMA_VERSION } from "@/lib/sas/schema";
 import { type TrustTierValue } from "@/lib/sas/schema";
 import { type Token, type GitHubProfile } from "@/types";
 
@@ -56,10 +58,12 @@ export async function GET(req: Request) {
   }
   const expiredDowngrades = downgradedTokens?.length ?? 0;
 
-  // Expired-lock downgrades are a tier transition too: reissue the attestation at
-  // the new tier (SAS_ENABLED gated, non-blocking).
+  // An expired lock ends the finalized claim: CLOSE the on-chain attestation, do
+  // NOT reissue. The cliff is already in the past, so a reissue would close the old
+  // account and then dead-letter an impossible past-expiry create. (SAS_ENABLED
+  // gated, non-blocking.)
   for (const row of (downgradedTokens as Array<{ id: string }> | null) ?? []) {
-    await triggerTierTransitionAttestation({ tokenId: row.id, newTier: 1 as TrustTierValue });
+    await triggerExpiredLockClose({ tokenId: row.id });
   }
 
   let refreshed = 0;
@@ -186,9 +190,18 @@ async function refreshToken(
 
   if (updateError) throw new Error(`Tier update failed: ${updateError.message}`);
 
-  // A tier change is an evidence transition: reissue the on-chain attestation at
-  // the new tier (SAS_ENABLED gated, non-blocking).
-  if (isChanged) {
+  // A tier change is an evidence transition, but so is a policy or schema version
+  // bump: the on-chain payload embeds policy_version, and the schema PDA pins
+  // schema_version, so a live attestation issued under an older version must be
+  // reissued even when the tier is unchanged. Reissue when the tier changed OR the
+  // live attestation carries a stale version. triggerTierTransitionAttestation
+  // re-derives evidence under the CURRENT versions and its evidence-hash guard
+  // no-ops if nothing actually differs, so an unnecessary call is safe.
+  // (SAS_ENABLED gated, non-blocking.)
+  const needsVersionReissue = isChanged
+    ? false
+    : await hasStaleAttestationVersion(supabase, token.mint_address);
+  if (isChanged || needsVersionReissue) {
     await triggerTierTransitionAttestation({
       tokenId: token.id,
       newTier: newTier as TrustTierValue,
@@ -196,4 +209,27 @@ async function refreshToken(
   }
 
   return isChanged;
+}
+
+/**
+ * Whether the live attestation for a mint was issued under an older policy or
+ * schema version than the current constants. Reads only when SAS is enabled so a
+ * disabled deployment pays no extra query per refreshed token.
+ */
+async function hasStaleAttestationVersion(
+  supabase: ReturnType<typeof getServerClient>,
+  mint: string,
+): Promise<boolean> {
+  if (!isSasEnabled()) return false;
+  const { data } = await supabase
+    .from("attestations")
+    .select("policy_version, schema_version")
+    .eq("mint", mint)
+    .in("status", ["pending", "submitted", "finalized"])
+    .order("generation", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return false;
+  const row = data as { policy_version: number; schema_version: number };
+  return row.policy_version !== POLICY_VERSION || row.schema_version !== SCHEMA_VERSION;
 }
