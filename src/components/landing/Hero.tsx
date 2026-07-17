@@ -4,12 +4,6 @@ import HeroStats from "./HeroStats";
 
 const RISE = "rise 600ms cubic-bezier(0.16,1,0.3,1) both";
 
-const TRUST_CHIPS = [
-  "streamflow token lock",
-  "pump.fun liquidity",
-  "github verified",
-];
-
 export default function Hero() {
   return (
     <section className="relative flex min-h-screen flex-col items-center justify-center px-[clamp(16px,5vw,32px)] pb-12 pt-[150px] text-center">
@@ -55,7 +49,7 @@ export default function Hero() {
       </p>
 
       <div
-        className="mb-9 flex flex-wrap justify-center gap-3"
+        className="mb-[52px] flex flex-wrap justify-center gap-3"
         style={{ animation: RISE, animationDelay: "240ms" }}
       >
         <Link href="/launch" className="shiny-btn">
@@ -70,22 +64,8 @@ export default function Hero() {
       </div>
 
       <div
-        className="mb-[52px] flex flex-wrap justify-center gap-2"
-        style={{ animation: RISE, animationDelay: "320ms" }}
-      >
-        {TRUST_CHIPS.map((chip) => (
-          <span
-            key={chip}
-            className="whitespace-nowrap rounded-full border border-white/[0.08] px-3 py-1.5 font-mono text-[10px] font-medium text-text-3"
-          >
-            {chip}
-          </span>
-        ))}
-      </div>
-
-      <div
         className="flex w-full justify-center"
-        style={{ animation: RISE, animationDelay: "400ms" }}
+        style={{ animation: RISE, animationDelay: "320ms" }}
       >
         <HeroStats />
       </div>

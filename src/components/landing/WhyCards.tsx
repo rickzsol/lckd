@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Reveal from "./Reveal";
 
 const LockIcon = (
   <svg
@@ -73,25 +74,26 @@ export default function WhyCards() {
   return (
     <section className="relative px-[clamp(16px,5vw,32px)] py-[clamp(64px,9vw,104px)]">
       <div className="mx-auto max-w-[1152px]">
-        <h2 className="m-0 mb-[clamp(28px,5vw,48px)] text-center font-sans text-[clamp(26px,3.5vw,36px)] font-bold leading-[1.15] tracking-[-0.02em] text-text-1">
-          Why LCKD
-        </h2>
+        <Reveal>
+          <h2 className="m-0 mb-[clamp(28px,5vw,48px)] text-center font-sans text-[clamp(26px,3.5vw,36px)] font-bold leading-[1.15] tracking-[-0.02em] text-text-1">
+            Why LCKD
+          </h2>
+        </Reveal>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-4">
-          {CARDS.map((card) => (
-            <div
-              key={card.title}
-              className="rounded-card border border-white/[0.07] bg-surface p-7 transition-[border-color,transform] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-0.5 hover:border-[rgba(43,209,126,0.3)]"
-            >
-              <div className="mb-[18px] flex h-11 w-11 items-center justify-center rounded-card border border-[rgba(43,209,126,0.25)] bg-accent-dim text-accent">
-                {card.icon}
+          {CARDS.map((card, i) => (
+            <Reveal key={card.title} delay={i * 100}>
+              <div className="h-full rounded-card border border-white/[0.07] bg-surface p-7 transition-[border-color,transform] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-0.5 hover:border-[rgba(43,209,126,0.3)]">
+                <div className="mb-[18px] flex h-11 w-11 items-center justify-center rounded-card border border-[rgba(43,209,126,0.25)] bg-accent-dim text-accent">
+                  {card.icon}
+                </div>
+                <div className="mb-2 font-sans text-[18px] font-bold text-text-1">
+                  {card.title}
+                </div>
+                <p className="m-0 font-mono text-[13px] font-medium leading-[1.7] text-text-3">
+                  {card.body}
+                </p>
               </div>
-              <div className="mb-2 font-sans text-[18px] font-bold text-text-1">
-                {card.title}
-              </div>
-              <p className="m-0 font-mono text-[13px] font-medium leading-[1.7] text-text-3">
-                {card.body}
-              </p>
-            </div>
+            </Reveal>
           ))}
         </div>
       </div>

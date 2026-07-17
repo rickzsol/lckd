@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import Reveal from "./Reveal";
 
 interface ClosingCtaProps {
   showMascot?: boolean;
@@ -16,7 +17,7 @@ export default function ClosingCta({ showMascot = true }: ClosingCtaProps) {
             "radial-gradient(ellipse, rgba(43,209,126,0.08) 0%, transparent 65%)",
         }}
       />
-      <div className="relative">
+      <Reveal className="relative">
         <h2 className="m-0 mb-4 font-sans text-[clamp(30px,5.5vw,56px)] font-bold leading-[1.05] tracking-[-0.03em] text-text-1">
           Ready to <span className="text-accent">ship</span>?
         </h2>
@@ -53,7 +54,7 @@ export default function ClosingCta({ showMascot = true }: ClosingCtaProps) {
             </span>
           </div>
         )}
-      </div>
+      </Reveal>
     </section>
   );
 }

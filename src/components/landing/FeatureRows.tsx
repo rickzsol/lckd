@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Reveal from "./Reveal";
 
 const LockIcon = (
   <svg
@@ -86,7 +87,7 @@ export default function FeatureRows() {
             key={row.index}
             className="flex flex-wrap gap-[clamp(24px,4vw,40px)] border-t border-white/[0.05] py-[clamp(40px,6vw,64px)]"
           >
-            <div className="min-w-0 flex-[1_1_380px]">
+            <Reveal className="min-w-0 flex-[1_1_380px]">
               <div className="mb-[18px] flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-[rgba(43,209,126,0.25)] bg-accent-dim text-accent">
                   {row.icon}
@@ -111,7 +112,7 @@ export default function FeatureRows() {
               <p className="m-0 font-mono text-[12px] font-semibold tracking-[0.02em] text-accent-400">
                 {row.kicker}
               </p>
-            </div>
+            </Reveal>
           </div>
         ))}
       </div>
