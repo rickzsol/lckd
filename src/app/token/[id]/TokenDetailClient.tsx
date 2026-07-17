@@ -5,6 +5,7 @@ import Badge from "@/components/ui/Badge";
 import TokenImage from "@/components/ui/TokenImage";
 import DexScreenerChart from "@/components/token/DexScreenerChart";
 import JupiterSwap from "@/components/token/JupiterSwap";
+import HolderIntel from "@/components/token/HolderIntel";
 import type { DisplayToken } from "@/types/display";
 
 export default function TokenDetailClient({ t }: { t: DisplayToken }) {
@@ -128,6 +129,8 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
           </div>
         ))}
       </div>
+
+      {t.mintAddress && <HolderIntel mintAddress={t.mintAddress} />}
 
       {/* Detail grid */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
