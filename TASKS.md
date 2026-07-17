@@ -15,3 +15,17 @@
 - [ ] Run a disposable-wallet mainnet launch after explicit approval of a SOL spending cap.
 - [ ] Add the LCKD contract address after the manual token launch and finalized receipt review.
 - [ ] Monitor upstream remediation for the transitive `bigint-buffer` advisory.
+
+## Trust API + unlock calendar (branch feature/trust-api)
+
+- [x] Migration `20260718000000_trust_locks.sql`: locks + webhook_inbox, RLS + safe definer view, lease RPC, projection columns.
+- [x] Trust projection module; retire the wall-clock downgrade in cron and queries.
+- [x] Public `GET /token/:ca/trust` and `GET /unlocks` with envelope, keyset pagination, and credentialless CORS.
+- [x] Hardened `POST /webhooks/helius` receiver; leased inbox consumer and bounded reconciliation sweep.
+- [x] `/unlocks` page, navbar, sitemap, OG, feed strip, and API docs.
+- [x] Backfill and Helius webhook tools.
+- [x] Unit tests (116 pass), typecheck, lint, production build green; internal review fix applied.
+- [ ] Run the blocking Codex diff review (Codex CLI unavailable in this WSL env).
+- [ ] Wire the SAS attestation block into the trust response (separate branch).
+- [ ] Apply migration after dry-run, run staged backfill, then the NOT NULL follow-up migration.
+- [ ] Set `HELIUS_WEBHOOK_SECRET` and `NEXT_PUBLIC_SITE_URL`; register the Helius webhook.
