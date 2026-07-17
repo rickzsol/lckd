@@ -6,9 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "sas:e2e": "tsx tools/sas-devnet-e2e.ts",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --conditions=react-server --test src/lib/api/atomicLaunchRecoveryValidation.test.ts src/lib/api/launchRecoveryValidation.test.ts src/lib/api/publicStats.test.ts src/lib/api/rateLimit.test.ts src/lib/pendingLaunches.test.ts src/lib/solana/atomicLaunchBuilder.test.ts src/lib/solana/atomicLaunchValidation.test.ts src/lib/solana/atomicLookupCleanup.test.ts src/lib/solana/lookupTable.test.ts src/lib/solana/pumpBuyValidation.test.ts src/lib/solana/streamflow.test.ts src/lib/solana/streamflowInstruction.test.ts src/lib/solana/transactionValidation.test.ts"
+    "test": "tsx --conditions=react-server --test src/lib/api/atomicLaunchRecoveryValidation.test.ts src/lib/api/launchRecoveryValidation.test.ts src/lib/api/publicStats.test.ts src/lib/api/rateLimit.test.ts src/lib/pendingLaunches.test.ts src/lib/solana/atomicLaunchBuilder.test.ts src/lib/solana/atomicLaunchValidation.test.ts src/lib/solana/atomicLookupCleanup.test.ts src/lib/solana/lookupTable.test.ts src/lib/solana/pumpBuyValidation.test.ts src/lib/solana/streamflow.test.ts src/lib/solana/streamflowInstruction.test.ts src/lib/solana/transactionValidation.test.ts src/lib/sas/schema.test.ts src/lib/sas/evidence.test.ts src/lib/sas/issuer.test.ts src/lib/sas/verify.test.ts"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
@@ -28,6 +29,7 @@
     "bs58": "^6.0.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.42.2",
+    "gill": "0.14.0",
     "gsap": "^3.15.0",
     "lucide-react": "^0.563.0",
     "next": "^16.2.10",
@@ -35,6 +37,7 @@
     "pinata": "^2.5.6",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "sas-lib": "1.0.10",
     "server-only": "^0.0.1",
     "tailwind-merge": "^3.6.0",
     "three": "^0.185.1",
