@@ -1,4 +1,4 @@
-import { riskLevelColor, type RicomapsSummary } from "@/lib/ricomaps.types";
+import { riskLevelColor, type RicomapsSummary } from "@/lib/ricomaps.client";
 
 export default function RiskChip({ summary }: { summary: RicomapsSummary }) {
   const c = riskLevelColor(summary.riskLevel);

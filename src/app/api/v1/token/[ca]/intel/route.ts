@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isValidSolanaAddress } from "@/lib/api/validation";
 import { checkRateLimit } from "@/lib/api/rateLimit";
 import { fetchHolderIntel } from "@/lib/ricomaps";
+import type { RicomapsResult } from "@/lib/ricomaps.client";
 
 const PUBLIC_CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -9,9 +10,16 @@ const PUBLIC_CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-function publicResponse<T>(data: T, status = 200): NextResponse {
-  const response = NextResponse.json(data, { status, headers: PUBLIC_CORS_HEADERS });
-  if (status === 200) response.headers.set("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
+function publicResult(result: RicomapsResult): NextResponse {
+  const response = NextResponse.json(result, { status: 200, headers: PUBLIC_CORS_HEADERS });
+  if (result.status === "pending") {
+    response.headers.set("Cache-Control", "no-store");
+    response.headers.set("Retry-After", String(result.retryAfterSeconds ?? 5));
+  } else if (result.status === "fresh" || result.status === "stale") {
+    response.headers.set("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
+  } else {
+    response.headers.set("Cache-Control", "no-store");
+  }
   return response;
 }
 
@@ -23,10 +31,14 @@ export function OPTIONS(): NextResponse {
   return new NextResponse(null, { status: 204, headers: PUBLIC_CORS_HEADERS });
 }
 
-export async function GET(
+export function HEAD(): NextResponse {
+  return new NextResponse(null, { status: 204, headers: PUBLIC_CORS_HEADERS });
+}
+
+async function handleGet(
   request: NextRequest,
   { params }: { params: Promise<{ ca: string }> },
-) {
+): Promise<NextResponse> {
   const { ca } = await params;
   if (!isValidSolanaAddress(ca)) return publicError("A valid token address is required", 400);
 
@@ -40,9 +52,17 @@ export async function GET(
   }
 
   const result = await fetchHolderIntel(ca);
-  if (result.status === "unavailable") {
+  return publicResult(result);
+}
+
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ ca: string }> },
+): Promise<NextResponse> {
+  try {
+    return await handleGet(request, context);
+  } catch (error) {
+    console.error("[holder-intel] unhandled route error:", error instanceof Error ? error.message : "Unknown error");
     return publicError("Holder analytics unavailable", 503);
   }
-
-  return publicResponse(result);
 }

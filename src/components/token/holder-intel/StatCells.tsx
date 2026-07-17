@@ -1,4 +1,4 @@
-import type { RicomapsSummary } from "@/lib/ricomaps.types";
+import type { RicomapsSummary } from "@/lib/ricomaps.client";
 
 const TOP10_WARN_THRESHOLD = 25;
 

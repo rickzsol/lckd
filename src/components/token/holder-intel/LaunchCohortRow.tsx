@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { RicomapsSummary } from "@/lib/ricomaps.types";
+import type { RicomapsSummary } from "@/lib/ricomaps.client";
 
 export default function LaunchCohortRow({ summary }: { summary: RicomapsSummary }) {
   const [isExpanded, setIsExpanded] = useState(false);

@@ -1,5 +1,5 @@
-import type { RicomapsHolder } from "@/lib/ricomaps.types";
-import { truncateAddress } from "@/lib/ricomaps.types";
+import type { RicomapsHolder } from "@/lib/ricomaps.client";
+import { truncateAddress } from "@/lib/ricomaps.client";
 
 function holderFlags(holder: RicomapsHolder): string[] {
   const flags: string[] = [];
@@ -46,7 +46,7 @@ export default function TopHoldersTable({ holders }: { holders: RicomapsHolder[]
                 {holder.pct.toFixed(2)}%
               </td>
               <td className="hidden px-3 py-2 text-right font-mono text-[10px] uppercase tracking-[0.06em] text-text-3 sm:table-cell">
-                {holderFlags(holder).join(" · ") || "—"}
+                {holderFlags(holder).join(" · ") || "none"}
               </td>
             </tr>
           ))}
