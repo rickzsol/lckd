@@ -18,6 +18,14 @@ export type StreamReader = (
   streamId: string,
 ) => Promise<StreamReadResult>;
 
+/** Inbox lease the webhook consumer holds. When present, the commit is fenced on
+ * this lease still being held and the row unprocessed, so a reclaimed-lease worker
+ * cannot commit (finding 8). The sweep passes none and commits unfenced. */
+export interface InboxLease {
+  inboxId: string;
+  leaseId: string | null;
+}
+
 /**
  * Verifies one lock against finalized chain state and commits the new lock
  * status + re-projected token tier atomically.
@@ -32,6 +40,11 @@ export type StreamReader = (
  *    evidence, never from the already-projected trust_tier (finding 5).
  *  - Lock status/amount and token tier are written in ONE definer RPC, so the
  *    two authorities can never diverge (finding 5).
+ *  - When invoked from the webhook consumer the commit is fenced on the inbox
+ *    lease, so a worker whose lease was reclaimed cannot commit (finding 8).
+ *
+ * Returns committed=false when the lease fence rejected the write; the caller
+ * treats that as a lost lease and does not count the row as reconciled.
  */
 export async function reconcileLock(
   supabase: SupabaseClient,
@@ -41,7 +54,8 @@ export async function reconcileLock(
   signature?: string | null,
   slot?: string | number | null,
   readStream: StreamReader = readFinalizedStreamState,
-): Promise<{ statusChanged: boolean; tierChanged: boolean }> {
+  lease?: InboxLease | null,
+): Promise<{ statusChanged: boolean; tierChanged: boolean; committed: boolean }> {
   const read = await readStream(connection, lock.stream_id);
   const storedWithdrawn = BigInt(lock.withdrawn_amount);
 
@@ -61,8 +75,8 @@ export async function reconcileLock(
       withdrawnAmount = derived.withdrawnAmount;
     }
   } else {
-    // closed / not_found / rpc_error: deriveWithdrawalStatus throws on the two
-    // non-committable outcomes and returns a status for a confirmed closure.
+    // not_found / rpc_error: deriveWithdrawalStatus throws on both, so nothing is
+    // committed from an absent account or a read failure (finding 2).
     const derived = deriveWithdrawalStatus(storedWithdrawn, read, lock.cliff_ts, now);
     status = derived.status;
     withdrawnAmount = derived.withdrawnAmount;
@@ -71,12 +85,19 @@ export async function reconcileLock(
   const nowIso = new Date(now).toISOString();
   const statusChanged = status !== lock.status || withdrawnAmount !== lock.withdrawn_amount;
 
-  const projection = await projectFromCanonicalLock(supabase, lock, status, now, nowIso);
-  const tierChanged = projection !== null && projection.tier !== projection.previousTier;
+  // Only the CANONICAL lock projects the token tier. A noncanonical lock is
+  // reconciled for its own status/amount but must not drive tokens.trust_tier
+  // (finding 5): passing p_token_id null makes the commit skip the token update
+  // entirely, so a secondary lock can never move the tier.
+  const projection = lock.canonical
+    ? await projectFromCanonicalLock(supabase, lock, status, now, nowIso)
+    : null;
+  const tierChanged =
+    lock.canonical && projection !== null && projection.tier !== projection.previousTier;
 
-  const { error } = await supabase.rpc("commit_lock_reconciliation", {
+  const { data: committed, error } = await supabase.rpc("commit_lock_reconciliation", {
     p_lock_id: lock.id,
-    p_token_id: lock.token_id,
+    p_token_id: lock.canonical ? lock.token_id : null,
     p_status: status,
     p_withdrawn_amount: withdrawnAmount,
     p_verified_at: nowIso,
@@ -84,10 +105,12 @@ export async function reconcileLock(
     p_verified_slot: slot != null ? Number(slot) : lock.last_verified_slot != null ? Number(lock.last_verified_slot) : null,
     p_trust_tier: projection?.tier ?? TrustTier.LOCKED,
     p_policy_version: TRUST_POLICY_VERSION,
+    p_inbox_id: lease?.inboxId ?? null,
+    p_lease_id: lease?.leaseId ?? null,
   });
   if (error) throw new Error(`reconciliation commit failed: ${error.message}`);
 
-  return { statusChanged, tierChanged };
+  return { statusChanged, tierChanged, committed: committed !== false };
 }
 
 function identityFromLock(lock: LockRow): LockIdentity {

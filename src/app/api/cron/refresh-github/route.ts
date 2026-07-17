@@ -186,19 +186,19 @@ async function refreshToken(
 
   const isChanged = projection.tier !== token.trust_tier;
 
-  // Persist github_tier as INDEPENDENT evidence alongside the projected tier, so
-  // the original GitHub tier survives the projection's flooring and is never
-  // reconstructed from the already-floored trust_tier (finding 5).
-  const { error: updateError } = await supabase
-    .from("tokens")
-    .update({
-      trust_tier: projection.tier,
-      github_tier: githubTier,
-      tier_computed_at: projection.tierComputedAt,
-      policy_version: TRUST_POLICY_VERSION,
-    })
-    .eq("id", token.id)
-    .not("lock_verified_at", "is", null);
+  // Route the tier write through commit_token_tier, the SINGLE writer of
+  // tokens.trust_tier, instead of a direct update here. That keeps this refresh
+  // from being a second racing tier writer alongside the lock reconciliation
+  // (finding 5). The freshly computed githubTier is persisted as INDEPENDENT
+  // evidence in the same call, so the original GitHub tier survives the
+  // projection's flooring and is never reconstructed from the floored trust_tier.
+  const { error: updateError } = await supabase.rpc("commit_token_tier", {
+    p_token_id: token.id,
+    p_trust_tier: projection.tier,
+    p_github_tier: githubTier,
+    p_tier_computed_at: projection.tierComputedAt,
+    p_policy_version: TRUST_POLICY_VERSION,
+  });
 
   if (updateError) throw new Error(`Tier update failed: ${updateError.message}`);
 

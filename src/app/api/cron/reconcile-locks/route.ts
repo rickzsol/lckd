@@ -9,13 +9,14 @@ import type { LockRow } from "@/types/trust";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Bounded, self-healing sweep. Rows are ordered by verification recency
-// (last_verified_at ascending, nulls first) so never-checked and stalest locks
-// always sort ahead of freshly-verified ones. reconcileLock stamps
-// last_verified_at = now on every row it touches, so a processed row re-sorts to
-// the back and the NEXT page naturally picks the next-stalest rows. This makes
-// later locks reachable on every run with no external cursor to chain, closing
-// the "permanently starves rows after the first page" gap (finding 6).
+// Bounded, self-healing sweep. Rows are ordered by ATTEMPT recency
+// (last_attempt_at ascending, nulls first) so never-attempted and stalest locks
+// sort ahead of recently-attempted ones. Crucially last_attempt_at is stamped on
+// every attempt INCLUDING failures (mark_lock_attempt), so a lock that keeps
+// failing (RPC down, unconfirmed absence) still advances and rotates out of the
+// head instead of monopolizing page 1 on every run and starving the rest
+// (finding 6). Within a run we also track processed ids and exclude them from
+// later page fetches, so a row can't be re-touched before its stamp lands.
 //
 // Each run keeps paging until it exhausts the backlog OR its work/time budget is
 // spent, so one daily invocation with no query param makes forward progress
@@ -42,17 +43,26 @@ export async function GET(request: Request) {
   let failed = 0;
   let pages = 0;
   let exhausted = false;
+  // Ids already handled this run (success or failure). Excluded from later page
+  // fetches so a row is never reprocessed within one run, even before its stamp
+  // is visible to the next query (finding 6).
+  const processedIds = new Set<string>();
 
   for (; pages < MAX_PAGES_PER_RUN; pages += 1) {
     if (Date.now() - startedAt > TIME_BUDGET_MS) break;
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("locks")
       .select(LOCK_COLUMNS)
       .in("status", ["locked", "unlock_eligible", "anomalous"])
-      .order("last_verified_at", { ascending: true, nullsFirst: true })
+      .order("last_attempt_at", { ascending: true, nullsFirst: true })
       .order("id", { ascending: true })
       .limit(PAGE_SIZE);
+    if (processedIds.size > 0) {
+      query = query.not("id", "in", `(${[...processedIds].join(",")})`);
+    }
+
+    const { data, error } = await query;
     if (error) {
       console.error("[reconcile-locks] fetch failed:", error.message);
       return NextResponse.json({ error: "Failed to fetch locks" }, { status: 503 });
@@ -64,24 +74,28 @@ export async function GET(request: Request) {
       break;
     }
 
-    // Stop if the page is entirely rows we already verified this run: without a
-    // fresh timestamp advancing the order we would re-process the same page.
-    let progressedThisPage = false;
     for (const lock of page) {
       if (Date.now() - startedAt > TIME_BUDGET_MS) break;
+      // Mark handled up front so a failure still excludes the row from the next
+      // page fetch this run, even though the commit that would stamp the DB never
+      // ran. This is what stops the same failing head from being re-fetched.
+      processedIds.add(lock.id);
       try {
         const outcome = await reconcileLock(supabase, connection, lock, Date.now());
         reconciled += 1;
-        progressedThisPage = true;
         if (outcome.statusChanged) statusChanges += 1;
         if (outcome.tierChanged) tierChanges += 1;
       } catch (error) {
         console.error("[reconcile-locks] lock failed:", lock.id, error instanceof Error ? error.message : error);
         failed += 1;
+        // Advance last_attempt_at even on failure so this lock sorts behind
+        // freshly-attempted rows next run and stops monopolizing the head.
+        await markLockAttempt(supabase, lock.id).catch((e) =>
+          console.error("[reconcile-locks] attempt stamp failed:", lock.id, e),
+        );
       }
     }
 
-    if (!progressedThisPage) break; // every row in the page failed; avoid a spin.
     if (page.length < PAGE_SIZE) {
       exhausted = true;
       break;
@@ -96,4 +110,17 @@ export async function GET(request: Request) {
     pages,
     exhausted,
   });
+}
+
+/** Stamps last_attempt_at through the definer RPC so a failed reconciliation
+ * still advances the sweep ordering without committing any status/tier change. */
+async function markLockAttempt(
+  supabase: ReturnType<typeof getServerClient>,
+  lockId: string,
+): Promise<void> {
+  const { error } = await supabase.rpc("mark_lock_attempt", {
+    p_lock_id: lockId,
+    p_attempted_at: new Date().toISOString(),
+  });
+  if (error) throw new Error(error.message);
 }

@@ -56,6 +56,7 @@ export interface LockRow {
   creation_slot: string;
   last_verified_signature: string | null;
   last_verified_slot: string | null;
+  last_attempt_at: string | null;
   created_at: string;
 }
 

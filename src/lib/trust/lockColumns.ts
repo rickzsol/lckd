@@ -28,5 +28,6 @@ export const LOCK_COLUMNS = [
   "last_verified_signature",
   "last_verified_slot::text",
   "last_verified_at",
+  "last_attempt_at",
   "created_at",
 ].join(", ");

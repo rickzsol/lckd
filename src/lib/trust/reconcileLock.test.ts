@@ -41,6 +41,7 @@ function lockRow(overrides: Partial<LockRow> = {}): LockRow {
     creation_slot: "10",
     last_verified_signature: null,
     last_verified_slot: null,
+    last_attempt_at: null,
     created_at: CLIFF,
     ...overrides,
   };
@@ -74,7 +75,10 @@ interface Captured {
 
 /** Minimal supabase mock: tokens.select().eq().maybeSingle() returns a canned
  * token; rpc() captures the commit_lock_reconciliation payload. */
-function supabaseMock(token: { trust_tier: TrustTier; github_tier: TrustTier | null }): {
+function supabaseMock(
+  token: { trust_tier: TrustTier; github_tier: TrustTier | null },
+  rpcResult: unknown = true,
+): {
   client: SupabaseClient;
   captured: Captured;
 } {
@@ -98,7 +102,7 @@ function supabaseMock(token: { trust_tier: TrustTier; github_tier: TrustTier | n
     },
     rpc(fn: string, args: Record<string, unknown>) {
       captured.rpc = { fn, args };
-      return Promise.resolve({ data: null, error: null });
+      return Promise.resolve({ data: rpcResult, error: null });
     },
   } as unknown as SupabaseClient;
   return { client, captured };
@@ -198,4 +202,64 @@ test("an absent account never commits withdrawn: it aborts (finding 2)", async (
     /absent|unavailable/i,
   );
   assert.equal(captured.rpc, undefined); // never committed a withdrawal.
+});
+
+test("a noncanonical lock is reconciled but does NOT project the token tier (finding 5)", async () => {
+  const { client, captured } = supabaseMock({ trust_tier: TrustTier.SHIPPED, github_tier: TrustTier.SHIPPED });
+  const outcome = await reconcileLock(
+    client,
+    conn,
+    lockRow({ canonical: false }),
+    AFTER,
+    null,
+    null,
+    reader({ kind: "ok", stream: decoded({ withdrawnAmount: BigInt(40) }) }),
+  );
+  // Lock status still committed, but with a null token id so trust_tier is left
+  // untouched, and no token/github_tier lookup was done.
+  assert.equal(captured.rpc?.fn, "commit_lock_reconciliation");
+  assert.equal(captured.rpc?.args.p_status, "unlock_eligible");
+  assert.equal(captured.rpc?.args.p_token_id, null);
+  assert.equal(outcome.tierChanged, false);
+  assert.equal(captured.tokenSelect.length, 0); // no tier projection at all.
+});
+
+test("the canonical lock passes its token id so the tier IS projected (finding 5)", async () => {
+  const { client, captured } = supabaseMock({ trust_tier: TrustTier.BUILDER, github_tier: TrustTier.BUILDER });
+  await reconcileLock(client, conn, lockRow(), BEFORE, null, null, reader({ kind: "ok", stream: decoded() }));
+  assert.equal(captured.rpc?.args.p_token_id, "tok-1");
+});
+
+test("a lost inbox lease rejects the commit and reports committed=false (finding 8)", async () => {
+  // The fenced RPC returns false when the lease was reclaimed. reconcileLock must
+  // surface committed=false so the consumer drops the row for the new owner.
+  const { client } = supabaseMock({ trust_tier: TrustTier.BUILDER, github_tier: TrustTier.BUILDER }, false);
+  const outcome = await reconcileLock(
+    client,
+    conn,
+    lockRow(),
+    BEFORE,
+    "vsig",
+    "42",
+    reader({ kind: "ok", stream: decoded() }),
+    { inboxId: "inbox-1", leaseId: "lease-1" },
+  );
+  assert.equal(outcome.committed, false);
+});
+
+test("a held lease passes the inbox id and lease id into the fenced commit (finding 8)", async () => {
+  const { client, captured } = supabaseMock({ trust_tier: TrustTier.BUILDER, github_tier: TrustTier.BUILDER });
+  const outcome = await reconcileLock(
+    client,
+    conn,
+    lockRow(),
+    BEFORE,
+    "vsig",
+    "42",
+    reader({ kind: "ok", stream: decoded() }),
+    { inboxId: "inbox-1", leaseId: "lease-1" },
+  );
+  assert.equal(captured.rpc?.args.p_inbox_id, "inbox-1");
+  assert.equal(captured.rpc?.args.p_lease_id, "lease-1");
+  assert.equal(outcome.committed, true);
 });

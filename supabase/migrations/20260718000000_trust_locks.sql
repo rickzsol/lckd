@@ -55,6 +55,10 @@ create table if not exists public.locks (
   last_verified_signature text,
   last_verified_slot bigint,
   last_verified_at timestamptz,
+  -- Stamped on EVERY reconciliation attempt, success or failure, so a lock that
+  -- keeps failing (RPC down, unconfirmed absence) still advances and rotates out
+  -- of the sweep's head instead of monopolizing page 1 forever (finding 6).
+  last_attempt_at timestamptz,
   created_at timestamptz not null default now(),
   constraint locks_status_check
     check (status in ('locked', 'unlock_eligible', 'withdrawn', 'anomalous')),
@@ -343,12 +347,51 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- commit_token_tier: the SINGLE writer of tokens.trust_tier (finding 5). Every
+-- tier write in the system flows through this one statement: the lock
+-- reconciliation calls it, and the GitHub refresh calls it directly instead of
+-- issuing its own tokens.trust_tier update. github_tier (the independent GitHub
+-- evidence) is written alongside so the refresh persists its evidence and the
+-- projected tier in one place, and the projection never re-reads trust_tier as
+-- evidence. Guarded by lock_verified_at so an unverified token is never tiered.
+-- ---------------------------------------------------------------------------
+create or replace function public.commit_token_tier(
+  p_token_id uuid,
+  p_trust_tier int,
+  p_github_tier int,
+  p_tier_computed_at timestamptz,
+  p_policy_version int
+)
+returns void
+language sql
+security definer
+set search_path = pg_catalog, public
+as $$
+  update public.tokens
+  set trust_tier = p_trust_tier,
+      github_tier = coalesce(p_github_tier, github_tier),
+      tier_computed_at = p_tier_computed_at,
+      policy_version = p_policy_version
+  where id = p_token_id
+    and lock_verified_at is not null;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- commit_lock_reconciliation: the single atomic lock+token authority (finding 5).
 -- Updates locks.status/withdrawn_amount AND the projected tokens.trust_tier +
 -- tier_computed_at + policy_version in ONE transaction, so lock state and token
--- tier can never diverge between two separate round-trips. The projection is
--- computed by the caller from the canonical lock + persisted github_tier and
--- passed in; this function only commits it transactionally.
+-- tier can never diverge between two separate round-trips. The token tier write
+-- is delegated to commit_token_tier, the ONLY statement that mutates trust_tier;
+-- the GitHub refresh calls that same function rather than writing trust_tier
+-- directly (finding 5). The projection is computed by the caller from the
+-- canonical lock + persisted github_tier and passed in.
+--
+-- Lease fencing (finding 8): when the caller is a webhook consumer it passes the
+-- inbox row id + lease id it holds. The commit then only proceeds while that
+-- lease is still held and the row is unprocessed (processed_at IS NULL), so a
+-- worker whose lease was reclaimed mid-processing cannot commit a stale result.
+-- The reconcile sweep is not lease-driven and passes NULL for both, skipping the
+-- fence. Returns true when the commit applied, false when the lease was lost.
 -- ---------------------------------------------------------------------------
 create or replace function public.commit_lock_reconciliation(
   p_lock_id uuid,
@@ -359,28 +402,76 @@ create or replace function public.commit_lock_reconciliation(
   p_verified_signature text,
   p_verified_slot bigint,
   p_trust_tier int,
-  p_policy_version int
+  p_policy_version int,
+  p_inbox_id uuid default null,
+  p_lease_id uuid default null,
+  p_github_tier int default null
 )
-returns void
+returns boolean
 language plpgsql
 security definer
 set search_path = pg_catalog, public
 as $$
 begin
+  -- Lease-gated path: verify the inbox lease is still held and unprocessed before
+  -- touching any lock/token state. A lost lease means another worker owns the row
+  -- now, so this worker must not commit (finding 8).
+  if p_inbox_id is not null then
+    perform 1
+    from public.webhook_inbox
+    where id = p_inbox_id
+      and lease_id = p_lease_id
+      and processed_at is null;
+    if not found then
+      return false;
+    end if;
+  end if;
+
   update public.locks
   set status = p_status,
       withdrawn_amount = p_withdrawn_amount,
       last_verified_at = p_verified_at,
+      -- A successful reconciliation is also an attempt; advance last_attempt_at so
+      -- the sweep's attempt-ordered head moves forward (finding 6).
+      last_attempt_at = p_verified_at,
       last_verified_signature = coalesce(p_verified_signature, last_verified_signature),
       last_verified_slot = coalesce(p_verified_slot, last_verified_slot)
   where id = p_lock_id;
 
-  update public.tokens
-  set trust_tier = p_trust_tier,
-      tier_computed_at = p_verified_at,
-      policy_version = p_policy_version
-  where id = p_token_id;
+  -- Only the canonical lock carries a token id; a noncanonical lock passes NULL
+  -- and must NOT move tokens.trust_tier (finding 5). Delegate the tier write to
+  -- commit_token_tier, the single trust_tier writer. p_github_tier is NULL here
+  -- (reconciliation does not recompute GitHub evidence), so the coalesce inside
+  -- commit_token_tier preserves the stored github_tier.
+  if p_token_id is not null then
+    perform public.commit_token_tier(
+      p_token_id, p_trust_tier, p_github_tier, p_verified_at, p_policy_version
+    );
+  end if;
+
+  return true;
 end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- mark_lock_attempt: stamps last_attempt_at when a reconciliation FAILS (RPC
+-- down, unconfirmed absence) without committing any status change. This advances
+-- the sweep's attempt-ordered head so a persistently-failing lock rotates out of
+-- page 1 instead of being retried ahead of everything else on every run
+-- (finding 6). It never touches status, amounts, or tier.
+-- ---------------------------------------------------------------------------
+create or replace function public.mark_lock_attempt(
+  p_lock_id uuid,
+  p_attempted_at timestamptz
+)
+returns void
+language sql
+security definer
+set search_path = pg_catalog, public
+as $$
+  update public.locks
+  set last_attempt_at = p_attempted_at
+  where id = p_lock_id;
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -395,8 +486,12 @@ revoke all on function public.complete_inbox_row(uuid, uuid, timestamptz)
 revoke all on function public.fail_inbox_row(uuid, uuid, boolean, timestamptz)
   from public, anon, authenticated;
 revoke all on function public.commit_lock_reconciliation(
-  uuid, uuid, text, numeric, timestamptz, text, bigint, int, int
+  uuid, uuid, text, numeric, timestamptz, text, bigint, int, int, uuid, uuid, int
 ) from public, anon, authenticated;
+revoke all on function public.commit_token_tier(uuid, int, int, timestamptz, int)
+  from public, anon, authenticated;
+revoke all on function public.mark_lock_attempt(uuid, timestamptz)
+  from public, anon, authenticated;
 
 grant execute on function public.claim_webhook_inbox(integer, integer)
   to service_role;
@@ -405,7 +500,11 @@ grant execute on function public.complete_inbox_row(uuid, uuid, timestamptz)
 grant execute on function public.fail_inbox_row(uuid, uuid, boolean, timestamptz)
   to service_role;
 grant execute on function public.commit_lock_reconciliation(
-  uuid, uuid, text, numeric, timestamptz, text, bigint, int, int
+  uuid, uuid, text, numeric, timestamptz, text, bigint, int, int, uuid, uuid, int
 ) to service_role;
+grant execute on function public.commit_token_tier(uuid, int, int, timestamptz, int)
+  to service_role;
+grant execute on function public.mark_lock_attempt(uuid, timestamptz)
+  to service_role;
 
 commit;

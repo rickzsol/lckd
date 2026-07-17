@@ -53,7 +53,14 @@ export async function GET(request: Request) {
   for (const row of rows) {
     const now = Date.now();
     try {
-      reconciled += await processRow(supabase, connection, row, now);
+      const outcome = await processRow(supabase, connection, row, now);
+      reconciled += outcome.reconciled;
+      if (outcome.leaseLost) {
+        // A commit was rejected because the lease was reclaimed mid-processing.
+        // Do not mark processed; the new owner will redo the work (finding 8).
+        lost += 1;
+        continue;
+      }
       const committed = await markProcessed(supabase, row.id, row.lease_id, new Date(now).toISOString());
       if (committed) processed += 1;
       else lost += 1; // lease reclaimed by another worker; drop silently.
@@ -69,15 +76,20 @@ export async function GET(request: Request) {
   return NextResponse.json({ processed, failed, reconciled, lost });
 }
 
-/** Reconciles every non-withdrawn lock whose stream/escrow the event touched. */
+/**
+ * Reconciles every non-withdrawn lock whose stream/escrow the event touched. Each
+ * commit is fenced on this inbox row's lease (finding 8); if the fence rejects a
+ * write the lease was lost, so processing stops and the caller drops the row for
+ * the new owner rather than marking it processed.
+ */
 async function processRow(
   supabase: ReturnType<typeof getServerClient>,
   connection: ReturnType<typeof getFinalizedConnection>,
   row: WebhookInboxRow,
   now: number,
-): Promise<number> {
+): Promise<{ reconciled: number; leaseLost: boolean }> {
   const accountKeys = row.payload?.accountKeys ?? [];
-  if (accountKeys.length === 0) return 0;
+  if (accountKeys.length === 0) return { reconciled: 0, leaseLost: false };
 
   const { data: locks, error } = await supabase
     .from("locks")
@@ -86,10 +98,21 @@ async function processRow(
     .neq("status", "withdrawn");
   if (error) throw new Error(`lock match failed: ${error.message}`);
 
+  const lease = { inboxId: row.id, leaseId: row.lease_id };
   let reconciled = 0;
   for (const lock of (locks ?? []) as unknown as LockRow[]) {
-    await reconcileLock(supabase, connection, lock, now, row.signature, row.slot);
+    const outcome = await reconcileLock(
+      supabase,
+      connection,
+      lock,
+      now,
+      row.signature,
+      row.slot,
+      undefined,
+      lease,
+    );
+    if (!outcome.committed) return { reconciled, leaseLost: true };
     reconciled += 1;
   }
-  return reconciled;
+  return { reconciled, leaseLost: false };
 }
