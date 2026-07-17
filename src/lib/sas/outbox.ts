@@ -1,7 +1,6 @@
 import "server-only";
 
 import { getServerClient } from "@/lib/supabase";
-import { POLICY_VERSION, SCHEMA_VERSION } from "./schema";
 
 /**
  * Durable outbox access layer for SAS issuance. All state transitions go through
@@ -23,6 +22,7 @@ export interface OutboxJob {
   desired_lock_bps: number;
   desired_cliff_ts: number;
   desired_policy_version: number;
+  desired_schema_version: number;
   evidence_hash: string;
   status: string;
   attempts: number;
@@ -30,6 +30,13 @@ export interface OutboxJob {
   lease_token: string | null;
   pending_signature: string | null;
   pending_close_signature: string | null;
+}
+
+/** A claimed job plus the status it was claimed FROM, so a prior broadcast is
+ * reconciled against its persisted signature rather than blindly resent. */
+export interface ClaimedJob {
+  job: OutboxJob;
+  claimedFromStatus: string;
 }
 
 export interface EnqueueInput {
@@ -41,6 +48,7 @@ export interface EnqueueInput {
   lockBps: number;
   cliffTs: bigint;
   policyVersion: number;
+  schemaVersion: number;
   evidenceHash: string;
 }
 
@@ -60,19 +68,21 @@ export async function enqueueAttestationJob(input: EnqueueInput): Promise<string
     p_lock_bps: input.lockBps,
     p_cliff_ts: input.cliffTs.toString(),
     p_policy_version: input.policyVersion,
+    p_schema_version: input.schemaVersion,
     p_evidence_hash: input.evidenceHash,
   });
   if (error) fail(`Failed to enqueue attestation job: ${error.message}`);
   return data as string;
 }
 
-export async function claimAttestationJob(leaseSeconds = 120): Promise<OutboxJob | null> {
+export async function claimAttestationJob(leaseSeconds = 120): Promise<ClaimedJob | null> {
   const { data, error } = await getServerClient().rpc("claim_attestation_job", {
     p_lease_seconds: leaseSeconds,
   });
   if (error) fail(`Failed to claim attestation job: ${error.message}`);
-  const rows = data as OutboxJob[] | null;
-  return rows && rows.length > 0 ? rows[0] : null;
+  const rows = data as Array<{ job: OutboxJob; claimed_from_status: string }> | null;
+  if (!rows || rows.length === 0) return null;
+  return { job: rows[0].job, claimedFromStatus: rows[0].claimed_from_status };
 }
 
 export async function markBroadcast(
@@ -101,6 +111,10 @@ export interface CompleteInput {
   mint: string;
   attestationPda: string;
   tier: number;
+  /** Policy version from the job snapshot, NOT a deployment-time constant. */
+  policyVersion: number;
+  /** Schema version from the job snapshot, NOT a deployment-time constant. */
+  schemaVersion: number;
   lockBps: number;
   cliffTs: bigint;
   evidenceHash: string;
@@ -118,8 +132,8 @@ export async function completeAttestationJob(input: CompleteInput): Promise<stri
     p_mint: input.mint,
     p_attestation_pda: input.attestationPda,
     p_tier: input.tier,
-    p_policy_version: POLICY_VERSION,
-    p_schema_version: SCHEMA_VERSION,
+    p_policy_version: input.policyVersion,
+    p_schema_version: input.schemaVersion,
     p_lock_bps: input.lockBps,
     p_cliff_ts: input.cliffTs.toString(),
     p_evidence_hash: input.evidenceHash,
@@ -129,6 +143,57 @@ export async function completeAttestationJob(input: CompleteInput): Promise<stri
   });
   if (error) fail(`Failed to complete attestation job: ${error.message}`);
   return data as string;
+}
+
+export interface CompleteCloseInput {
+  id: string;
+  leaseToken: string;
+  cluster: string;
+  mint: string;
+  schemaVersion: number;
+  attestationPda: string;
+  closeSignature: string;
+}
+
+/** Complete a pure close: close the active DB row, mark the outbox done, and
+ * never insert a generation (no account exists on chain to record). */
+export async function completeCloseAttestationJob(input: CompleteCloseInput): Promise<void> {
+  const { error } = await getServerClient().rpc("complete_close_attestation_job", {
+    p_id: input.id,
+    p_lease_token: input.leaseToken,
+    p_cluster: input.cluster,
+    p_mint: input.mint,
+    p_schema_version: input.schemaVersion,
+    p_attestation_pda: input.attestationPda,
+    p_close_signature: input.closeSignature,
+  });
+  if (error) fail(`Failed to complete close attestation job: ${error.message}`);
+}
+
+export interface FinishNoopInput {
+  id: string;
+  leaseToken: string;
+  cluster: string;
+  mint: string;
+  schemaVersion: number;
+  attestationPda: string;
+  /** Close any live DB rows for the slot (used by the absent-close path). */
+  closeLive: boolean;
+}
+
+/** Finish a job that needed no on-chain effect: an idempotent skip or a close of
+ * an already-absent account. Records no signature and inserts no generation. */
+export async function finishAttestationJobNoop(input: FinishNoopInput): Promise<void> {
+  const { error } = await getServerClient().rpc("finish_attestation_job_noop", {
+    p_id: input.id,
+    p_lease_token: input.leaseToken,
+    p_cluster: input.cluster,
+    p_mint: input.mint,
+    p_schema_version: input.schemaVersion,
+    p_attestation_pda: input.attestationPda,
+    p_close_live: input.closeLive,
+  });
+  if (error) fail(`Failed to finish attestation job: ${error.message}`);
 }
 
 export type FailOutcome = "failed" | "dead" | "not_leased";

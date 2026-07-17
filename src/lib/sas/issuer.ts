@@ -28,9 +28,14 @@ import {
 } from "./config";
 import {
   evidenceToAttestationData,
+  hashEvidence,
   type TrustEvidence,
 } from "./evidence";
-import { deserializeTrustData, serializeTrustData } from "./schema";
+import {
+  deserializeTrustData,
+  serializeTrustData,
+  type TrustAttestationData,
+} from "./schema";
 
 const CONFIRM_COMMITMENT = "finalized" as const;
 
@@ -40,44 +45,51 @@ export class SasIssuerError extends Error {
   }
 }
 
-/** The desired on-chain payload fields that gate reissue decisions. */
-export interface DesiredPayload {
-  tier: number;
-  lockBps: number;
-  cliffTs: bigint;
-  policyVersion: number;
+/**
+ * The complete live on-chain state for a mint's attestation: the full decoded
+ * payload plus the account's outer expiry. Every evidence-bearing field is here
+ * so the idempotency decision compares the WHOLE claim, not a subset.
+ */
+export interface LivePayload {
+  data: TrustAttestationData;
+  expiry: bigint;
 }
 
 export type IssuanceDecision = "skip" | "issue" | "reissue";
 
 /**
- * Pure idempotency decision. Given the live on-chain payload (or null when no
- * attestation exists) and the desired payload, decide whether to skip, issue
- * fresh, or close-and-reissue. A live payload matching every gating field is a
- * skip; a mismatch on any field is a reissue; absence is a fresh issue.
+ * Pure idempotency decision. Given the live on-chain state (or null when no
+ * attestation exists) and the desired evidence, decide whether to skip, issue
+ * fresh, or close-and-reissue.
  *
- * No RPC, no side effects: this is the unit-tested core of issuance safety.
+ * The comparison is the FULL evidence hash of the live payload versus the desired
+ * evidence, plus the outer expiry (which is not part of the payload but must
+ * still match the desired cliff). Any drift in creator, stream_id, github, tier,
+ * lock_bps, cliff, policy, or expiry is a reissue; an exact match is a skip;
+ * absence is a fresh issue. No RPC, no side effects: unit-tested issuance safety.
  */
 export function decideIssuance(
-  live: DesiredPayload | null,
-  desired: DesiredPayload,
+  live: LivePayload | null,
+  desired: TrustEvidence,
 ): IssuanceDecision {
   if (!live) return "issue";
-  const matches =
-    live.tier === desired.tier &&
-    live.lockBps === desired.lockBps &&
-    live.cliffTs === desired.cliffTs &&
-    live.policyVersion === desired.policyVersion;
-  return matches ? "skip" : "reissue";
-}
-
-function evidenceToDesired(evidence: TrustEvidence): DesiredPayload {
-  return {
-    tier: evidence.tier,
-    lockBps: evidence.lockBps,
-    cliffTs: evidence.cliffTs,
-    policyVersion: evidence.policyVersion,
+  const liveEvidence: TrustEvidence = {
+    mint: live.data.mint,
+    creator: live.data.creator,
+    streamId: live.data.stream_id,
+    tier: live.data.tier as TrustEvidence["tier"],
+    lockBps: live.data.lock_bps,
+    cliffTs: live.data.cliff_ts,
+    github: live.data.github,
+    policyVersion: live.data.policy_version,
+    // schema_version is not stored in the on-chain payload (it is pinned by the
+    // schema PDA at verify time), so mirror the desired value to avoid a
+    // spurious mismatch on a field the chain cannot carry.
+    schemaVersion: desired.schemaVersion,
   };
+  const sameClaim = hashEvidence(liveEvidence) === hashEvidence(desired);
+  const sameExpiry = live.expiry === desired.cliffTs;
+  return sameClaim && sameExpiry ? "skip" : "reissue";
 }
 
 export interface AttestationContext {
@@ -114,21 +126,26 @@ export async function deriveTrustAttestationPda(
   return pda;
 }
 
-/** Read the live on-chain payload for a mint, or null if no attestation. */
+/** Read the live on-chain payload + expiry for a mint, or null if no attestation. */
 export async function readLivePayload(
   ctx: AttestationContext,
   mint: string,
-): Promise<DesiredPayload | null> {
+): Promise<LivePayload | null> {
   const pda = await deriveTrustAttestationPda(ctx.config, mint);
   const account = await fetchMaybeAttestation(ctx.client.rpc, pda);
   if (!account.exists) return null;
   const data = deserializeTrustData(account.data.data as Uint8Array);
-  return {
-    tier: data.tier,
-    lockBps: data.lock_bps,
-    cliffTs: data.cliff_ts,
-    policyVersion: data.policy_version,
-  };
+  return { data, expiry: account.data.expiry };
+}
+
+/** Whether a live attestation account currently exists for the mint. */
+export async function attestationExists(
+  ctx: AttestationContext,
+  mint: string,
+): Promise<boolean> {
+  const pda = await deriveTrustAttestationPda(ctx.config, mint);
+  const account = await fetchMaybeAttestation(ctx.client.rpc, pda);
+  return account.exists;
 }
 
 type SignedTransaction = Awaited<ReturnType<typeof signTransactionMessageWithSigners>>;
@@ -270,13 +287,15 @@ export async function closeAttestation(
   return { signature, attestationPda: attestationPda.toString() };
 }
 
-export type SignatureState = "finalized" | "failed" | "unknown";
+export type SignatureState = "finalized" | "confirmed" | "failed" | "unknown";
 
 /**
  * Reconcile a persisted signature from chain. Used when a broadcast outcome is
  * ambiguous (the worker crashed or timed out after persisting the signature but
- * before confirming): the chain is the truth. Returns finalized on success,
- * failed on an on-chain error, unknown if the tx never landed.
+ * before confirming): the chain is the truth. Returns finalized/confirmed once
+ * the tx has landed (a confirmed tx WILL finalize barring a rollback of an
+ * already-confirmed block, which SAS treats as landed), failed on an on-chain
+ * error, unknown only if the tx never landed at all.
  */
 export async function reconcileSignature(
   ctx: AttestationContext,
@@ -289,13 +308,14 @@ export async function reconcileSignature(
   if (!status) return "unknown";
   if (status.err) return "failed";
   if (status.confirmationStatus === "finalized") return "finalized";
+  if (status.confirmationStatus === "confirmed") return "confirmed";
   return "unknown";
 }
 
 export type IssuanceOutcome =
   | { decision: "skip"; attestationPda: string }
   | { decision: "issue"; attestationPda: string; signature: string }
-  | { decision: "reissue"; attestationPda: string; closeSignature: string; signature: string };
+  | { decision: "reissue"; attestationPda: string; closeSignature: string | null; signature: string };
 
 /**
  * Idempotent issuance: read the live payload, decide, and act. Skips when the
@@ -310,9 +330,8 @@ export async function issueOrReissue(
   ctx: AttestationContext,
   evidence: TrustEvidence,
 ): Promise<IssuanceOutcome> {
-  const desired = evidenceToDesired(evidence);
   const live = await readLivePayload(ctx, evidence.mint);
-  const decision = decideIssuance(live, desired);
+  const decision = decideIssuance(live, evidence);
 
   if (decision === "skip") {
     const pda = await deriveTrustAttestationPda(ctx.config, evidence.mint);
@@ -320,12 +339,18 @@ export async function issueOrReissue(
   }
 
   if (decision === "reissue") {
-    const closed = await closeAttestation(ctx, evidence.mint);
+    // The close half is a no-op if the account was already closed externally, so
+    // only close when it actually exists. Otherwise a reissue after an external
+    // close would simulation-fail on the missing account.
+    const stillExists = await attestationExists(ctx, evidence.mint);
+    const closeSignature = stillExists
+      ? (await closeAttestation(ctx, evidence.mint)).signature
+      : null;
     const created = await createAttestation(ctx, evidence);
     return {
       decision: "reissue",
       attestationPda: created.attestationPda,
-      closeSignature: closed.signature,
+      closeSignature,
       signature: created.signature,
     };
   }

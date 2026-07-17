@@ -3,7 +3,7 @@ import "server-only";
 import { assembleTrustEvidence, hashEvidence, type LockChainFacts } from "./evidence";
 import { isSasEnabled, loadSasConfig, SasConfigError } from "./config";
 import { enqueueAttestationJob } from "./outbox";
-import { POLICY_VERSION, type TrustTierValue } from "./schema";
+import { POLICY_VERSION, SCHEMA_VERSION, type TrustTierValue } from "./schema";
 
 /**
  * Issuance triggers behind the SAS_ENABLED flag (default off). Two entry points:
@@ -66,6 +66,7 @@ export async function triggerAttestation(input: TriggerInput): Promise<TriggerOu
     lockBps: evidence.lockBps,
     cliffTs: evidence.cliffTs,
     policyVersion: POLICY_VERSION,
+    schemaVersion: SCHEMA_VERSION,
     evidenceHash,
   });
 

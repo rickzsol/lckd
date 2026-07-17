@@ -602,6 +602,70 @@ begin
 end;
 $$;
 
+-- Finish a job that required NO on-chain effect: an idempotent skip (the live PDA
+-- already matches the desired claim) or a close whose account was already absent.
+-- No signature is recorded and no generation is inserted; when p_close_live is
+-- true any live DB rows for the slot are closed (used by the absent-close path).
+-- Lease/status-fenced against a stale worker. Reopens for a parked successor.
+create or replace function public.finish_attestation_job_noop(
+  p_id uuid,
+  p_lease_token uuid,
+  p_cluster text,
+  p_mint text,
+  p_schema_version integer,
+  p_attestation_pda text,
+  p_close_live boolean default false
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_row public.attestation_outbox%rowtype;
+begin
+  select * into v_row
+  from public.attestation_outbox
+  where id = p_id
+  for update;
+
+  if not found then
+    raise exception 'attestation job % not found', p_id;
+  end if;
+  if v_row.lease_token is distinct from p_lease_token then
+    raise exception 'attestation job % lease mismatch (stale worker)', p_id;
+  end if;
+  if v_row.status not in ('leased', 'broadcast') then
+    raise exception 'attestation job % not leased/broadcast (was %)', p_id, v_row.status;
+  end if;
+
+  if p_close_live then
+    update public.attestations
+    set status = 'closed',
+        closed_at = now(),
+        updated_at = now()
+    where cluster = p_cluster
+      and mint = p_mint
+      and schema_version = p_schema_version
+      and status in ('pending', 'submitted', 'finalized')
+      and attestation_pda = p_attestation_pda;
+  end if;
+
+  if v_row.successor_evidence_hash is not null then
+    perform public.promote_successor_or_done(p_id, p_lease_token);
+  else
+    update public.attestation_outbox
+    set status = 'done',
+        locked_until = null,
+        lease_token = null,
+        pending_signature = null,
+        pending_close_signature = null,
+        updated_at = now()
+    where id = p_id;
+  end if;
+end;
+$$;
+
 -- Release a job back to the queue with backoff, or dead-letter it once attempts
 -- are exhausted. p_permanent forces dead-letter (non-retryable errors).
 create or replace function public.fail_attestation_job(
@@ -697,6 +761,8 @@ revoke all on function public.complete_attestation_job(uuid, uuid, uuid, text, t
 grant execute on function public.complete_attestation_job(uuid, uuid, uuid, text, text, text, integer, integer, integer, integer, bigint, text, timestamptz, text, text) to service_role;
 revoke all on function public.complete_close_attestation_job(uuid, uuid, text, text, integer, text, text) from public, anon, authenticated;
 grant execute on function public.complete_close_attestation_job(uuid, uuid, text, text, integer, text, text) to service_role;
+revoke all on function public.finish_attestation_job_noop(uuid, uuid, text, text, integer, text, boolean) from public, anon, authenticated;
+grant execute on function public.finish_attestation_job_noop(uuid, uuid, text, text, integer, text, boolean) to service_role;
 revoke all on function public.fail_attestation_job(uuid, uuid, text, boolean) from public, anon, authenticated;
 grant execute on function public.fail_attestation_job(uuid, uuid, text, boolean) to service_role;
 revoke all on function public.expire_attestations(integer) from public, anon, authenticated;
