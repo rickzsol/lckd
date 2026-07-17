@@ -60,6 +60,11 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        destination: "/",
+        permanent: false,
+        source: "/launch/:path*",
+      },
+      {
         destination: "/token/lckd",
         permanent: true,
         source: "/token/lckd-manual-launch",
