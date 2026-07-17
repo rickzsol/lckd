@@ -1,6 +1,6 @@
 # Project state
 
-Updated: 2026-07-17
+Updated: 2026-07-17 (SAS round 3 confirmation fixes)
 
 ## Status
 
@@ -46,8 +46,18 @@ Production release approved after independent security review and deployed at `h
 - Public reads go through an owner-executed, tightly projected `attestations_public` view (no base-table grant/policy). Enqueue is atomic (insert-on-conflict) and parks a successor snapshot when trust changes during in-flight work.
 - Verifier rejects paused schemas and requires payload `cliff_ts == account.expiry`; the `/api-docs` example mirrors both. RPC is cluster-specific and genesis-hash-checked before signing.
 
-## SAS verification
+## SAS attestations round 3 (feature/sas-attestations)
 
-- `npm run typecheck`, `npm run lint`, `npm run build` green. `npm test` 102 passed (40 SAS unit tests).
-- Migration applied and exercised against local Postgres 16: idempotent first enqueue, successor parking, completion fence (wrong lease / wrong signature raise), close completion inserts no generation, anon view read allowed / base table denied, and the full two-phase reissue plus its crash-recovery reconciliation all verified.
-- `tools/sas-devnet-e2e.ts` extended to exercise the two-phase close-then-recreate path (devnet only; requires funded keys/airdrop, not run in CI).
+- 2a: broadcast recovery preserves the claimed-from status (`claim_attestation_job` keeps `broadcast`, not `leased`), so the reconciliation completion RPCs no longer raise; the mark RPCs accept a re-driven broadcast row. `RETURN QUERY` was already in place.
+- 2b: a signature counts as landed only at FINALIZED. A confirmed-but-not-finalized signature waits (backs off, reconciles the same signature later) rather than advancing or re-driving, so a fork rollback can never leave a phantom generation or an advanced reissue phase.
+- 5: the parked successor slot holds only the latest desired state. Refreshing a pending job's live desired columns clears any stale successor, and an enqueue that returns the desired state to the in-flight claim clears it too, so completion never promotes a stale snapshot over a newer one.
+- 10: the lost-insert fallback uses `INSERT ... ON CONFLICT` on the partial open-job index, so a concurrent enqueue can no longer raise 23505.
+- 1: the tier-recompute cron reissues on a policy or schema version bump, not only a tier change. `getTrustAnchorDescriptor` (program id, credential/schema PDA, attestation PDA, expiry, versions) is the documented interface this branch hands the trust API; the response wiring is `TODO(trust-api)` and lives on feature/trust-api, not merged here.
+- NEW: an expired-lock downgrade enqueues a CLOSE-ONLY job (`triggerExpiredLockClose`), never a reissue, so a past-expiry create can no longer dead-letter after the close succeeds.
+- 12: the worker asserts `job.cluster === ctx.config.cluster` before signing; a mismatch fails permanently without broadcasting, so a devnet job queued across a switch to mainnet cannot issue on mainnet with a devnet label.
+
+## SAS verification (round 3)
+
+- `npm run typecheck`, `npm run lint`, `npm run build` green. `npm test` 116 passed (49 SAS unit tests, incl. worker finalization-wait, cluster-mismatch, close-only, and anchor-seam cases).
+- Migration re-applied and exercised against local Postgres 16 via `supabase/tests/attestation_outbox_rpcs.test.sql`: broadcast recovery preserves status and completes, parked-successor latest-wins across a reissue advance, return-to-inflight clears the successor, and the lost-insert ON CONFLICT stays idempotent.
+- `tools/sas-devnet-e2e.ts` still covers the two-phase close-then-recreate path (devnet only; requires funded keys/airdrop, not run in CI).

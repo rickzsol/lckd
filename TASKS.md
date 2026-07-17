@@ -31,3 +31,15 @@
 - [x] Persist policy and schema versions in the job and complete from the snapshot.
 - [x] Bind cluster-specific RPC and verify the genesis hash before signing.
 - [x] Add devnet E2E covering the two-phase close-and-recreate path.
+
+## SAS attestations round 3 confirmation fixes (feature/sas-attestations)
+
+- [x] 2a: preserve the claimed-from status through broadcast recovery; keep RETURN QUERY.
+- [x] 2b: only treat FINALIZED as landed; confirmed waits without advancing or re-driving.
+- [x] 5: keep only the latest desired state in the successor slot; never promote a stale snapshot.
+- [x] 10: guard the lost-insert fallback with ON CONFLICT on the open-job index.
+- [x] 1: reissue on policy/schema version bump; add the getTrustAnchorDescriptor trust-api seam.
+- [x] NEW: enqueue a CLOSE-ONLY job on expired-lock/downgrade, never a reissue.
+- [x] 12: assert job.cluster == config cluster before signing; mismatch fails without broadcasting.
+- [x] Add tests: finalization-wait, claimed-from recovery, parked-successor latest-wins, close-only, cluster-mismatch.
+- [x] Re-verify migration + RPCs on local Postgres 16 via supabase/tests/attestation_outbox_rpcs.test.sql.
