@@ -9,7 +9,6 @@ import WalletMultiButton from "@/components/ui/WalletButton";
 
 const NAV_LINKS = [
   { href: "/feed", label: "Explore" },
-  { href: "/launch", label: "Launch" },
   { href: "/docs", label: "Docs", hideOnMobile: true },
   { href: "/api-docs", label: "API", hideOnMobile: true },
 ] as const;
@@ -107,6 +106,9 @@ export default function Navbar() {
               </Link>
             )}
           </div>
+          <Link href="/launch" className="btn-primary hidden md:inline-flex">
+            launch token
+          </Link>
           <div className="hidden md:block">
             <WalletMultiButton />
           </div>
@@ -143,6 +145,13 @@ export default function Navbar() {
             id="mobile-navigation"
             className="relative z-50 mx-auto mt-2 w-full max-w-[1400px] rounded-[14px] border border-white/6 bg-[rgba(9,11,10,0.92)] px-4 pb-4 backdrop-blur-[14px] md:hidden"
           >
+            <Link
+              href="/launch"
+              onClick={() => setIsMobileOpen(false)}
+              className="btn-primary mt-4 w-full"
+            >
+              launch token
+            </Link>
             {NAV_LINKS.map((link) => {
               const isActive = pathname === link.href || pathname.startsWith(link.href + "/");
               return (
