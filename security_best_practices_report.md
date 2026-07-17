@@ -10,8 +10,8 @@ Updated: 2026-07-17
 
 ### SEC-001 — High — Production data plane unavailable
 
-- Live `/api/v1/stats` and `/api/v1/feed` return 500.
-- Vercel runtime errors show repeated Supabase fetch failures across stats, feed, developer, and cron routes.
+- Live `/api/v1/stats` and `/api/v1/feed` return safe empty payloads with `available: false`; the data plane is not functional.
+- Vercel runtime history shows repeated Supabase fetch failures across stats, feed, developer, and cron routes.
 - The configured Supabase hostname does not resolve and its project reference is absent from the authenticated Supabase account.
 - `PINATA_JWT`, server-only `HELIUS_RPC_URL`, and `ALLOWED_ORIGIN` are not configured in production.
 

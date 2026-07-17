@@ -4,7 +4,7 @@ Updated: 2026-07-17
 
 ## Status
 
-The repository is not approved for production launch. The hardened candidate is on `main`, but production still runs an older artifact and its Supabase-backed APIs are failing. No on-chain transaction or database migration was executed during this work.
+The repository is not approved for production launch. The hardened candidate is on `main`; production serves safe unavailable responses because its Supabase data plane is offline. No on-chain transaction or database migration was executed during this work.
 
 ## Verified behavior
 
@@ -31,7 +31,7 @@ The repository is not approved for production launch. The hardened candidate is 
 
 ## Known release gates
 
-- Restore or provision the production Supabase project. The configured host no longer resolves and live stats/feed/cron routes fail.
+- Restore or provision the production Supabase project. The configured host no longer resolves; live stats/feed return `available: false` and cron cannot refresh data.
 - Configure and validate `PINATA_JWT`, `HELIUS_RPC_URL`, `ALLOWED_ORIGIN`, Supabase, OAuth, and cron production values. Do not reuse credentials from another project without an explicit rotation decision.
 - Review existing production rows, then apply `supabase/migrations/002_backend_hardening.sql`.
 - Resolve the two-transaction guarantee: Pump creation finalizes before a separate lock approval, and launch recovery is not durable across refresh/crash.
