@@ -23,7 +23,24 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const HELIUS_API = "https://api.helius.xyz/v0/webhooks";
-const MAX_ADDRESSES = 100_000; // Helius per-webhook address ceiling.
+export const MAX_ADDRESSES = 100_000; // Helius per-webhook address ceiling.
+
+/**
+ * Enforces the Helius per-webhook ceiling without silent truncation. A slice
+ * would report success while leaving the remainder unmonitored (finding 14), so
+ * an over-ceiling set throws with a shard instruction instead.
+ */
+export function enforceAddressCeiling(addresses: string[]): string[] {
+  if (addresses.length > MAX_ADDRESSES) {
+    throw new Error(
+      `Tracked address count ${addresses.length} exceeds the Helius per-webhook ceiling ` +
+        `of ${MAX_ADDRESSES}. Shard the addresses across multiple webhooks; refusing ` +
+        `to register a partial set that would leave ${addresses.length - MAX_ADDRESSES} ` +
+        `addresses unmonitored.`,
+    );
+  }
+  return addresses;
+}
 
 interface CliArgs {
   webhookId: string | null;
@@ -66,19 +83,7 @@ async function collectTrackedAddresses(
     if (rows.length < pageSize) break;
     from += pageSize;
   }
-  const all = [...addresses];
-  if (all.length > MAX_ADDRESSES) {
-    // Never silently truncate: a slice would report success while leaving the
-    // remainder unmonitored (finding 14). Fail loudly so the operator shards the
-    // address set across multiple webhooks instead.
-    throw new Error(
-      `Tracked address count ${all.length} exceeds the Helius per-webhook ceiling ` +
-        `of ${MAX_ADDRESSES}. Shard the addresses across multiple webhooks; refusing ` +
-        `to register a partial set that would leave ${all.length - MAX_ADDRESSES} ` +
-        `addresses unmonitored.`,
-    );
-  }
-  return all;
+  return enforceAddressCeiling([...addresses]);
 }
 
 async function main(): Promise<void> {
@@ -131,7 +136,12 @@ async function main(): Promise<void> {
   console.log(`[helius-webhook] ${method} ok. webhookID=${result.webhookID ?? args.webhookId}`);
 }
 
-main().catch((error) => {
-  console.error("[helius-webhook] fatal:", error);
-  process.exit(1);
-});
+// Only auto-run when invoked directly (tsx tools/...), never when imported by a
+// test that exercises the exported helpers.
+const entry = process.argv[1] ?? "";
+if (entry.includes("register-helius-webhook") && !entry.includes(".test")) {
+  main().catch((error) => {
+    console.error("[helius-webhook] fatal:", error);
+    process.exit(1);
+  });
+}

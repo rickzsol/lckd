@@ -310,10 +310,13 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error("[backfill] fatal:", error);
-  process.exit(1);
-});
+const entry = process.argv[1] ?? "";
+if (entry.includes("backfill-locks") && !entry.includes(".test")) {
+  main().catch((error) => {
+    console.error("[backfill] fatal:", error);
+    process.exit(1);
+  });
+}
 
 /*
  * FOLLOW-UP MIGRATION STUB (create as a separate timestamped file AFTER this

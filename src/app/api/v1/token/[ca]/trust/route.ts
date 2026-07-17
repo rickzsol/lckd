@@ -4,6 +4,7 @@ import { isValidSolanaAddress, isValidTokenIdentifier } from "@/lib/api/validati
 import { envelope, tokenSource } from "@/lib/api/envelope";
 import { getSupabase, hasSupabaseConfig } from "@/lib/supabase";
 import { buildLockBlock, tierSlug, type TrustResponseData } from "@/lib/trust/response";
+import { isTrustStale } from "@/lib/trust/staleness";
 import { TrustTier } from "@/types/index";
 import type { LockPublicRow } from "@/types/trust";
 
@@ -106,33 +107,6 @@ export async function GET(
       { "Cache-Control": "public, s-maxage=15, stale-while-revalidate=45" },
     );
   });
-}
-
-// Trust data is stale when the projected tier or the lock's finalized
-// verification is older than these windows. A missing timestamp is treated as
-// stale (never-verified is not fresh).
-const TIER_FRESH_MS = 26 * 60 * 60 * 1000; // GitHub cron runs hourly; 26h grace.
-const LOCK_FRESH_MS = 48 * 60 * 60 * 1000; // reconcile sweep runs daily; 48h grace.
-
-export function isTrustStale(
-  tierComputedAt: string | null,
-  lockVerifiedAt: string | null,
-  now: number,
-): boolean {
-  if (isOlderThan(tierComputedAt, TIER_FRESH_MS, now)) return true;
-  // A lock block is only present when there is a canonical lock; when present its
-  // finalized verification must be within the window.
-  if (lockVerifiedAt !== null && isOlderThan(lockVerifiedAt, LOCK_FRESH_MS, now)) {
-    return true;
-  }
-  return false;
-}
-
-function isOlderThan(iso: string | null, windowMs: number, now: number): boolean {
-  if (!iso) return true;
-  const ts = new Date(iso).getTime();
-  if (!Number.isFinite(ts)) return true;
-  return now - ts > windowMs;
 }
 
 async function loadGithub(

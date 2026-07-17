@@ -3,60 +3,80 @@ import test from "node:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { insertInboxEvents, normalizeHeliusBatch, type NormalizedEvent } from "./webhookInbox";
 
-test("normalizeHeliusBatch skips entries without a signature", () => {
-  const events = normalizeHeliusBatch([
-    { signature: "sig-a", type: "TRANSFER" },
-    { type: "TRANSFER" },
+const KEY = "So11111111111111111111111111111111111111112";
+const KEY2 = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+
+test("normalizeHeliusBatch skips entries without a signature and counts them rejected", () => {
+  const { events, rejected } = normalizeHeliusBatch([
+    { signature: "sig-a", type: "TRANSFER", accountKeys: [KEY] },
+    { type: "TRANSFER", accountKeys: [KEY] },
     null,
     "not-an-object",
-    { signature: "", type: "TRANSFER" },
+    { signature: "", type: "TRANSFER", accountKeys: [KEY] },
   ]);
   assert.equal(events.length, 1);
   assert.equal(events[0].signature, "sig-a");
+  assert.equal(rejected, 4);
 });
 
-test("event_index is the positional index in the batch", () => {
-  const events = normalizeHeliusBatch([
+test("entries with no usable account keys are rejected, not persisted", () => {
+  const { events, rejected } = normalizeHeliusBatch([
     { signature: "sig-a", type: "TRANSFER" },
-    { type: "TRANSFER" },
-    { signature: "sig-c", type: "UNKNOWN" },
+    { signature: "sig-b", type: "TRANSFER", accountKeys: ["not-base58!"] },
   ]);
-  assert.equal(events[0].event_index, 0);
-  assert.equal(events[1].event_index, 2);
+  assert.equal(events.length, 0);
+  assert.equal(rejected, 2);
+});
+
+test("dedup identity is (signature, type), not batch position", () => {
+  // Same signature+type at different positions is one subevent; the identity
+  // must not embed the index, so a reordered retry maps to the same key.
+  const a = normalizeHeliusBatch([
+    { signature: "sig-a", type: "TRANSFER", accountKeys: [KEY] },
+    { signature: "sig-b", type: "TRANSFER", accountKeys: [KEY] },
+  ]);
+  const reordered = normalizeHeliusBatch([
+    { signature: "sig-b", type: "TRANSFER", accountKeys: [KEY] },
+    { signature: "sig-a", type: "TRANSFER", accountKeys: [KEY] },
+  ]);
+  const keyOf = (e: NormalizedEvent) => `${e.provider}|${e.signature}|${e.event_type}`;
+  assert.deepEqual(new Set(a.events.map(keyOf)), new Set(reordered.events.map(keyOf)));
+  // No event carries a positional field.
+  assert.equal("event_index" in a.events[0], false);
+});
+
+test("an in-batch duplicate of the same subevent is collapsed", () => {
+  const { events } = normalizeHeliusBatch([
+    { signature: "sig-a", type: "TRANSFER", accountKeys: [KEY] },
+    { signature: "sig-a", type: "TRANSFER", accountKeys: [KEY2] },
+  ]);
+  assert.equal(events.length, 1);
 });
 
 test("normalizeHeliusBatch defaults missing type and slot", () => {
-  const [event] = normalizeHeliusBatch([{ signature: "sig-a" }]);
-  assert.equal(event.event_type, "UNKNOWN");
-  assert.equal(event.slot, null);
-  assert.equal(event.provider, "helius");
+  const { events } = normalizeHeliusBatch([{ signature: "sig-a", accountKeys: [KEY] }]);
+  assert.equal(events[0].event_type, "UNKNOWN");
+  assert.equal(events[0].slot, null);
+  assert.equal(events[0].provider, "helius");
 });
 
 test("identical batches produce stable dedup keys and payload hashes", () => {
-  const raw = [
-    { signature: "sig-a", type: "TRANSFER", slot: 10, accountKeys: ["acc-1"] },
-    { signature: "sig-a", type: "TRANSFER", slot: 10, accountKeys: ["acc-1"] },
-  ];
+  const raw = [{ signature: "sig-a", type: "TRANSFER", slot: 10, accountKeys: [KEY] }];
   const first = normalizeHeliusBatch(raw);
   const second = normalizeHeliusBatch(raw.map((entry) => ({ ...entry })));
-
-  const key = (event: NormalizedEvent) =>
-    `${event.provider}|${event.signature}|${event.event_index}|${event.event_type}`;
-  assert.deepEqual(first.map(key), second.map(key));
   assert.deepEqual(
-    first.map((event) => event.payload_hash),
-    second.map((event) => event.payload_hash),
+    first.events.map((e) => e.payload_hash),
+    second.events.map((e) => e.payload_hash),
   );
 });
 
-test("insertInboxEvents forwards onConflict and ignoreDuplicates and returns the inserted count", async () => {
-  const calls: { table?: string; rows?: unknown; options?: unknown } = {};
+test("insertInboxEvents forwards the stable onConflict target and returns the count", async () => {
+  const calls: { table?: string; options?: unknown } = {};
   const supabase = {
     from(table: string) {
       calls.table = table;
       return {
-        upsert(rows: unknown, options: unknown) {
-          calls.rows = rows;
+        upsert(_rows: unknown, options: unknown) {
           calls.options = options;
           return {
             select() {
@@ -68,19 +88,18 @@ test("insertInboxEvents forwards onConflict and ignoreDuplicates and returns the
     },
   } as unknown as SupabaseClient;
 
-  const events = normalizeHeliusBatch([
-    { signature: "sig-a", type: "TRANSFER" },
-    { signature: "sig-b", type: "TRANSFER" },
+  const { events } = normalizeHeliusBatch([
+    { signature: "sig-a", type: "TRANSFER", accountKeys: [KEY] },
+    { signature: "sig-b", type: "TRANSFER", accountKeys: [KEY] },
   ]);
   const count = await insertInboxEvents(supabase, events);
 
   assert.equal(count, 2);
   assert.equal(calls.table, "webhook_inbox");
   assert.deepEqual(calls.options, {
-    onConflict: "provider,signature,event_index,event_type",
+    onConflict: "provider,signature,event_type",
     ignoreDuplicates: true,
   });
-  assert.equal(calls.rows, events);
 });
 
 test("insertInboxEvents returns 0 for an empty batch without touching supabase", async () => {
@@ -112,6 +131,6 @@ test("insertInboxEvents throws when the upsert reports an error", async () => {
     },
   } as unknown as SupabaseClient;
 
-  const events = normalizeHeliusBatch([{ signature: "sig-a", type: "TRANSFER" }]);
+  const { events } = normalizeHeliusBatch([{ signature: "sig-a", type: "TRANSFER", accountKeys: [KEY] }]);
   await assert.rejects(() => insertInboxEvents(supabase, events), /boom/);
 });

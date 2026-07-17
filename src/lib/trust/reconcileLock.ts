@@ -6,10 +6,17 @@ import {
   bindStreamToLock,
   deriveWithdrawalStatus,
   readFinalizedStreamState,
-  StreamUnavailableError,
   type LockIdentity,
+  type StreamReadResult,
 } from "./lockVerification";
 import { projectTrust, TRUST_POLICY_VERSION } from "./projection";
+
+/** Injectable finalized reader so the reconciliation logic is testable without a
+ * live RPC. Defaults to the real finalized read. */
+export type StreamReader = (
+  connection: Connection,
+  streamId: string,
+) => Promise<StreamReadResult>;
 
 /**
  * Verifies one lock against finalized chain state and commits the new lock
@@ -33,8 +40,9 @@ export async function reconcileLock(
   now: number,
   signature?: string | null,
   slot?: string | number | null,
+  readStream: StreamReader = readFinalizedStreamState,
 ): Promise<{ statusChanged: boolean; tierChanged: boolean }> {
-  const read = await readFinalizedStreamState(connection, lock.stream_id);
+  const read = await readStream(connection, lock.stream_id);
   const storedWithdrawn = BigInt(lock.withdrawn_amount);
 
   let status: LockRow["status"];

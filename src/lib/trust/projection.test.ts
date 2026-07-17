@@ -107,7 +107,6 @@ test("lockEvidenceFromRow maps canonical columns", () => {
     mint: "mint-1",
     stream_program: "prog",
     stream_id: "stream-1",
-    recipient: "rcpt",
     deposited_amount: "100",
     withdrawn_amount: "0",
     total_supply_raw: null,
