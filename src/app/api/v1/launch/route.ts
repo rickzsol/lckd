@@ -28,7 +28,7 @@ const launchSchema = z.object({
   description: z.string().max(1000).default(""),
   buyAmountSol: z.number().finite().min(0.01).max(100),
   lockDurationDays: z.number().int().min(7).max(365),
-  lockPercentage: z.number().int().min(50).max(100),
+  lockPercentage: z.number().int().min(51).max(100),
   githubUsername: z.string().nullable().optional(),
   githubRepo: z.string().nullable().optional(),
   liveUrl: nullableHttpsUrl,

@@ -3,7 +3,7 @@
 import type { WizardContext } from "@/hooks/useLaunchWizard";
 
 const DURATION_PRESETS = [7, 30, 90, 180, 365];
-const PERCENTAGE_PRESETS = [50, 75, 100];
+const PERCENTAGE_PRESETS = [51, 75, 100];
 
 export default function StepLockConfig({ w }: { w: WizardContext }) {
   return (
@@ -89,7 +89,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
           <input
             id="lock-pct"
             type="range"
-            min={50}
+            min={51}
             max={100}
             value={w.config.lockPercentage}
             onChange={(event) =>

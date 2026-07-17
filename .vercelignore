@@ -1,0 +1,9 @@
+.env*
+.playwright-cli/
+output/
+test-results/
+playwright-report/
+*-wallet.json
+sigs*.json
+*tx_debug*.json
+public/Untitled*.png

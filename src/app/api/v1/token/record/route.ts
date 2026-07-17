@@ -43,7 +43,7 @@ const fullRecordSchema = z.object({
   launchTxSignature: transactionSignature,
   lockTxSignature: transactionSignature,
   lockDurationDays: z.number().int().min(7).max(365),
-  lockPercentage: z.number().int().min(50).max(100),
+  lockPercentage: z.number().int().min(51).max(100),
   lockAmount: z.string().regex(/^\d+$/),
   buyAmountSol: z.number().finite().positive().max(100),
   githubUsername: z.string().nullable().default(null),
@@ -186,6 +186,7 @@ export async function POST(request: NextRequest) {
 
   if (
     lock.durationDays !== body.lockDurationDays ||
+    lock.percentage < 50 ||
     lock.percentage > body.lockPercentage ||
     BigInt(lock.debitedAmount) + BigInt(10) <
       (launch.purchasedAmount * BigInt(body.lockPercentage)) / BigInt(100)
