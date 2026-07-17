@@ -1,18 +1,16 @@
 "use client";
 
 import { useSession, signIn } from "next-auth/react";
-import { useState, useEffect } from "react";
-import Badge from "@/components/ui/Badge";
-import { TrustTier } from "@/types/index";
+import { useContext, useState, useEffect } from "react";
+import Image from "next/image";
 import type { WizardContext } from "@/hooks/useLaunchWizard";
-
-interface RepoItem {
-  full_name: string;
-  name: string;
-  description: string | null;
-  stars: number;
-  language: string | null;
-}
+import ContributionGraph from "@/components/github/ContributionGraph";
+import {
+  DemoGitHubContext,
+  RepoActivityCard,
+  TierLadder,
+  type RepoItem,
+} from "./githubProof";
 
 function RepoSelector({
   username,
@@ -23,12 +21,13 @@ function RepoSelector({
   value: string | null;
   onChange: (val: string | null) => void;
 }) {
-  const [repos, setRepos] = useState<RepoItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const demo = useContext(DemoGitHubContext);
+  const [repos, setRepos] = useState<RepoItem[]>(demo?.repos ?? []);
+  const [isLoading, setIsLoading] = useState(!demo);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!username) return;
+    if (demo || !username) return;
     fetch(`/api/v1/github/repos?username=${encodeURIComponent(username)}`)
       .then(async (response) => {
         if (!response.ok) throw new Error("Repository list unavailable");
@@ -40,7 +39,7 @@ function RepoSelector({
         setError("Repository list unavailable. You can continue without linking one.");
       })
       .finally(() => setIsLoading(false));
-  }, [username]);
+  }, [username, demo]);
 
   return (
     <div>
@@ -67,6 +66,7 @@ function RepoSelector({
 export default function StepGitHub({ w }: { w: WizardContext }) {
   const { data: session } = useSession();
   const isLinked = !!session?.github_username;
+  const username = w.config.githubUsername ?? session?.github_username ?? null;
 
   const handleConnect = () => {
     if (isLinked) {
@@ -88,13 +88,13 @@ export default function StepGitHub({ w }: { w: WizardContext }) {
       <h2 className="mb-5 font-mono text-[13px] font-bold text-accent">
         03 / Project links
       </h2>
-      <p className="mb-5 font-mono text-[11px] text-text-3">
+      <p className="mb-5 font-mono text-[11px] leading-relaxed text-text-3">
         Your GitHub account authenticated this session. Repository and live product links
         are optional profile claims and are not audited by LCKD.
       </p>
 
-      {!isLinked && !w.config.githubUsername ? (
-        <div className="flex flex-col gap-3">
+      {!username ? (
+        <div className="flex flex-col gap-4">
           <button
             onClick={handleConnect}
             className="btn-secondary w-full py-3.5 text-sm font-semibold"
@@ -109,11 +109,7 @@ export default function StepGitHub({ w }: { w: WizardContext }) {
             sign in with github
           </button>
 
-          {/* Tier preview */}
-          <div className="flex items-center justify-center gap-2 font-mono text-[11px] text-text-4">
-            <span>Current tier:</span>
-            <Badge tier={TrustTier.LOCKED} label="LOCKED" />
-          </div>
+          <TierLadder tier={w.computedTier} hasRepo={false} hasLive={false} />
 
           <button
             onClick={w.goNext}
@@ -122,7 +118,7 @@ export default function StepGitHub({ w }: { w: WizardContext }) {
             continue without profile links
           </button>
 
-          <div className="mt-2 flex gap-2.5">
+          <div className="mt-1 flex gap-2.5">
             <button onClick={w.goBack} className="btn-secondary flex-1 py-3">
               &larr; back
             </button>
@@ -130,37 +126,56 @@ export default function StepGitHub({ w }: { w: WizardContext }) {
         </div>
       ) : (
         <div>
-          {/* GitHub profile card */}
+          {/* GitHub identity card */}
           <div className="mb-4 flex items-center gap-3 rounded-control border border-accent/20 bg-accent-dim px-3.5 py-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-dim font-mono text-sm font-bold text-accent">
-              {(w.config.githubUsername ?? "?")[0].toUpperCase()}
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-bold text-accent">
-                  @{w.config.githubUsername ?? session?.github_username}
-                </span>
-                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+            <Image
+              src={`https://github.com/${username}.png?size=80`}
+              alt=""
+              width={40}
+              height={40}
+              unoptimized
+              className="h-10 w-10 shrink-0 rounded-full border border-accent/30 bg-surface-deep object-cover"
+            />
+            <div className="min-w-0 flex-1">
+              <a
+                href={`https://github.com/${username}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-xs font-bold text-accent hover:underline"
+              >
+                @{username}
+              </a>
+              <div className="mt-0.5 font-mono text-[10px] text-text-3">
+                authenticated this session
               </div>
-              <span className="font-mono text-[10px] text-text-3">
-                GitHub connected
-              </span>
             </div>
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-accent/25 bg-accent-dim px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-accent-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+              connected
+            </span>
           </div>
 
-          {/* Repo selector */}
-          <div className="mb-3">
+          {/* Contribution heatmap */}
+          <div className="mb-4 rounded-control border border-line-default bg-surface-deep px-4 pb-3 pt-1">
+            <ContributionGraph username={username} />
+          </div>
+
+          {/* Repo selector + live activity proof */}
+          <div className="mb-4">
             <label htmlFor="github-repo" className="form-label">
               Link a Repository (optional)
             </label>
             <RepoSelector
-              username={w.config.githubUsername ?? session?.github_username ?? ""}
+              username={username}
               value={w.config.githubRepo ?? null}
               onChange={(val) => w.updateConfig("githubRepo", val)}
             />
             <div id="github-repo-help" className="mt-1 font-mono text-[10px] text-text-4">
               The link is displayed for visitors to inspect independently.
             </div>
+            {w.config.githubRepo && (
+              <RepoActivityCard key={w.config.githubRepo} repo={w.config.githubRepo} />
+            )}
           </div>
 
           {/* Live URL */}
@@ -184,10 +199,13 @@ export default function StepGitHub({ w }: { w: WizardContext }) {
             </div>
           </div>
 
-          {/* Tier preview */}
-          <div className="mb-5 flex items-center gap-2 rounded-control border border-line-default bg-surface px-3 py-2.5 font-mono text-[11px] text-text-3">
-            <span>Profile label preview:</span>
-            <Badge tier={w.computedTier} label={w.tierLabel} />
+          {/* Tier ladder */}
+          <div className="mb-5">
+            <TierLadder
+              tier={w.computedTier}
+              hasRepo={Boolean(w.config.githubRepo)}
+              hasLive={Boolean(w.config.liveUrl)}
+            />
           </div>
 
           <div className="flex gap-2.5">

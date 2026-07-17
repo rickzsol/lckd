@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import Badge from "@/components/ui/Badge";
 import TokenImage from "@/components/ui/TokenImage";
 import DexScreenerChart from "@/components/token/DexScreenerChart";
 import JupiterSwap from "@/components/token/JupiterSwap";
+import ContributionGraph from "@/components/github/ContributionGraph";
 import type { DisplayToken } from "@/types/display";
 
 export default function TokenDetailClient({ t }: { t: DisplayToken }) {
@@ -14,7 +16,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
     t.lock.duration !== "--";
 
   return (
-    <div className="mx-auto max-w-[1152px] px-4 pt-28 pb-16 sm:px-6">
+    <div className="mx-auto max-w-[1360px] px-4 pt-28 pb-16 sm:px-6 lg:px-10">
       <Link
         href="/feed"
         className="mb-4 inline-block font-mono text-xs text-text-3 transition-colors duration-180 ease-out hover:text-accent-400"
@@ -76,9 +78,9 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
       </div>
 
       {/* Primary trading area: Chart + (Repo + Swap) */}
-      <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
+      <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <DexScreenerChart mintAddress={t.mintAddress} />
-        <div className="flex h-full flex-col gap-4">
+        <div className="flex flex-col gap-4 lg:gap-5">
           {/* Linked Repo, compact */}
           {t.repo && (
             <div className="rounded-card border border-line-default bg-surface p-4">
@@ -130,7 +132,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
       </div>
 
       {/* Detail grid */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 lg:gap-5">
         {/* Lock card */}
         <div className={`rounded-card border p-5 ${hasLockRecord ? "border-accent/20 bg-accent-dim" : "border-warn/25 bg-[rgba(224,167,62,0.04)]"}`}>
           <div className="mb-3.5 flex items-center justify-between font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
@@ -200,65 +202,73 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
           </div>
         </div>
 
-        {/* Dev Profile */}
-        {t.dev.github && (
-          <div className="rounded-card border border-line-default bg-surface p-5">
-            <div className="mb-3.5 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
-              Developer Profile
-            </div>
-            <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-accent/30 bg-accent-dim font-mono text-[13px] font-bold text-accent-400">
-                {t.dev.avatar}
+        {/* Dev profile + product link */}
+        <div className="flex flex-col gap-4 lg:gap-5">
+          {t.dev.github && (
+            <div className="rounded-card border border-line-default bg-surface p-5">
+              <div className="mb-3.5 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
+                Developer Profile
               </div>
-              <div>
-                <a
-                  href={`https://github.com/${t.dev.github}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-mono text-sm font-bold text-text-1 hover:text-accent-400"
-                >
-                  @{t.dev.github}
-                </a>
-                <div className="font-mono text-[10px] text-text-3 tabular-nums">
-                  {t.dev.repos !== undefined && <>{t.dev.repos} repos &middot; </>}
-                  {t.dev.commits !== undefined && (
-                    <>{t.dev.commits.toLocaleString()} commits &middot; </>
-                  )}
-                  {t.dev.accountAge}
+              <div className="flex items-center gap-3">
+                <Image
+                  src={`https://github.com/${t.dev.github}.png?size=80`}
+                  alt=""
+                  width={40}
+                  height={40}
+                  unoptimized
+                  className="h-10 w-10 shrink-0 rounded-full border border-accent/30 bg-accent-dim object-cover"
+                />
+                <div>
+                  <a
+                    href={`https://github.com/${t.dev.github}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-sm font-bold text-text-1 hover:text-accent-400"
+                  >
+                    @{t.dev.github}
+                  </a>
+                  <div className="font-mono text-[10px] text-text-3 tabular-nums">
+                    {t.dev.repos !== undefined && <>{t.dev.repos} repos &middot; </>}
+                    {t.dev.commits !== undefined && (
+                      <>{t.dev.commits.toLocaleString()} commits &middot; </>
+                    )}
+                    {t.dev.accountAge}
+                  </div>
                 </div>
               </div>
+
+              <ContributionGraph username={t.dev.github} />
+
+              <p className="mt-4 border-t border-line pt-3.5 font-mono text-[11px] leading-[1.6] text-text-3">
+                GitHub handle submitted with this launch. Review the public account and repository
+                history directly on GitHub.
+              </p>
             </div>
+          )}
 
-            <p className="font-mono text-[11px] leading-[1.6] text-text-3">
-              GitHub handle submitted with this launch. Review the public account and repository
-              history directly on GitHub.
-            </p>
-          </div>
-        )}
-
-        {/* Live URL */}
-        {t.live && (
-          <div className="rounded-card border border-line-default bg-surface p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="mb-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-accent-400">
-                  Submitted product link
+          {t.live && (
+            <div className="rounded-card border border-line-default bg-surface p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="mb-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-accent-400">
+                    Submitted product link
+                  </div>
+                  <a
+                    href={
+                      t.live.startsWith("http") ? t.live : `https://${t.live}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-[13px] text-text-1 hover:text-accent-400"
+                  >
+                    {t.live}
+                  </a>
                 </div>
-                <a
-                  href={
-                    t.live.startsWith("http") ? t.live : `https://${t.live}`
-                  }
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-mono text-[13px] text-text-1 hover:text-accent-400"
-                >
-                  {t.live}
-                </a>
+                <span className="pulse-dot" />
               </div>
-              <span className="pulse-dot" />
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

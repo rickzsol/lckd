@@ -6,6 +6,9 @@ export const PUMPFUN_PROGRAM_ID = new PublicKey(
 export const PUMP_AMM_PROGRAM_ID = new PublicKey(
   "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
 );
+export const STREAMFLOW_PROGRAM_ID = new PublicKey(
+  "strmRqUCoQUgGUan5YhzUZa6KqdzwX5L6FpUxfmKg5m",
+);
 export const MPL_TOKEN_METADATA_PROGRAM_ID = new PublicKey(
   "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
 );

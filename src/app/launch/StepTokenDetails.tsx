@@ -35,23 +35,38 @@ export default function StepTokenDetails({ w }: { w: WizardContext }) {
           />
 
           {w.imagePreview ? (
-            <div className="group relative inline-block">
+            <div className="flex items-center gap-4 rounded-card border border-line-default bg-surface-deep p-3">
               <Image
                 src={w.imagePreview}
                 alt="Token preview"
-                width={90}
-                height={90}
-                className="h-[90px] w-[90px] rounded-card border border-line-default object-cover"
+                width={64}
+                height={64}
+                className="h-16 w-16 shrink-0 rounded-control border border-line-default object-cover"
                 unoptimized
               />
-              <button
-                type="button"
-                onClick={w.removeImage}
-                className="absolute -right-3 -top-3 flex h-11 w-11 items-center justify-center rounded-full bg-danger text-xs font-bold text-text-1 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
-                aria-label="Remove image"
-              >
-                X
-              </button>
+              <div className="min-w-0 flex-1">
+                <div className="font-mono text-xs font-bold text-text-1">Image ready</div>
+                <div className="mt-0.5 font-mono text-[10px] text-text-3">
+                  Shown on pump.fun and the token page
+                </div>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="btn-secondary min-h-9 px-3 text-[11px]"
+                >
+                  replace
+                </button>
+                <button
+                  type="button"
+                  onClick={w.removeImage}
+                  className="min-h-9 rounded-control border border-danger/30 px-3 font-mono text-[11px] font-semibold text-danger transition-colors duration-[180ms] hover:border-danger/60 hover:bg-danger/10"
+                  aria-label="Remove image"
+                >
+                  remove
+                </button>
+              </div>
             </div>
           ) : (
             <div
@@ -76,9 +91,9 @@ export default function StepTokenDetails({ w }: { w: WizardContext }) {
                 if (file) w.handleImageUpload(file);
               }}
             >
-              <span className="text-2xl">+</span>
-              <span className="font-mono text-[10px] text-text-3">
-                {isDragging ? "drop here" : "drag or click"}
+              <span className="text-xl leading-none">+</span>
+              <span className="font-mono text-[11px] font-semibold text-text-2">
+                {isDragging ? "drop to upload" : "drag an image here or click to browse"}
               </span>
             </div>
           )}

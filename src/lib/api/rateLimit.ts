@@ -26,6 +26,7 @@ const PRESETS = {
   launch: { limit: 20, windowMs: 60_000 },
   github: { limit: 30, windowMs: 60_000 },
   record: { limit: 15, windowMs: 60_000 },
+  match: { limit: 5, windowMs: 60_000 },
   default: { limit: 60, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitConfig>;
 

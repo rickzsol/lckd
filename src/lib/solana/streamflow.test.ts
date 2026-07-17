@@ -82,20 +82,16 @@ test("v13 lock data matches Streamflow token-lock invariants", () => {
   assert(unlockedAtCliff.eq(amount));
 });
 
-test("lock amount represents the actual deposited percentage", () => {
+test("lock amount reserves the live percentage fee inside the selected balance", () => {
   const totalBalance = BigInt(1_000_000);
   const totalFeePercent = 0.19;
-  const amount = calculateLockAmount(totalBalance, 99, totalFeePercent);
+  const amount = calculateLockAmount(totalBalance, 100, totalFeePercent);
   const totalDebit =
     BigInt(amount.toString()) +
-    (BigInt(amount.toString()) * BigInt(19) + BigInt(9_999)) / BigInt(10_000);
+    (BigInt(amount.toString()) * BigInt(19)) / BigInt(10_000);
 
-  assert.equal(amount.toString(), "990000");
   assert(totalDebit <= totalBalance);
-  assert.throws(
-    () => calculateLockAmount(totalBalance, 100, totalFeePercent),
-    /insufficient tokens/,
-  );
+  assert(totalBalance - totalDebit < BigInt(3));
 });
 
 test("lock schedule time comes from confirmed Solana blocks", async () => {

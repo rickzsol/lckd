@@ -55,13 +55,13 @@ interface Card {
 const CARDS: Card[] = [
   {
     icon: LockIcon,
-    title: "Locked on launch",
-    body: "Every dev allocation is locked via Streamflow before the first trade. No promises. Enforced on-chain.",
+    title: "Verified token locks",
+    body: "Creator-purchased tokens can be placed in a Streamflow time lock after launch. Amount and unlock time are verified on-chain.",
   },
   {
     icon: GithubIcon,
     title: "GitHub verified",
-    body: "Connect your GitHub. Your commit history becomes your reputation. Real builders, real code.",
+    body: "Connect GitHub to link a public developer profile with its repositories and verified wallet.",
   },
   {
     icon: BoltIcon,

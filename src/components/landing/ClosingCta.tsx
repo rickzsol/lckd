@@ -22,9 +22,9 @@ export default function ClosingCta({ showMascot = true }: ClosingCtaProps) {
           Ready to <span className="text-accent">ship</span>?
         </h2>
         <p className="mx-auto mb-8 max-w-[420px] font-mono text-[13px] font-medium leading-[1.8] text-text-3">
-          Launch your token with locked dev bags.
+          Create your token. Lock selected creator tokens.
           <br />
-          Let the code speak for itself.
+          Verify both finalized receipts.
         </p>
         <div className="mb-11 flex flex-wrap justify-center gap-3">
           <Link
@@ -50,7 +50,7 @@ export default function ClosingCta({ showMascot = true }: ClosingCtaProps) {
               className="h-11 w-11 object-contain"
             />
             <span className="font-mono text-[11px] font-medium text-text-4">
-              locky holds the keys. nobody else.
+              your wallet signs every transaction.
             </span>
           </div>
         )}

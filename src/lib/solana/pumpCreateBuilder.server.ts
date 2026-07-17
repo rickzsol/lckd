@@ -9,6 +9,7 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddressSync,
   NATIVE_MINT,
+  TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import {
@@ -29,11 +30,7 @@ import { pumpCreateExpectation } from "./launchTransaction";
 import { validatePumpPortalCreateTransaction } from "./transactionValidation";
 
 const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
-const CREATE_COMPUTE_UNIT_LIMIT = 220_000;
-const FEE_RECIPIENT = new PublicKey("62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV");
-const BUYBACK_FEE_RECIPIENT = new PublicKey(
-  "5YxQFdt3Tr9zJLvkFccqXVUwhdTWJQc1fFg2YPbxvxeD",
-);
+const CREATE_COMPUTE_UNIT_LIMIT = 400_000;
 
 export interface CreateTxBundle {
   txBytes: Uint8Array;
@@ -107,37 +104,39 @@ export async function buildCreateTransaction(
     mintPublicKey,
     walletPublicKey,
     false,
-    TOKEN_PROGRAM_ID,
+    TOKEN_2022_PROGRAM_ID,
   );
   const instructions = [
     ComputeBudgetProgram.setComputeUnitLimit({ units: CREATE_COMPUTE_UNIT_LIMIT }),
     ComputeBudgetProgram.setComputeUnitPrice({
       microLamports: DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
     }),
-    await PUMP_SDK.createInstruction({
+    await PUMP_SDK.createV2Instruction({
       mint: mintPublicKey,
       name: config.name,
       symbol: config.ticker,
       uri: metadataUri,
       creator: walletPublicKey,
       user: walletPublicKey,
+      mayhemMode: false,
+      cashback: false,
     }),
     createAssociatedTokenAccountIdempotentInstruction(
       walletPublicKey,
       associatedUser,
       walletPublicKey,
       mintPublicKey,
-      TOKEN_PROGRAM_ID,
+      TOKEN_2022_PROGRAM_ID,
     ),
-    await PUMP_SDK.getBuyInstructionRaw({
+    await PUMP_SDK.getBuyV2InstructionRaw({
       user: walletPublicKey,
       mint: mintPublicKey,
       creator: walletPublicKey,
       amount: tokenAmount,
-      solAmount: maxQuoteAmount,
-      feeRecipient: FEE_RECIPIENT,
-      buybackFeeRecipient: BUYBACK_FEE_RECIPIENT,
-      tokenProgram: TOKEN_PROGRAM_ID,
+      quoteAmount: maxQuoteAmount,
+      tokenProgram: TOKEN_2022_PROGRAM_ID,
+      quoteMint: NATIVE_MINT,
+      quoteTokenProgram: TOKEN_PROGRAM_ID,
     }),
   ];
   const message = new TransactionMessage({

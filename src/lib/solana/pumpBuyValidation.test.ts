@@ -58,8 +58,6 @@ function legacyAccounts(wallet: PublicKey, mint: PublicKey, tokenProgram: Public
     pda(PUMPFUN_PROGRAM_ID, Buffer.from("user_volume_accumulator"), wallet.toBuffer()),
     pda(FEE_PROGRAM, Buffer.from("fee_config"), PUMPFUN_PROGRAM_ID.toBuffer()),
     FEE_PROGRAM,
-    pda(PUMPFUN_PROGRAM_ID, Buffer.from("bonding-curve-v2"), mint.toBuffer()),
-    BUYBACK_FEE_RECIPIENT,
   ];
 }
 

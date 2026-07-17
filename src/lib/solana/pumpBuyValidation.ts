@@ -43,8 +43,8 @@ interface PumpBuyLayout {
 }
 
 const BUY_LAYOUTS = new Map<string, PumpBuyLayout>([
-  [PUMP_BUY_DISCRIMINATOR, { accountCount: 18, spendOffset: 16, dataLength: 25, version: "legacy" }],
-  [PUMP_BUY_EXACT_SOL_DISCRIMINATOR, { accountCount: 18, spendOffset: 8, dataLength: 25, version: "legacy" }],
+  [PUMP_BUY_DISCRIMINATOR, { accountCount: 16, spendOffset: 16, dataLength: 25, version: "legacy" }],
+  [PUMP_BUY_EXACT_SOL_DISCRIMINATOR, { accountCount: 16, spendOffset: 8, dataLength: 25, version: "legacy" }],
   [PUMP_BUY_V2_DISCRIMINATOR, { accountCount: 27, spendOffset: 16, dataLength: 24, version: "v2" }],
   [PUMP_BUY_EXACT_QUOTE_V2_DISCRIMINATOR, { accountCount: 27, spendOffset: 8, dataLength: 24, version: "v2" }],
 ]);
@@ -114,12 +114,6 @@ function validateLegacyAccounts(
     derivePda(PUMP_FEE_PROGRAM_ID, Buffer.from("fee_config"), PUMPFUN_PROGRAM_ID.toBuffer()),
   );
   assertAccount(accounts, 15, PUMP_FEE_PROGRAM_ID);
-  assertAccount(
-    accounts,
-    16,
-    derivePda(PUMPFUN_PROGRAM_ID, Buffer.from("bonding-curve-v2"), mint.toBuffer()),
-  );
-  assertRecipient(accounts, 17, BUYBACK_FEE_RECIPIENTS, "buyback fee recipient");
 }
 
 function validateV2Accounts(
