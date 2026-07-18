@@ -23,6 +23,7 @@ import {
   type AccountMeta,
 } from "@solana/web3.js";
 import { LCKD_MINT_ADDRESS } from "./launchFee";
+import { readU64LE, writeU64LE } from "./u64";
 
 export const BUYBACK_BURN_LAMPORTS = 100_000_000;
 export const BUYBACK_BURN_AUTHORITY_SEED = "buyback_burn";
@@ -115,10 +116,10 @@ export function validatePumpBuyExactQuoteInInstruction(
   if (!instruction.data.subarray(0, 8).equals(PUMP_BUY_EXACT_QUOTE_IN_DISCRIMINATOR)) {
     throw new Error("Pump instruction is not buyExactQuoteIn");
   }
-  if (instruction.data.readBigUInt64LE(8) !== BigInt(BUYBACK_BURN_LAMPORTS)) {
+  if (readU64LE(instruction.data, 8) !== BigInt(BUYBACK_BURN_LAMPORTS)) {
     throw new Error("Pump spendable quote input must be exactly 0.1 SOL");
   }
-  if (instruction.data.readBigUInt64LE(16) !== minimumBaseAmountOut) {
+  if (readU64LE(instruction.data, 16) !== minimumBaseAmountOut) {
     throw new Error("Pump minimum LCKD output does not match the frozen quote");
   }
   if (instruction.data[24] !== 0) {
@@ -250,7 +251,7 @@ function encodeOuterData(minimumBaseAmountOut: bigint): Buffer {
   parsePositiveU64(minimumBaseAmountOut.toString(), "minimum output");
   const data = Buffer.alloc(9);
   data[0] = BUYBACK_BURN_OUTER_DISCRIMINATOR;
-  data.writeBigUInt64LE(minimumBaseAmountOut, 1);
+  writeU64LE(data, minimumBaseAmountOut, 1);
   return data;
 }
 

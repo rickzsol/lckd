@@ -40,7 +40,7 @@ import {
   getStreamflowTotalFeePercent,
   lockDaysToSeconds,
 } from "./streamflow";
-import { readU64LE } from "./u64";
+import { readU64LE, writeU64LE } from "./u64";
 import { buildLaunchFeeInstruction, type LaunchFeeTerms } from "./launchFee";
 import {
   BUYBACK_BURN_LAMPORTS,
@@ -365,14 +365,14 @@ function validateBuybackBurnInstruction(
     !instruction.keys[0].pubkey.equals(expectation.wallet) ||
     !instruction.keys[0].isSigner || !instruction.keys[0].isWritable ||
     instruction.data.length !== 9 || instruction.data[0] !== 0 ||
-    instruction.data.readBigUInt64LE(1) !== minimumBaseAmountOut
+    readU64LE(instruction.data, 1) !== minimumBaseAmountOut
   ) {
     throw new Error("Atomic buyback-and-burn instruction changed");
   }
   const pumpData = Buffer.alloc(25);
   Buffer.from([198, 46, 21, 82, 180, 217, 232, 112]).copy(pumpData);
-  pumpData.writeBigUInt64LE(BigInt(BUYBACK_BURN_LAMPORTS), 8);
-  pumpData.writeBigUInt64LE(minimumBaseAmountOut, 16);
+  writeU64LE(pumpData, BigInt(BUYBACK_BURN_LAMPORTS), 8);
+  writeU64LE(pumpData, minimumBaseAmountOut, 16);
   const pumpWritable = new Set([0, 1, 5, 6, 7, 8, 10, 17, 20, 25]);
   const pumpKeys = instruction.keys.slice(1).map((account, index) => ({
     ...account,

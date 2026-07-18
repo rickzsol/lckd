@@ -160,7 +160,19 @@ test("client reconstructs and accepts the exact buyback instruction and two look
     [...plan.instructions],
     [lookupTable, protocolLookupTable],
   );
-  const transaction = await validateAtomicLaunchTransactionClient(encoded, expectation);
+  const readDescriptor = Object.getOwnPropertyDescriptor(Buffer.prototype, "readBigUInt64LE");
+  const writeDescriptor = Object.getOwnPropertyDescriptor(Buffer.prototype, "writeBigUInt64LE");
+  assert(readDescriptor);
+  assert(writeDescriptor);
+  Object.defineProperty(Buffer.prototype, "readBigUInt64LE", { value: undefined });
+  Object.defineProperty(Buffer.prototype, "writeBigUInt64LE", { value: undefined });
+  let transaction: VersionedTransaction;
+  try {
+    transaction = await validateAtomicLaunchTransactionClient(encoded, expectation);
+  } finally {
+    Object.defineProperty(Buffer.prototype, "readBigUInt64LE", readDescriptor);
+    Object.defineProperty(Buffer.prototype, "writeBigUInt64LE", writeDescriptor);
+  }
   assert.equal(transaction.message.header.numRequiredSignatures, 3);
   assert.equal(transaction.message.addressTableLookups.length, 2);
   assert(Buffer.from(encoded, "base64").length <= 1_232);
