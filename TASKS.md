@@ -9,7 +9,7 @@
 - [x] Add the Robinhood fork suite and Chromium desktop/mobile Playwright smoke tests to CI.
 - [x] Run lint, typecheck, tests, build, and desktop/mobile E2E against the stabilization diff.
 - [x] Verify the pull-request quality workflow in hosted CI.
-- [ ] Verify the full workflow, including the secret-backed Robinhood fork job, in hosted CI.
+- [x] Verify the full workflow, including the secret-backed Robinhood fork job and Vercel-hosted production deployment, in hosted CI.
 - [ ] Normalize mixed CRLF/LF endings in a separate mechanical commit.
 
 ## Repository controls
@@ -41,9 +41,13 @@
 
 ## Feature integration
 
-- [ ] Squash-integrate `feature/holder-intel` from current `main`, review its timeout/provenance behavior, and open a focused PR.
-- [ ] Squash-integrate `feature/trust-api` from current `main` and resolve its documented concurrency finding before opening a PR.
-- [ ] Squash-integrate `feature/sas-attestations` from current `main` and resolve its documented concurrency finding before opening a PR.
+- [x] Squash-integrate and independently review holder intelligence at local checkpoint `e8ebaea`.
+- [ ] Run a credentialed RicoMaps contract canary plus desktop/mobile browser QA, reconcile current `main`, and open the holder PR.
+- [x] Squash-integrate and independently review the trust API and unlock calendar at local checkpoint `e5fd70e`.
+- [ ] Execute the trust migration, replay, grant, RLS, and two-session concurrency suite on disposable PostgreSQL 16; run browser QA; reconcile current `main`; and open the trust PR.
+- [x] Independently audit `feature/sas-attestations` against the canonical trust layer.
+- [ ] Redesign SAS signed evidence, single-writer tier integration, durable desired state, close/reissue serialization, ambiguous transaction recovery, expiry cleanup, and public API contract before integration.
+- [ ] Keep `SAS_ENABLED=false` until PostgreSQL concurrency tests, custody preflight, and a real database-plus-worker devnet E2E pass.
 - [ ] Integrate the trust-platform phases only after repository stabilization and their independent reviews pass.
 
 ## Completed baseline

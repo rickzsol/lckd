@@ -4,11 +4,14 @@ Updated: 2026-07-18
 
 ## Current status
 
-- `main` is the stabilization baseline `e4a7e2e` plus `f1c335b`: wide-screen token page layout (full-width chart, balanced card grid, fluid contribution graph), the public `/developers` directory, and optimized token/avatar images.
+- `main` at `28da49e` includes the stabilization baseline, wide-screen token page layout (full-width chart, balanced card grid, fluid contribution graph), the public `/developers` directory, optimized token/avatar images, and the corrected Vercel-hosted production build workflow.
 - Public atomic Solana launches are live on [lckd.tech](https://lckd.tech). Production uses Node.js 24.x and the provisioned Supabase data plane; the core atomic-launch and shared-rate-limit paths are active.
 - The Railway launch monitor is deployed with persistent state. Its readiness endpoint reports connected, ready, and subscribed, and the official token page and feed consume its verified state.
-- The GitHub Actions billing lock is cleared and PR #9 is merged (`9b16e15`). On main pushes the quality job passes end to end (lint, typecheck, 124 tests, build, Chromium smoke), but the `robinhood-fork` job fails closed because the `ROBINHOOD_RPC_URL` repository secret is not configured, and the production deploy job is gated behind it. Until the owner sets that secret, no CI deploy reaches production. Current `main` (`590e2bc`) was deployed to production via `vercel deploy --prod --yes` (deployment `dpl_G52Up8u7P3VRtitgusSVfxP34PWC`, aliased to lckd.tech) and the wide-screen token pages and `/developers` directory were verified live at 2560px.
+- GitHub Actions billing is restored, `ROBINHOOD_RPC_URL` is configured, and the full main workflow passed in run `29652143651`: quality, the six-test pinned Robinhood fork, and production deployment. PR #11 (`28da49e`) moved the production build into Vercel so Sensitive environment variables remain available during compilation. Deployment `dpl_EDaZvv97s4g2ycuP46zY4Sf3E3De` is Ready and aliased to [lckd.tech](https://lckd.tech); `/`, `/developers`, and `/robots.txt` return 200 with no deployment error logs.
 - The requested `trudev` snapshot is preserved on `rescue/trudev-worktree-20260718` at `bb509a3` (pushed to origin). Its token-page and directory work was re-applied onto current `main` as `f1c335b`; local `trudev/.env.local` now points at lckd-production via Supabase CLI keys.
+- Holder intelligence is preserved locally on `integration/holder-intel` at `e8ebaea`; its provider-contract, quota, retry, mobile, and accessibility reviews are clean. A live provider canary and browser QA remain required before a PR.
+- The trust API and unlock calendar are preserved locally on `integration/trust-api` at `e5fd70e`; 307 tests, lint, typecheck, build, independent review, and secret scanning pass. Executable PostgreSQL 16 migration, grant, RLS, replay, and two-session concurrency tests remain required before a PR or migration.
+- The SAS attestation branch was independently audited and remains disabled. Its signed-supply, tier-authority, durable-enqueue, close/reissue, transaction-recovery, expiry, and public-contract blockers require redesign on top of the verified trust layer.
 - Production launch fees remain disabled. The fee preview, burn-ledger migration, production values, and independent money-path review are still gates.
 
 ## Verified launch model
@@ -31,11 +34,12 @@ Updated: 2026-07-18
 ## Open release gates
 
 - Require CI and review on `main`, protect the Production environment, and scope deployment secrets to that environment.
-- Set the `ROBINHOOD_RPC_URL` repository secret (owner action; no value exists in any local env) so the fail-closed `robinhood-fork` job and the gated production deploy can run on main pushes. Verified 2026-07-18: runs 29649840661/29649986918 pass quality and fail only this job.
 - Review and apply `supabase/migrations/20260718020000_burn_ledger.sql`, complete fee-path preview QA, choose production fee values, and independently review the money path before enabling fees.
 - Verify the first public launches in runtime logs and complete the pending TEST token directory verification.
 - Keep Robinhood mainnet sending disabled until a production-grade archive RPC is configured and the authenticated preview flow passes.
-- Squash-integrate and review `feature/holder-intel`, `feature/trust-api`, and `feature/sas-attestations` from fresh current-`main` branches. Their documented concurrency findings remain release blockers.
+- Run a credentialed RicoMaps provider canary and browser QA before publishing the holder-intelligence checkpoint.
+- Run the trust migration and two-session concurrency suite against disposable PostgreSQL 16, then browser QA, before publishing the trust checkpoint.
+- Redesign SAS attestations against canonical lock evidence and the single trust-tier authority; keep `SAS_ENABLED=false` until its database, recovery, custody, and devnet gates pass.
 - Track upstream dependency fixes and rerun the production audit before each release.
 - Choose an explicit repository license. The public repository currently grants no explicit reuse license.
 - Normalize mixed CRLF/LF endings in a dedicated mechanical change.
@@ -43,4 +47,4 @@ Updated: 2026-07-18
 
 ## Next feature wave
 
-`TRUST_FEATURES_PLAN.md` remains the internal specification for holder intelligence, the public trust API and unlock calendar, webhook-driven lock status, and SAS trust-tier attestations. Implementation branches exist, but stabilization and independent review precede feature integration.
+`TRUST_FEATURES_PLAN.md` remains the internal specification for holder intelligence, the public trust API and unlock calendar, webhook-driven lock status, and SAS trust-tier attestations. Holder and trust checkpoints are reviewed locally but remain gated from publication and deployment; SAS requires redesign.
