@@ -11,6 +11,7 @@ import {
 } from "@/components/docs/DocsPrimitives";
 
 const DOC_SECTIONS: TocSection[] = [
+  { id: "demo", label: "Product demo" },
   { id: "overview", label: "Overview" },
   { id: "launch-flow", label: "Launch flow" },
   { id: "lock-behavior", label: "Lock behavior" },
@@ -56,6 +57,49 @@ export default function DocsPage() {
       <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4 pt-6 lg:flex-row lg:gap-12 lg:pt-10">
         <Toc sections={DOC_SECTIONS} />
         <article className="min-w-0 max-w-3xl flex-1 space-y-20">
+          <section className="space-y-5">
+            <SectionHeading id="demo">Product demo</SectionHeading>
+            <Prose>
+              Watch the complete launch flow, from token configuration through the atomic
+              create, buy, and Streamflow lock transaction.
+            </Prose>
+            <p id="launch-demo-description" className="sr-only">
+              The demo enters token metadata, selects a 0.1 SOL initial buy, configures a
+              seven-day lock for 51 percent of the purchased tokens, reviews and signs the
+              atomic launch, then verifies the created token and finalized transaction.
+            </p>
+            <figure className="overflow-hidden rounded-card border border-line-default bg-surface shadow-card">
+              <div className="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5">
+                <div className="flex items-center gap-2.5">
+                  <span className="h-2 w-2 rounded-full bg-accent ring-4 ring-accent-dim" aria-hidden="true" />
+                  <span className="font-mono text-[10px] font-bold tracking-[0.14em] text-accent-300">
+                    LAUNCH WALKTHROUGH
+                  </span>
+                </div>
+                <span className="font-mono text-[10px] tabular-nums text-text-3">01:22</span>
+              </div>
+              <video
+                controls
+                playsInline
+                preload="metadata"
+                poster="/demo/lckd-launch-demo-poster.jpg"
+                className="aspect-[120/58] w-full bg-surface-deep object-contain"
+                title="LCKD token launch workflow demo"
+                aria-describedby="launch-demo-description"
+              >
+                <source src="/demo/lckd-launch-demo.mp4" type="video/mp4" />
+                Your browser does not support embedded video.
+              </video>
+              <figcaption className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-line px-4 py-3 font-mono text-[10px] text-text-3 sm:px-5">
+                <span>Configure</span>
+                <span aria-hidden="true">&#8594;</span>
+                <span>Review lock</span>
+                <span aria-hidden="true">&#8594;</span>
+                <span>Sign and verify</span>
+              </figcaption>
+            </figure>
+          </section>
+
           <section className="space-y-5">
             <SectionHeading id="overview">Overview</SectionHeading>
             <Prose>
