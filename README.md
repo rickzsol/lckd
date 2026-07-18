@@ -8,7 +8,7 @@ Token launch workflows with explicit wallet approvals and verified on-chain rece
 
 [Website](https://lckd.tech) · [Product docs](https://lckd.tech/docs) · [API reference](https://lckd.tech/api-docs) · [Risk disclosure](https://lckd.tech/risk)
 
-LCKD is a launch interface and public receipt index. On Solana, it creates and buys a token through pump.fun and places the selected creator tokens into a Streamflow time lock in the same atomic transaction. An experimental Robinhood Chain path uses Pons to create a fixed-supply token and permanently transfer its Uniswap v3 LP position to the Pons locker in one transaction.
+LCKD is a launch interface and public receipt index. On Solana, it creates and buys a token through pump.fun, places the selected creator tokens into a Streamflow time lock, and uses the fixed 0.1 SOL launch fee to buy and burn LCKD in the same atomic transaction. An experimental Robinhood Chain path uses Pons to create a fixed-supply token and permanently transfer its Uniswap v3 LP position to the Pons locker in one transaction.
 
 > [!CAUTION]
 > This project is pre-release. Robinhood mainnet sending is disabled by default, and Robinhood launches are not yet written to public profiles. Do not use meaningful funds without reviewing the transactions, contracts, deployment configuration, and current release state yourself.
@@ -21,10 +21,10 @@ LCKD is a launch interface and public receipt index. On Solana, it creates and b
 2. Upload token metadata and its image to IPFS through Pinata.
 3. Review the quoted buy, lock amount, unlock time, and any launch fee.
 4. Approve a setup transaction that creates and extends a dedicated address lookup table, then wait for it to finalize.
-5. Validate and approve the issued atomic transaction. It creates the token, performs the initial buy, creates the Streamflow lock, and deactivates the lookup table together.
+5. Validate and approve the issued atomic transaction. It creates the token, performs the initial buy, creates the Streamflow lock, buys LCKD with exactly 0.1 SOL, and burns the purchased LCKD together.
 6. Simulate the signed transaction, submit it, and verify the finalized launch and lock receipt before recording the launch.
 
-The setup transaction cannot create the token. The token creation, initial buy, and lock either finalize together or do not execute. Recovery checkpoints reconcile ambiguous submissions and require the lookup table to be closed before its rent can be reclaimed.
+The setup transaction cannot create the token. The token creation, initial buy, lock, LCKD buyback, and exact burn either finalize together or do not execute. Recovery checkpoints reconcile ambiguous submissions. Fee-enabled launches deactivate and close their dedicated lookup table through the wallet-authorized cleanup path so its rent can be reclaimed.
 
 ### Robinhood Chain launch
 
@@ -84,8 +84,7 @@ PowerShell users can replace the copy command with `Copy-Item .env.example .env.
 | GitHub refresh | `GITHUB_PAT`, `CRON_SECRET` | Optional API quota and authenticated refresh job |
 | Robinhood | `ROBINHOOD_RPC_URL`, `NEXT_PUBLIC_ENABLE_ROBINHOOD_LAUNCHES` | Chain reads/fork tests and the mainnet wallet-request gate |
 | Sentry | `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_AUTH_TOKEN` | Runtime reporting and source-map uploads |
-| Launch fees | `LAUNCH_FEE_LAMPORTS`, `LAUNCH_FEE_TREASURY` | Optional flat SOL fee and recipient |
-| Launch fees | `LAUNCH_FEE_WAIVER_LCKD_RAW`, `LAUNCH_FEE_BURN_DISCOUNT_BPS` | Optional LCKD holding waiver and burn discount |
+| Launch buyback | `LAUNCH_FEE_LAMPORTS`, `BUYBACK_BURN_LOOKUP_TABLE` | Exact 0.1 SOL buyback fee and the reviewed protocol lookup table |
 
 Never expose service-role keys, OAuth secrets, RPC credentials, Pinata credentials, or cron secrets to client code. Only variables prefixed with `NEXT_PUBLIC_` belong in the browser bundle.
 
@@ -106,9 +105,10 @@ supabase/migrations/20260717210156_robinhood_launch_recovery.sql
 supabase/migrations/20260717210158_match_applications.sql
 supabase/migrations/20260717214000_fee_inclusive_atomic_lock_coverage.sql
 supabase/migrations/20260718020000_burn_ledger.sql
+supabase/migrations/20260718160439_buyback_completed_alt_cleanup.sql
 ```
 
-The migrations create the public directory, recovery state, shared throttling, atomic issuance, launch-fee coverage, match applications, and burn ledger. Review every migration against the target database before applying it. Do not enable Robinhood mainnet sending until `20260717210156_robinhood_launch_recovery.sql` is applied and its concurrent recovery transitions pass in a disposable environment.
+The migrations create the public directory, recovery state, shared throttling, atomic issuance, launch-fee coverage, match applications, burn ledger, and completed-launch lookup cleanup. Review every migration against the target database before applying it. Do not enable Robinhood mainnet sending until `20260717210156_robinhood_launch_recovery.sql` is applied and its concurrent recovery transitions pass in a disposable environment.
 
 ## Commands
 

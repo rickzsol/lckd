@@ -261,3 +261,50 @@ export async function resolveExactLookupTable(
     currentSlot,
   );
 }
+
+export function validateProtocolLookupTable(
+  lookupTable: AddressLookupTableAccount,
+  expectedAddress: PublicKey,
+  addresses: readonly PublicKey[],
+  currentSlot: number,
+): AddressLookupTableAccount {
+  if (!Number.isSafeInteger(currentSlot) || currentSlot < 1) {
+    throw new Error("Protocol lookup table current slot is invalid");
+  }
+  assertPublicKeyVector(addresses);
+  if (!lookupTable.key.equals(expectedAddress)) throw new Error("Protocol lookup table address mismatch");
+  if (lookupTable.state.deactivationSlot !== U64_MAX) {
+    throw new Error("Protocol lookup table is deactivated");
+  }
+  if (currentSlot <= lookupTable.state.lastExtendedSlot) {
+    throw new Error("Protocol lookup table is not activated yet");
+  }
+  if (
+    lookupTable.state.addresses.length !== addresses.length ||
+    lookupTable.state.addresses.some((address, index) => !address.equals(addresses[index]))
+  ) {
+    throw new Error("Protocol lookup table address vector mismatch");
+  }
+  return lookupTable;
+}
+
+export async function resolveProtocolLookupTable(
+  connection: Connection,
+  expectedAddress: PublicKey,
+  addresses: readonly PublicKey[],
+): Promise<AddressLookupTableAccount> {
+  const response = await connection.getAccountInfoAndContext(expectedAddress, "confirmed");
+  if (!response.value) throw new Error("Protocol lookup table account does not exist");
+  if (!response.value.owner.equals(AddressLookupTableProgram.programId)) {
+    throw new Error("Protocol lookup table account owner mismatch");
+  }
+  const lookupTable = new AddressLookupTableAccount({
+    key: expectedAddress,
+    state: AddressLookupTableAccount.deserialize(response.value.data),
+  });
+  const currentSlot = await connection.getSlot({
+    commitment: "confirmed",
+    minContextSlot: response.context.slot,
+  });
+  return validateProtocolLookupTable(lookupTable, expectedAddress, addresses, currentSlot);
+}

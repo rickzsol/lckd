@@ -1,0 +1,30 @@
+[package]
+name = "buyback-burn"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = []
+no-entrypoint = []
+
+[dependencies]
+pinocchio = { version = "0.10", features = ["cpi"] }
+pinocchio-system = "0.5"
+pinocchio-token = "0.5"
+
+[target.'cfg(not(any(target_os = "solana", target_arch = "bpf")))'.dependencies]
+solana-address = { version = "=2.5.0", features = ["curve25519"] }
+zeroize = "=1.8.2"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+opt-level = 3

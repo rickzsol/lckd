@@ -5,6 +5,7 @@ import { hashLookupAddresses } from "../solana/lookupTable";
 import {
   atomicRpcResultSchema,
   atomicIntentSnapshotSchema,
+  canDeactivateAtomicLookupTable,
   canTransitionAtomicStatus,
   classifyExactIssuedReceipt,
   hashCanonicalJson,
@@ -73,6 +74,22 @@ test("atomic state transitions reject skipped launch phases", () => {
   assert.equal(canTransitionAtomicStatus("alt_ready", "atomic_submitted"), true);
   assert.equal(canTransitionAtomicStatus("atomic_submitted", "completed"), true);
   assert.equal(canTransitionAtomicStatus("prepared", "atomic_submitted"), false);
+  assert.equal(canTransitionAtomicStatus("completed", "cleanup_required"), false);
+});
+
+test("completed buyback launches clean up an active ALT without abandoning the launch", () => {
+  assert.equal(canDeactivateAtomicLookupTable("completed", {
+    feeMode: "buybackBurn", feeLamports: 100_000_000,
+  }), true);
+  assert.equal(canDeactivateAtomicLookupTable("completed", {
+    feeMode: "buybackBurn", feeLamports: 99_999_999,
+  }), false);
+  assert.equal(canDeactivateAtomicLookupTable("completed", {
+    feeMode: "sol", feeLamports: 100_000_000,
+  }), false);
+  assert.equal(canDeactivateAtomicLookupTable("cleanup_required", {
+    feeMode: "waived", feeLamports: null,
+  }), true);
   assert.equal(canTransitionAtomicStatus("completed", "cleanup_required"), false);
 });
 

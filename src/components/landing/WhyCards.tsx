@@ -55,18 +55,18 @@ interface Card {
 const CARDS: Card[] = [
   {
     icon: LockIcon,
-    title: "Verified token locks",
-    body: "Creator-purchased tokens can be placed in a Streamflow time lock after launch. Amount and unlock time are verified on-chain.",
+    title: "Atomic token locks",
+    body: "Creation, the initial buy, and the Streamflow lock settle in one transaction. If the lock fails, no token is created.",
   },
   {
     icon: GithubIcon,
-    title: "GitHub verified",
-    body: "Connect GitHub to link a public developer profile with its repositories and verified wallet.",
+    title: "GitHub-linked builders",
+    body: "A GitHub session and signed wallet link connect each public profile to its launch receipts.",
   },
   {
     icon: BoltIcon,
-    title: "Proof, on-chain",
-    body: "Transparent lock schedules anyone can verify. Dev bags visible. Lock duration public.",
+    title: "Receipts, not promises",
+    body: "Inspect the amount, unlock time, wallet, and finalized signature directly on-chain.",
   },
 ];
 
@@ -89,7 +89,7 @@ export default function WhyCards() {
                 <div className="mb-2 font-sans text-[18px] font-bold text-text-1">
                   {card.title}
                 </div>
-                <p className="m-0 font-mono text-[13px] font-medium leading-[1.7] text-text-3">
+                <p className="m-0 font-sans text-[15px] font-normal leading-[1.65] text-text-3">
                   {card.body}
                 </p>
               </div>

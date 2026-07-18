@@ -9,11 +9,11 @@ const SOLSCAN_TX = "https://solscan.io/tx";
 export const metadata: Metadata = {
   title: "Burn ledger",
   description:
-    "Every LCKD buyback and burn funded by launch fees, listed with its on-chain signature.",
+    "Every finalized launch fee buyback and LCKD burn, proven by one on-chain signature.",
   alternates: { canonical: "/burn" },
   openGraph: {
     title: "Burn ledger | LCKD",
-    description: "Launch fees buy LCKD and burn it. Every entry is a transaction.",
+    description: "Each 0.1 SOL launch fee buys and burns LCKD in the launch transaction.",
     url: "/burn",
     type: "website",
   },
@@ -35,6 +35,14 @@ function formatDate(iso: string): string {
 
 function EventRow({ event }: { event: BurnEvent }) {
   const isBurn = event.kind === "burn";
+  const isCombined = isBurn && event.solAmount !== null && event.lckdAmount !== null;
+  const label = isCombined ? "launch burn" : event.kind;
+  const amount = isCombined
+    ? `${formatAmount(event.solAmount ?? 0, 4)} SOL bought and burned ${formatAmount(event.lckdAmount ?? 0)} LCKD`
+    : isBurn
+      ? `${formatAmount(event.lckdAmount ?? 0)} LCKD burned`
+      : `${formatAmount(event.solAmount ?? 0, 4)} SOL bought ${formatAmount(event.lckdAmount ?? 0)} LCKD`;
+
   return (
     <a
       href={`${SOLSCAN_TX}/${event.signature}`}
@@ -48,12 +56,10 @@ function EventRow({ event }: { event: BurnEvent }) {
             isBurn ? "bg-accent-dim text-accent-400" : "bg-surface-2 text-text-2"
           }`}
         >
-          {event.kind}
+          {label}
         </span>
         <span className="font-mono text-sm font-semibold text-text-1 tabular-nums">
-          {isBurn
-            ? `${formatAmount(event.lckdAmount ?? 0)} LCKD burned`
-            : `${formatAmount(event.solAmount ?? 0, 4)} SOL for ${formatAmount(event.lckdAmount ?? 0)} LCKD`}
+          {amount}
         </span>
       </div>
       <div className="flex items-center gap-3 font-mono text-[11px] text-text-3 tabular-nums">
@@ -70,9 +76,19 @@ export default async function BurnPage() {
   const ledger = await getBurnLedger();
   const hasEvents = ledger.events.length > 0;
   const stats = [
-    { label: "SOL spent", value: `${formatAmount(ledger.totals.solSpent, 4)}` },
-    { label: "LCKD bought", value: formatAmount(ledger.totals.lckdBought) },
-    { label: "LCKD burned", value: formatAmount(ledger.totals.lckdBurned), isAccent: true },
+    {
+      label: "SOL spent",
+      value: ledger.available ? formatAmount(ledger.totals.solSpent, 4) : "--",
+    },
+    {
+      label: "LCKD bought",
+      value: ledger.available ? formatAmount(ledger.totals.lckdBought) : "--",
+    },
+    {
+      label: "LCKD burned",
+      value: ledger.available ? formatAmount(ledger.totals.lckdBurned) : "--",
+      isAccent: true,
+    },
     {
       label: "Current supply",
       value: ledger.supply.current === null ? "--" : formatAmount(ledger.supply.current),
@@ -83,12 +99,12 @@ export default async function BurnPage() {
     <div className="mx-auto max-w-[1152px] bg-bg px-4 pt-28 pb-24 sm:px-6">
       <header className="mx-auto max-w-3xl border-b border-line pb-12 sm:pb-14">
         <h1 className="font-sans text-[32px] font-bold tracking-[-0.02em] text-text-1 sm:text-[clamp(32px,5vw,44px)]">
-          Launch fees burn LCKD
+          One launch. One buyback. One burn.
         </h1>
         <p className="mt-5 max-w-2xl text-[15px] leading-[1.6] text-text-2">
-          Every token launch pays a flat SOL fee. Collected fees buy LCKD on the open
-          market, and the purchased tokens are burned. Every step below is a transaction
-          you can verify.
+          Every successful token launch commits 0.1 SOL to buy LCKD and burn the exact
+          purchased amount. The launch, buyback, and burn finalize together under one
+          signature or none of them execute.
         </p>
       </header>
 
@@ -124,18 +140,18 @@ export default async function BurnPage() {
             {[
               {
                 n: 1,
-                label: "Collect",
-                sub: "The launch fee transfers inside the same atomic transaction that creates and locks each token. Nobody launches without paying, nobody pays without launching.",
+                label: "Launch",
+                sub: "The wallet reviews one atomic transaction containing the token launch and the fixed 0.1 SOL buyback amount.",
               },
               {
                 n: 2,
                 label: "Buy back",
-                sub: "When the treasury crosses its threshold, it swaps the collected SOL for LCKD on the open market with a strict slippage cap.",
+                sub: "That same transaction buys LCKD with the launch fee. There is no treasury queue or later batch to trust.",
               },
               {
                 n: 3,
                 label: "Burn",
-                sub: "The purchased LCKD is destroyed with a token burn instruction. Total supply decreases on-chain, visible on any explorer.",
+                sub: "The exact purchased LCKD amount is burned before the launch transaction can finalize. If any instruction fails, the full transaction reverts.",
               },
             ].map((step) => (
               <div key={step.n} className="flex gap-4">
@@ -148,9 +164,9 @@ export default async function BurnPage() {
             ))}
           </div>
           <div className="warning-box !block leading-[1.6]">
-            This ledger lists only finalized transactions. It is a record, not a promise:
-            if an entry is missing a signature or the totals disagree with the chain,
-            treat the chain as the truth.
+            This ledger includes finalized transactions only. Each combined entry links
+            the launch, 0.1 SOL buyback, and exact LCKD burn to one signature. Solana is
+            the source of truth if this index is delayed or unavailable.
           </div>
         </section>
 
@@ -158,7 +174,24 @@ export default async function BurnPage() {
           <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
             Ledger
           </h2>
-          {hasEvents ? (
+          {!ledger.available ? (
+            <div className="flex flex-col items-center rounded-card border border-line-default bg-surface px-6 py-14 text-center">
+              <Image
+                src="/logo.png"
+                alt=""
+                width={56}
+                height={56}
+                className="mb-4 opacity-80"
+              />
+              <p className="font-mono text-sm font-semibold text-text-1">
+                Ledger temporarily unavailable
+              </p>
+              <p className="mt-2 max-w-[440px] font-mono text-xs leading-[1.7] text-text-3">
+                The public index could not be read. No zero totals are being presented as
+                confirmed data. Verify finalized activity directly on Solana below.
+              </p>
+            </div>
+          ) : hasEvents ? (
             <div className="space-y-2.5">
               {ledger.events.map((event) => (
                 <EventRow key={event.signature} event={event} />
@@ -174,11 +207,11 @@ export default async function BurnPage() {
                 className="mb-4 opacity-80"
               />
               <p className="font-mono text-sm font-semibold text-text-1">
-                No burns recorded yet
+                No finalized launch burns yet
               </p>
               <p className="mt-2 max-w-[420px] font-mono text-xs leading-[1.7] text-text-3">
-                The first buyback executes once collected fees cross the treasury
-                threshold. Every future buyback and burn lands here with its signature.
+                Each completed fee-enabled launch will appear here as one combined
+                buyback and burn event after its transaction reaches finality.
               </p>
             </div>
           )}

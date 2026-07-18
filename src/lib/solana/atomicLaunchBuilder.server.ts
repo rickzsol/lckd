@@ -7,9 +7,21 @@ import {
   PUMP_SDK,
 } from "@pump-fun/pump-sdk";
 import {
+  GLOBAL_CONFIG_PDA,
+  GLOBAL_VOLUME_ACCUMULATOR_PDA,
+  PUMP_AMM_EVENT_AUTHORITY_PDA,
+  PUMP_AMM_FEE_CONFIG_PDA,
+  PUMP_AMM_PROGRAM_ID,
+  PUMP_FEE_PROGRAM_ID,
+  poolV2Pda,
+  userVolumeAccumulatorPda,
+} from "@pump-fun/pump-swap-sdk";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddressSync,
   NATIVE_MINT,
+  TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import {
@@ -18,6 +30,7 @@ import {
   ComputeBudgetProgram,
   Connection,
   PublicKey,
+  SystemProgram,
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
@@ -34,10 +47,25 @@ import {
   canonicalLookupAddresses,
   hashLookupAddresses,
   resolveExactLookupTable,
+  resolveProtocolLookupTable,
   validateExactLookupTable,
+  validateProtocolLookupTable,
   validateLookupTablePreparation,
   type LookupTablePreparation,
 } from "./lookupTable";
+import {
+  BUYBACK_BURN_LAMPORTS,
+  BUYBACK_BURN_PROGRAM_ID,
+  LCKD_CANONICAL_PUMP_POOL,
+  LCKD_MINT,
+  PUMP_BUYBACK_FEE_RECIPIENT,
+  PUMP_CREATOR_VAULT_AUTHORITY,
+  PUMP_PROTOCOL_FEE_RECIPIENT,
+  deriveBuybackBurnAtas,
+  deriveBuybackBurnAuthority,
+  validatePumpBuyExactQuoteInInstruction,
+  wrapBuybackBurnInstruction,
+} from "./buybackBurn";
 import { validatePumpBuyInstruction } from "./pumpBuyValidation";
 import { validatePumpCreateInstruction } from "./pumpCreateValidation";
 import {
@@ -61,8 +89,6 @@ import {
 const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 const ATOMIC_COMPUTE_UNIT_LIMIT = 400_000;
 export const LOCK_SUBMISSION_BUFFER_SECONDS = 120;
-const FEE_RECIPIENT = new PublicKey("62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV");
-const BUYBACK_FEE_RECIPIENT = new PublicKey("5YxQFdt3Tr9zJLvkFccqXVUwhdTWJQc1fFg2YPbxvxeD");
 const CONFIG_KEYS = [
   "name",
   "ticker",
@@ -147,11 +173,16 @@ export interface AtomicLaunchBundle {
   unlockTimestamp: number;
   streamflowFeePercent: number;
   messageHash: string;
+  protocolLookupTableAddress?: PublicKey;
+  protocolLookupAddresses?: readonly PublicKey[];
+  protocolAddressHash?: string;
 }
 
 export interface AtomicLaunchValidationExpectation extends AtomicLaunchIdentity {
   lookupTable: AddressLookupTableAccount;
   lookupAddresses: readonly PublicKey[];
+  protocolLookupTable?: AddressLookupTableAccount;
+  protocolLookupAddresses?: readonly PublicKey[];
   instructions: readonly TransactionInstruction[];
   quotedTokenAmount: BN;
   maxQuoteAmount: BN;
@@ -233,6 +264,12 @@ export function assertFrozenAtomicLaunchConfig(
     throw new Error("Atomic launch lock percentage is invalid");
   }
   assertLaunchFeeTerms(config);
+  if (config.feeMode === "buybackBurn") {
+    const authority = deriveBuybackBurnAuthority(BUYBACK_BURN_PROGRAM_ID);
+    if (config.feeTreasury !== authority.toBase58()) {
+      throw new Error("Buyback-and-burn fee treasury is not the canonical program PDA");
+    }
+  }
 }
 
 function assertIdentity(identity: AtomicLaunchIdentity): void {
@@ -281,6 +318,68 @@ export function calculateAtomicUnlockTimestamp(
     throw new Error("Atomic launch unlock timestamp is invalid");
   }
   return unlockTimestamp;
+}
+
+function buildFrozenBuybackBurnInstruction(
+  launcher: PublicKey,
+  terms: LaunchFeeTerms,
+): TransactionInstruction {
+  assertLaunchFeeTerms(terms);
+  if (terms.feeMode !== "buybackBurn") {
+    throw new Error("Buyback-and-burn fee mode is required");
+  }
+  const authority = deriveBuybackBurnAuthority(BUYBACK_BURN_PROGRAM_ID);
+  if (terms.feeTreasury !== authority.toBase58()) {
+    throw new Error("Buyback-and-burn authority changed");
+  }
+  const minimumBaseAmountOut = BigInt(terms.feeLckdRaw!);
+  const authorityAtas = deriveBuybackBurnAtas(authority);
+  const poolLckd = getAssociatedTokenAddressSync(
+    LCKD_MINT,
+    LCKD_CANONICAL_PUMP_POOL,
+    true,
+    TOKEN_2022_PROGRAM_ID,
+  );
+  const poolWsol = getAssociatedTokenAddressSync(NATIVE_MINT, LCKD_CANONICAL_PUMP_POOL, true);
+  const pumpInstruction = new TransactionInstruction({
+    programId: PUMP_AMM_PROGRAM_ID,
+    keys: [
+      meta(LCKD_CANONICAL_PUMP_POOL, false, true), meta(authority, true, true),
+      meta(GLOBAL_CONFIG_PDA), meta(LCKD_MINT), meta(NATIVE_MINT),
+      meta(authorityAtas.lckd, false, true), meta(authorityAtas.wsol, false, true),
+      meta(poolLckd, false, true), meta(poolWsol, false, true), meta(PUMP_PROTOCOL_FEE_RECIPIENT),
+      meta(getAssociatedTokenAddressSync(NATIVE_MINT, PUMP_PROTOCOL_FEE_RECIPIENT, true), false, true),
+      meta(TOKEN_2022_PROGRAM_ID), meta(TOKEN_PROGRAM_ID), meta(SystemProgram.programId),
+      meta(ASSOCIATED_TOKEN_PROGRAM_ID), meta(PUMP_AMM_EVENT_AUTHORITY_PDA),
+      meta(PUMP_AMM_PROGRAM_ID),
+      meta(getAssociatedTokenAddressSync(NATIVE_MINT, PUMP_CREATOR_VAULT_AUTHORITY, true), false, true),
+      meta(PUMP_CREATOR_VAULT_AUTHORITY), meta(GLOBAL_VOLUME_ACCUMULATOR_PDA),
+      meta(userVolumeAccumulatorPda(authority), false, true), meta(PUMP_AMM_FEE_CONFIG_PDA),
+      meta(PUMP_FEE_PROGRAM_ID), meta(poolV2Pda(LCKD_MINT)), meta(PUMP_BUYBACK_FEE_RECIPIENT),
+      meta(getAssociatedTokenAddressSync(NATIVE_MINT, PUMP_BUYBACK_FEE_RECIPIENT, true), false, true),
+    ],
+    data: encodePumpBuybackData(minimumBaseAmountOut),
+  });
+  validatePumpBuyExactQuoteInInstruction(pumpInstruction, authority, minimumBaseAmountOut);
+  return wrapBuybackBurnInstruction({
+    programId: BUYBACK_BURN_PROGRAM_ID,
+    launcher,
+    authority,
+    pumpInstruction,
+    minimumBaseAmountOut,
+  });
+}
+
+function encodePumpBuybackData(minimumBaseAmountOut: bigint): Buffer {
+  const data = Buffer.alloc(25);
+  Buffer.from([198, 46, 21, 82, 180, 217, 232, 112]).copy(data);
+  data.writeBigUInt64LE(BigInt(BUYBACK_BURN_LAMPORTS), 8);
+  data.writeBigUInt64LE(minimumBaseAmountOut, 16);
+  return data;
+}
+
+function meta(pubkey: PublicKey, isSigner = false, isWritable = false) {
+  return { pubkey, isSigner, isWritable };
 }
 
 export async function buildAtomicLaunchInstructions(
@@ -339,8 +438,8 @@ export async function buildAtomicLaunchInstructions(
       creator: identity.walletPublicKey,
       amount: quote.quotedTokenAmount,
       solAmount: quote.maxQuoteAmount,
-      feeRecipient: FEE_RECIPIENT,
-      buybackFeeRecipient: BUYBACK_FEE_RECIPIENT,
+      feeRecipient: PUMP_PROTOCOL_FEE_RECIPIENT,
+      buybackFeeRecipient: PUMP_BUYBACK_FEE_RECIPIENT,
       tokenProgram: TOKEN_PROGRAM_ID,
     }),
     await buildStreamflowCreateInstruction({
@@ -352,7 +451,9 @@ export async function buildAtomicLaunchInstructions(
       name: identity.config.name,
     }),
   ];
-  const feeInstruction = buildLaunchFeeInstruction(identity.walletPublicKey, identity.config);
+  const feeInstruction = identity.config.feeMode === "buybackBurn"
+    ? buildFrozenBuybackBurnInstruction(identity.walletPublicKey, identity.config)
+    : buildLaunchFeeInstruction(identity.walletPublicKey, identity.config);
   if (feeInstruction) instructions.push(feeInstruction);
   return Object.freeze({
     instructions: Object.freeze(instructions),
@@ -404,11 +505,26 @@ function lookupAddressesForPlan(
   identity: AtomicLaunchIdentity,
   plan: AtomicInstructionPlan,
 ): readonly PublicKey[] {
-  return canonicalLookupAddresses(plan.instructions, [
+  const addresses = canonicalLookupAddresses(plan.instructions, [
     identity.walletPublicKey,
     identity.mintPublicKey,
     identity.metadataPublicKey,
   ]);
+  if (identity.config.feeMode !== "buybackBurn") return addresses;
+  const protocolSet = new Set(
+    buybackProtocolLookupAddresses(plan, identity.walletPublicKey).map((key) => key.toBase58()),
+  );
+  return Object.freeze(addresses.filter((address) => !protocolSet.has(address.toBase58())));
+}
+
+export function buybackProtocolLookupAddresses(
+  plan: AtomicInstructionPlan,
+  wallet: PublicKey,
+): readonly PublicKey[] {
+  const instruction = plan.instructions.find((candidate) =>
+    candidate.programId.equals(BUYBACK_BURN_PROGRAM_ID));
+  if (!instruction) throw new Error("Buyback-and-burn instruction is missing");
+  return canonicalLookupAddresses([instruction], [wallet]);
 }
 
 export async function buildAtomicLookupPreparation(
@@ -524,13 +640,13 @@ export async function rebuildIssuedAtomicLookupPreparation(
 
 function decompileInstruction(
   transaction: VersionedTransaction,
-  lookupTable: AddressLookupTableAccount,
+  lookupTables: AddressLookupTableAccount[],
   index: number,
 ): TransactionInstruction {
   const message = transaction.message;
   const instruction = message.compiledInstructions[index];
   if (!instruction) throw new Error("Atomic launch instruction is missing");
-  const accountKeys = message.getAccountKeys({ addressLookupTableAccounts: [lookupTable] });
+  const accountKeys = message.getAccountKeys({ addressLookupTableAccounts: lookupTables });
   const programId = accountKeys.get(instruction.programIdIndex);
   if (!programId) throw new Error("Atomic launch program ID cannot be resolved");
   return new TransactionInstruction({
@@ -606,6 +722,22 @@ export function validateAtomicLaunchTransaction(
     expectation.lookupAddresses,
     expectation.lookupTable.state.lastExtendedSlot + 1,
   );
+  const isBuybackBurn = expectation.config.feeMode === "buybackBurn";
+  const protocolLookupTable = expectation.protocolLookupTable;
+  const protocolLookupAddresses = expectation.protocolLookupAddresses;
+  if (isBuybackBurn) {
+    if (!protocolLookupTable || !protocolLookupAddresses) {
+      throw new Error("Buyback protocol lookup table is required");
+    }
+    validateProtocolLookupTable(
+      protocolLookupTable,
+      protocolLookupTable.key,
+      protocolLookupAddresses,
+      protocolLookupTable.state.lastExtendedSlot + 1,
+    );
+  } else if (protocolLookupTable || protocolLookupAddresses) {
+    throw new Error("Legacy atomic launch must not use a protocol lookup table");
+  }
   const transaction = VersionedTransaction.deserialize(txBytes);
   const message = transaction.message;
   const signers = message.staticAccountKeys.slice(0, message.header.numRequiredSignatures);
@@ -614,10 +746,14 @@ export function validateAtomicLaunchTransaction(
     expectation.mintPublicKey,
     expectation.metadataPublicKey,
   ];
-  const expectedInstructionCount = expectation.config.feeMode === "waived" ? 7 : 8;
+  const expectedInstructionCount = isBuybackBurn || expectation.config.feeMode === "waived" ? 7 : 8;
+  const expectedLookupTables = isBuybackBurn
+    ? [expectation.lookupTable, protocolLookupTable!]
+    : [expectation.lookupTable];
   if (
-    message.addressTableLookups.length !== 1 ||
-    !message.addressTableLookups[0]?.accountKey.equals(expectation.lookupTable.key) ||
+    message.addressTableLookups.length !== expectedLookupTables.length ||
+    message.addressTableLookups.some((lookup, index) =>
+      !lookup.accountKey.equals(expectedLookupTables[index].key)) ||
     message.recentBlockhash !== expectation.blockhash ||
     signers.length !== expectedSigners.length ||
     signers.some((signer, index) => !signer.equals(expectedSigners[index])) ||
@@ -627,7 +763,7 @@ export function validateAtomicLaunchTransaction(
     throw new Error("Atomic launch transaction envelope mismatch");
   }
   const actual = message.compiledInstructions.map((_, index) =>
-    decompileInstruction(transaction, expectation.lookupTable, index));
+    decompileInstruction(transaction, expectedLookupTables, index));
   const privileges = expectedPrivileges(expectation.walletPublicKey, expectation.instructions);
   actual.forEach((instruction, index) =>
     assertInstruction(instruction, expectation.instructions[index], privileges));
@@ -678,6 +814,17 @@ export async function buildAtomicLaunchTransaction(
   snapshot: AtomicLaunchPlanSnapshot,
   issued?: IssuedAtomicLaunchTransaction,
 ): Promise<AtomicLaunchBundle> {
+  const isBuybackBurn = identity.config.feeMode === "buybackBurn";
+  let configuredProtocolLookupTable: PublicKey | undefined;
+  if (isBuybackBurn) {
+    const configuredAddress = process.env.BUYBACK_BURN_LOOKUP_TABLE;
+    if (!configuredAddress) throw new Error("Buyback-and-burn construction is unavailable");
+    try {
+      configuredProtocolLookupTable = new PublicKey(configuredAddress);
+    } catch {
+      throw new Error("Buyback-and-burn lookup table configuration is invalid");
+    }
+  }
   const connection = await getConnection();
   const plan = await buildAtomicLaunchInstructionsFromSnapshot(identity, snapshot);
   const lookupAddresses = lookupAddressesForPlan(identity, plan);
@@ -687,11 +834,23 @@ export async function buildAtomicLaunchTransaction(
     identity.walletPublicKey,
     lookupAddresses,
   );
-  const deactivate = AddressLookupTableProgram.deactivateLookupTable({
-    lookupTable: lookupTableAddress,
-    authority: identity.walletPublicKey,
-  });
-  const instructions = Object.freeze([...plan.instructions, deactivate]);
+  const protocolLookupAddresses = isBuybackBurn
+    ? buybackProtocolLookupAddresses(plan, identity.walletPublicKey)
+    : undefined;
+  let protocolLookupTable: AddressLookupTableAccount | undefined;
+  if (isBuybackBurn) {
+    protocolLookupTable = await resolveProtocolLookupTable(
+      connection,
+      configuredProtocolLookupTable!,
+      protocolLookupAddresses!,
+    );
+  }
+  const instructions = isBuybackBurn
+    ? Object.freeze([...plan.instructions])
+    : Object.freeze([...plan.instructions, AddressLookupTableProgram.deactivateLookupTable({
+      lookupTable: lookupTableAddress,
+      authority: identity.walletPublicKey,
+    })]);
   const latestBlockhash = issued
     ? { blockhash: issued.blockhash, lastValidBlockHeight: issued.lastValidBlockHeight }
     : await connection.getLatestBlockhash("confirmed");
@@ -699,11 +858,16 @@ export async function buildAtomicLaunchTransaction(
     payerKey: identity.walletPublicKey,
     recentBlockhash: latestBlockhash.blockhash,
     instructions: [...instructions],
-  }).compileToV0Message([lookupTable])).serialize();
+  }).compileToV0Message([
+    lookupTable,
+    ...(protocolLookupTable ? [protocolLookupTable] : []),
+  ])).serialize();
   validateAtomicLaunchTransaction(txBytes, {
     ...identity,
     lookupTable,
     lookupAddresses,
+    protocolLookupTable,
+    protocolLookupAddresses,
     instructions,
     quotedTokenAmount: plan.quotedTokenAmount,
     maxQuoteAmount: plan.maxQuoteAmount,
@@ -728,5 +892,12 @@ export async function buildAtomicLaunchTransaction(
     unlockTimestamp: plan.unlockTimestamp,
     streamflowFeePercent: plan.streamflowFeePercent,
     messageHash,
+    protocolLookupTableAddress: protocolLookupTable?.key,
+    protocolLookupAddresses: protocolLookupAddresses
+      ? Object.freeze([...protocolLookupAddresses])
+      : undefined,
+    protocolAddressHash: protocolLookupAddresses
+      ? hashLookupAddresses(protocolLookupAddresses)
+      : undefined,
   });
 }

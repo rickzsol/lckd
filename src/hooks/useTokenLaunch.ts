@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  type AddressLookupTableAccount,
   Connection,
   Keypair,
   PublicKey,
@@ -107,6 +108,9 @@ interface AtomicResponse {
   lookupTableAddress: string;
   lookupAddresses: string[];
   lookupAddressesHash: string;
+  protocolLookupTableAddress?: string;
+  protocolLookupAddresses?: string[];
+  protocolLookupAddressesHash?: string;
   blockhash: string;
   lastValidBlockHeight: number;
   quotedTokenAmount: string;
@@ -237,6 +241,15 @@ function assertAtomicResponse(
     value.lookupTableAddress !== setup.lookupTableAddress ||
     value.lookupAddresses.join(",") !== setup.lookupAddresses.join(",") ||
     value.lookupAddressesHash !== setup.lookupAddressesHash ||
+    (value.feeMode === "buybackBurn" &&
+      (typeof value.protocolLookupTableAddress !== "string" ||
+        !Array.isArray(value.protocolLookupAddresses) ||
+        value.protocolLookupAddresses.length === 0 ||
+        !/^[0-9a-f]{64}$/.test(value.protocolLookupAddressesHash ?? ""))) ||
+    (value.feeMode !== "buybackBurn" &&
+      (value.protocolLookupTableAddress !== undefined ||
+        value.protocolLookupAddresses !== undefined ||
+        value.protocolLookupAddressesHash !== undefined)) ||
     !/^\d+$/.test(value.quotedTokenAmount) ||
     !/^\d+$/.test(value.maxQuoteAmount) ||
     !/^\d+$/.test(value.lockAmount) ||
@@ -373,7 +386,7 @@ export function useTokenLaunch(config: LaunchConfig) {
     let atomicSignature = "";
     let isAtomicCheckpointed = false;
     try {
-      const requiredSol = config.buyAmountSol + CREATE_TX_SOL_OVERHEAD + LOCK_TX_SOL_OVERHEAD;
+      let requiredSol = config.buyAmountSol + CREATE_TX_SOL_OVERHEAD + LOCK_TX_SOL_OVERHEAD;
       const walletSol = (await connection.getBalance(publicKey, "confirmed")) / LAMPORTS_PER_SOL;
       if (walletSol < requiredSol) {
         throw new Error(`Insufficient SOL. You have ${walletSol.toFixed(4)} SOL but need ~${requiredSol.toFixed(4)} SOL.`);
@@ -448,6 +461,14 @@ export function useTokenLaunch(config: LaunchConfig) {
         feeLckdRaw: setup.feeLckdRaw ?? null,
         feeTreasury: setup.feeTreasury ?? null,
       }));
+      requiredSol += (setup.feeLamports ?? 0) / LAMPORTS_PER_SOL;
+      const postQuoteWalletSol =
+        (await connection.getBalance(publicKey, "confirmed")) / LAMPORTS_PER_SOL;
+      if (postQuoteWalletSol < requiredSol) {
+        throw new Error(
+          `Insufficient SOL. You have ${postQuoteWalletSol.toFixed(4)} SOL but need ~${requiredSol.toFixed(4)} SOL.`,
+        );
+      }
       if (
         setup.quotedTokenAmount !== setupEconomics.quotedTokenAmount ||
         setup.maxQuoteAmount !== setupEconomics.maxQuoteAmount ||
@@ -569,6 +590,25 @@ export function useTokenLaunch(config: LaunchConfig) {
       if ((await connection.getSlot("confirmed")) <= lookupResponse.value.state.lastExtendedSlot) {
         throw new Error("Atomic lookup table is not activated yet");
       }
+      let protocolLookupTable: AddressLookupTableAccount | undefined;
+      if (atomic.feeMode === "buybackBurn") {
+        if (await hashLookupAddresses(atomic.protocolLookupAddresses!) !==
+            atomic.protocolLookupAddressesHash) {
+          throw new Error("Buyback protocol lookup vector hash mismatch");
+        }
+        const protocolLookupResponse = await connection.getAddressLookupTable(
+          new PublicKey(atomic.protocolLookupTableAddress!),
+          { commitment: "confirmed" },
+        );
+        if (!protocolLookupResponse.value) {
+          throw new Error("Buyback protocol lookup table is unavailable");
+        }
+        if ((await connection.getSlot("confirmed")) <=
+            protocolLookupResponse.value.state.lastExtendedSlot) {
+          throw new Error("Buyback protocol lookup table is not activated yet");
+        }
+        protocolLookupTable = protocolLookupResponse.value;
+      }
 
       setLaunchPhase(5);
       let atomicTransaction = await validateAtomicLaunchTransactionClient(atomic.transaction, {
@@ -577,6 +617,10 @@ export function useTokenLaunch(config: LaunchConfig) {
         metadata: metadataKeypair.publicKey,
         lookupTable: lookupResponse.value,
         lookupAddresses: atomic.lookupAddresses.map((address) => new PublicKey(address)),
+        protocolLookupTable,
+        protocolLookupAddresses: atomic.protocolLookupAddresses?.map(
+          (address) => new PublicKey(address),
+        ),
         blockhash: atomic.blockhash,
         name: config.name,
         ticker: config.ticker,

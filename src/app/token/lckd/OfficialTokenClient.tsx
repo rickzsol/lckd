@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import DitherWave from "@/components/landing/DitherWave";
-import DexScreenerChart from "@/components/token/DexScreenerChart";
+import MarketChart from "@/components/token/MarketChart";
 import JupiterSwap from "@/components/token/JupiterSwap";
 import TokenImage from "@/components/ui/TokenImage";
 import { useDexMarketData } from "@/hooks/useDexMarketData";
@@ -80,7 +80,7 @@ export default function OfficialTokenClient({ initialLaunch, monitorUrl }: Props
         <div className="relative z-10 flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
           <div className="flex items-start gap-4">
             <div className="h-16 w-16 shrink-0 overflow-hidden rounded-[14px] border border-accent/30 bg-accent-dim sm:h-20 sm:w-20 lg:h-24 lg:w-24">
-              <TokenImage src="/lckd-token.png" alt="LCKD" />
+              <TokenImage src="/lckd-token.png" alt="LCKD" size={96} isEager />
             </div>
             <div>
               <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -141,10 +141,10 @@ export default function OfficialTokenClient({ initialLaunch, monitorUrl }: Props
 
       <section className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div>
-          <DexScreenerChart key={`${mintAddress ?? "pending"}-${market ? "indexed" : "waiting"}`} mintAddress={mintAddress ?? undefined} />
+          <MarketChart key={`${mintAddress ?? "pending"}-${market ? "indexed" : "waiting"}`} mintAddress={mintAddress ?? undefined} />
           {mintAddress && !market && (
             <p className="mt-2 font-mono text-[10px] text-text-3">
-              The chart is connected. DexScreener market indexing can take a short moment after launch.
+              The chart is connected. Market indexing can take a short moment after launch.
             </p>
           )}
         </div>

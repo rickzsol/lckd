@@ -24,7 +24,7 @@ function ReviewForm({ w }: { w: WizardContext }) {
   const { publicKey, signTransaction, connected } = useWallet();
   const { connection } = useConnection();
 
-  const estimatedOverhead = 0.23;
+  const estimatedOverhead = 0.33;
   const estimatedCost = (w.config.buyAmountSol + estimatedOverhead).toFixed(2);
 
   const handleLaunch = () => {
@@ -81,8 +81,8 @@ function ReviewForm({ w }: { w: WizardContext }) {
           },
           {
             n: "2",
-            label: "Create + Buy + Lock",
-            detail: `${w.config.buyAmountSol} SOL buy with ${w.config.lockPercentage}% locked for ${w.config.lockDurationDays} days`,
+            label: "Create + Buy + Lock + Burn",
+            detail: `${w.config.buyAmountSol} SOL token buy, fixed 0.1 SOL LCKD buyback and burn, ${w.config.lockPercentage}% locked for ${w.config.lockDurationDays} days`,
           },
         ].map((item) => (
           <div
@@ -123,7 +123,8 @@ function ReviewForm({ w }: { w: WizardContext }) {
       <div className="warning-box mb-4">
         <span className="callout-title">before you sign</span>
         Two wallet approvals. The first prepares the lookup table. The second atomically creates,
-        buys, and locks the token. No token is created unless the atomic transaction executes.
+        buys, locks, buys back LCKD, and burns it. No token is created unless the full transaction
+        executes.
       </div>
 
       {/* Actions */}
@@ -275,6 +276,7 @@ function PartialView({ w }: { w: WizardContext }) {
   const { publicKey, signTransaction } = useWallet();
   const { connection } = useConnection();
   const isAtomicSubmitted = w.recoveryStatus === "atomic_submitted";
+  const isCompletedLaunch = w.recoveryStatus === "completed";
   const isRecoveryUnknown = !w.recoveryStatus;
 
   const handleRecovery = () => {
@@ -295,13 +297,15 @@ function PartialView({ w }: { w: WizardContext }) {
       </div>
 
       <div className="mb-1 font-sans text-xl font-bold tracking-[-0.01em] text-text-1">
-        Launch needs attention
+        {isCompletedLaunch ? "Token created" : "Launch needs attention"}
       </div>
       <div className="mb-4 max-w-[360px] text-center font-mono text-xs text-text-3">
         {isRecoveryUnknown
           ? "Recovery state could not be loaded. Do not start another launch until it is rechecked."
-          : isAtomicSubmitted
+            : isAtomicSubmitted
             ? "The atomic launch is paused until its issued transaction is reconciled. The app will not issue another launch while this recovery state exists."
+            : isCompletedLaunch
+              ? "The launch is finalized. Its temporary lookup table still needs wallet-authorized cleanup to reclaim rent."
             : "No token was created by the atomic transaction. Lookup-table recovery must be reconciled and any created table safely closed before another launch can begin."}
       </div>
 
@@ -338,9 +342,11 @@ function PartialView({ w }: { w: WizardContext }) {
       <button type="button" onClick={handleRecovery} className="btn-launch w-full max-w-[320px]">
         {isRecoveryUnknown
           ? "RECHECK RECOVERY STATE"
-          : isAtomicSubmitted
+            : isAtomicSubmitted
             ? "RECHECK ATOMIC RECEIPT"
-            : "RECHECK / CLEAN UP LOOKUP TABLE"}
+            : isCompletedLaunch
+              ? "CLEAN UP LOOKUP TABLE"
+              : "RECHECK / CLEAN UP LOOKUP TABLE"}
       </button>
     </div>
   );
@@ -367,8 +373,16 @@ const CONFETTI = Array.from({ length: 20 }, (_, i) => {
 });
 
 function SuccessView({ w }: { w: WizardContext }) {
+  const { publicKey, signTransaction } = useWallet();
+  const { connection } = useConnection();
   const mintAddr = w.launchResult?.mintAddress;
   const createSig = w.launchResult?.createTxSignature;
+  const hasLookupCleanup = w.recoveryAltStatus !== "closed";
+
+  const handleCleanup = () => {
+    if (!publicKey || !signTransaction) return;
+    w.retryLock({ publicKey, signTransaction, connection });
+  };
 
   return (
     <div className="flex flex-col items-center py-10">
@@ -456,6 +470,16 @@ function SuccessView({ w }: { w: WizardContext }) {
           )}
         </div>
       </div>
+
+      {hasLookupCleanup && (
+        <button
+          type="button"
+          onClick={handleCleanup}
+          className="btn-secondary mt-3 w-full max-w-[320px] py-2.5 text-center text-[10px]"
+        >
+          Reclaim lookup-table rent
+        </button>
+      )}
 
       <button
         type="button"

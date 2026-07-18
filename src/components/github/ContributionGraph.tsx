@@ -84,7 +84,7 @@ export default function ContributionGraph({ username }: { username: string }) {
   const labels = monthLabels(weeks);
 
   return (
-    <div className="mt-4">
+    <div className="mt-4 min-w-0">
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3">
           Contribution activity

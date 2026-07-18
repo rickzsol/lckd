@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
-import Badge from "@/components/ui/Badge";
+import Badge, { getTrustTierBadgeLabel } from "@/components/ui/Badge";
 import { getVerifiedDevelopers } from "@/lib/profile";
 import { getAccountAge } from "@/lib/accountAge";
 
@@ -10,7 +10,7 @@ export const revalidate = 60;
 export const metadata: Metadata = {
   title: "Developers",
   description:
-    "Developers behind verified LCKD launches. Profile labels are platform signals, not audits. Review each public GitHub account independently.",
+    "Developers linked to recorded LCKD launch and lock receipts.",
   alternates: { canonical: "/developers" },
   openGraph: {
     title: "Developers | LCKD",
@@ -29,14 +29,13 @@ export default async function DevelopersPage() {
           Developer directory
         </h1>
         <p className="mt-2 max-w-2xl font-sans text-[15px] leading-[1.6] text-text-2">
-          Every profile here is behind at least one verified launch. Profile labels are
-          platform signals, not audits. Review each public GitHub account independently.
+          Builders linked to recorded launch and lock receipts. Review each public GitHub account independently.
         </p>
       </div>
 
       <div className="mb-5 flex items-center justify-between border-y border-line py-3">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-text-3">
-          Verified profiles
+          Launch-linked profiles
         </p>
         <p className="font-mono text-[11px] text-text-3 tabular-nums">
           {developers.length} {developers.length === 1 ? "developer" : "developers"}
@@ -71,12 +70,13 @@ export default async function DevelopersPage() {
                     <span className="truncate font-mono text-sm font-bold text-text-1">
                       @{d.username}
                     </span>
-                    <Badge tier={d.highestTier} label="VERIFIED PROFILE" />
+                    <Badge tier={d.highestTier} label={getTrustTierBadgeLabel(d.highestTier)} />
                   </div>
                   <div className="mt-0.5 truncate font-mono text-[10px] text-text-3 tabular-nums">
-                    {d.accountCreatedAt && <>{getAccountAge(d.accountCreatedAt)} on GitHub &middot; </>}
-                    {d.publicRepos !== null && <>{d.publicRepos} repos &middot; </>}
-                    {d.totalCommits !== null && <>{d.totalCommits.toLocaleString("en-US")} commits</>}
+                    {[
+                      d.accountCreatedAt ? `${getAccountAge(d.accountCreatedAt)} on GitHub` : null,
+                      d.publicRepos !== null ? `${d.publicRepos} repos` : null,
+                    ].filter(Boolean).join(" · ")}
                   </div>
                 </div>
               </div>

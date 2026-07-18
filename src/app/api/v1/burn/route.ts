@@ -1,7 +1,7 @@
 import { apiResponse, OPTIONS } from "@/lib/api/helpers";
 import { getBurnLedger } from "@/lib/burnLedger";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export { OPTIONS };
 

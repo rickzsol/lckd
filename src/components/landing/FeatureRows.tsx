@@ -58,14 +58,14 @@ const ROWS: FeatureRow[] = [
   {
     index: "01",
     icon: LockIcon,
-    title: "Lock receipts, verified.",
-    body: "Create the token, then place selected creator tokens into a separate Streamflow time lock. LCKD verifies both finalized receipts before publishing the launch.",
-    kicker: "streamflow token lock. verified on-chain.",
+    title: "One atomic launch.",
+    body: "Token creation, the initial buy, and the Streamflow lock execute together. If any instruction fails, the transaction reverts and no token is created.",
+    kicker: "one transaction. one finalized receipt.",
   },
   {
     index: "02",
     icon: GithubIcon,
-    title: "Built for builders.",
+    title: "Identity, linked.",
     body: "Connect GitHub and link a wallet with a signed ownership message. Public profile data and launch receipts stay tied to that identity.",
     kicker: "github-authenticated profiles. signed wallet links.",
   },
@@ -99,7 +99,7 @@ export default function FeatureRows() {
               <h2 className="m-0 mb-4 font-sans text-[clamp(30px,5vw,56px)] font-bold leading-[1.05] tracking-[-0.03em] text-text-1">
                 {row.title}
               </h2>
-              <p className="m-0 mb-5 font-mono text-[clamp(13px,1.8vw,15px)] font-medium leading-[1.8] text-text-3">
+              <p className="m-0 mb-5 font-sans text-[clamp(15px,1.8vw,16px)] font-normal leading-[1.7] text-text-3">
                 {row.body}
               </p>
               <div

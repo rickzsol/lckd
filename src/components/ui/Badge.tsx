@@ -7,6 +7,29 @@ const TIER_STYLES: Record<TrustTier, { bg: string; border: string; text: string;
   [TrustTier.SHIPPED]: { bg: "var(--color-accent)", border: "var(--color-accent)", text: "var(--color-accent-ink)", glow: "0 0 16px rgba(43,209,126,0.35)" },
 };
 
+const TRUST_LABELS: Record<string, string> = {
+  LOCKED: "LOCK RECORDED",
+  VERIFIED: "GITHUB LINKED",
+  BUILDER: "ACTIVE BUILDER",
+  SHIPPED: "PRODUCT SHIPPED",
+  UNLOCKED: "LOCK ENDED",
+};
+
+const TIER_LABELS: Record<TrustTier, string> = {
+  [TrustTier.LOCKED]: "LOCKED",
+  [TrustTier.VERIFIED]: "VERIFIED",
+  [TrustTier.BUILDER]: "BUILDER",
+  [TrustTier.SHIPPED]: "SHIPPED",
+};
+
+export function getTrustBadgeLabel(label: string): string {
+  return TRUST_LABELS[label.toUpperCase()] ?? label;
+}
+
+export function getTrustTierBadgeLabel(tier: TrustTier): string {
+  return getTrustBadgeLabel(TIER_LABELS[tier]);
+}
+
 export default function Badge({ tier, label }: { tier: TrustTier; label: string }) {
   const s = TIER_STYLES[tier];
   return (

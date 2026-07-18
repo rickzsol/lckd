@@ -8,7 +8,7 @@ import { PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.j
 export const LCKD_MINT_ADDRESS = "7UTubJ3W6JWwLUj82B9LgHFDmc8wFWtSNLis6u8epump";
 export const LCKD_DECIMALS = 6;
 
-export type LaunchFeeMode = "waived" | "burnLckd" | "sol";
+export type LaunchFeeMode = "waived" | "burnLckd" | "sol" | "buybackBurn";
 
 export interface LaunchFeeTerms {
   feeMode: LaunchFeeMode;
@@ -45,6 +45,17 @@ export function assertLaunchFeeTerms(terms: LaunchFeeTerms): void {
     ) {
       throw new Error("LCKD burn fee terms are invalid");
     }
+    return;
+  }
+  if (terms.feeMode === "buybackBurn") {
+    if (
+      terms.feeLamports !== 100_000_000 || typeof terms.feeTreasury !== "string" ||
+      typeof terms.feeLckdRaw !== "string" || !/^\d+$/.test(terms.feeLckdRaw) ||
+      BigInt(terms.feeLckdRaw) < BigInt(1) || BigInt(terms.feeLckdRaw) > MAX_FEE_LCKD_RAW
+    ) {
+      throw new Error("Buyback-and-burn launch fee terms are invalid");
+    }
+    new PublicKey(terms.feeTreasury);
     return;
   }
   if (terms.feeMode === "sol") {
@@ -89,6 +100,9 @@ export function buildLaunchFeeInstruction(
       BigInt(terms.feeLckdRaw!),
     );
   }
+  if (terms.feeMode === "buybackBurn") {
+    throw new Error("Buyback-and-burn fees require the atomic launch builder");
+  }
   return SystemProgram.transfer({
     fromPubkey: wallet,
     toPubkey: new PublicKey(terms.feeTreasury!),
@@ -101,6 +115,9 @@ export function formatLaunchFee(terms: LaunchFeeTerms): string {
   if (terms.feeMode === "burnLckd") {
     const tokens = Number(BigInt(terms.feeLckdRaw!)) / 10 ** LCKD_DECIMALS;
     return `burn ${tokens.toLocaleString("en-US", { maximumFractionDigits: 2 })} LCKD`;
+  }
+  if (terms.feeMode === "buybackBurn") {
+    return "0.1 SOL LCKD buyback and burn";
   }
   return `${((terms.feeLamports ?? 0) / 1_000_000_000).toLocaleString("en-US", {
     maximumFractionDigits: 4,

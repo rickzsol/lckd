@@ -17,6 +17,10 @@ function formatTokenAmount(raw: string, decimals: number): string {
   return fraction ? `${grouped}.${fraction.slice(0, 4)}` : grouped;
 }
 
+function shortenAddress(address: string): string {
+  return `${address.slice(0, 12)}…${address.slice(-12)}`;
+}
+
 export default function OfficialLaunchMonitor({ initialLaunch, monitorUrl }: Props) {
   const { isLive, launch } = useOfficialLaunchMonitor(initialLaunch, monitorUrl);
   const [isCopied, setIsCopied] = useState(false);
@@ -56,8 +60,9 @@ export default function OfficialLaunchMonitor({ initialLaunch, monitorUrl }: Pro
               Contract address (CA)
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <code className="min-w-0 flex-1 break-all rounded-control border border-line-default bg-bg/70 px-3 py-2.5 font-mono text-[12px] text-text-1">
-                {launch.mintAddress}
+              <code title={launch.mintAddress} className="min-w-0 flex-1 truncate rounded-control border border-line-default bg-bg/70 px-3 py-2.5 font-mono text-[12px] text-text-1">
+                <span aria-hidden="true">{shortenAddress(launch.mintAddress)}</span>
+                <span className="sr-only">{launch.mintAddress}</span>
               </code>
               <button type="button" onClick={copyAddress} className="btn-secondary min-h-11 shrink-0 px-4">
                 {isCopied ? "Copied" : "Copy CA"}
@@ -100,9 +105,10 @@ export default function OfficialLaunchMonitor({ initialLaunch, monitorUrl }: Pro
                       href={`https://orbmarkets.io/address/${launch.lock.metadataId}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="mt-1 block break-all font-mono text-[10px] text-accent-400 underline underline-offset-2"
+                      title={launch.lock.metadataId}
+                      className="mt-1 block truncate font-mono text-[10px] text-accent-400 underline underline-offset-2"
                     >
-                      Lock contract {launch.lock.metadataId}
+                      Lock contract {shortenAddress(launch.lock.metadataId)}
                     </a>
                   </div>
                   <a

@@ -11,9 +11,11 @@ import {
 import BN from "bn.js";
 import {
   buildAtomicLaunchInstructions,
+  buybackProtocolLookupAddresses,
   freezeAtomicLaunchConfig,
 } from "./atomicLaunchBuilder.server";
 import { buildLookupTablePreparation, canonicalLookupAddresses } from "./lookupTable";
+import { BUYBACK_BURN_PROGRAM_ID, deriveBuybackBurnAuthority } from "./buybackBurn";
 import {
   assertLookupSetupCoSigner,
   validateAtomicLaunchTransactionClient,
@@ -92,13 +94,13 @@ function transactionBase64(
   wallet: ReturnType<typeof keypair>["publicKey"],
   blockhash: string,
   instructions: TransactionInstruction[],
-  lookupTable: AddressLookupTableAccount,
+  lookupTable: AddressLookupTableAccount | AddressLookupTableAccount[],
 ): string {
   const transaction = new VersionedTransaction(new TransactionMessage({
     payerKey: wallet,
     recentBlockhash: blockhash,
     instructions,
-  }).compileToV0Message([lookupTable]));
+  }).compileToV0Message(Array.isArray(lookupTable) ? lookupTable : [lookupTable]));
   return Buffer.from(transaction.serialize()).toString("base64");
 }
 
@@ -110,6 +112,91 @@ test("client accepts the exact resolved atomic transaction", async () => {
   );
   assert.equal(transaction.message.compiledInstructions.length, 7);
 });
+
+test("client reconstructs and accepts the exact buyback instruction and two lookup tables", async () => {
+  const wallet = keypair(1).publicKey;
+  const mint = keypair(2).publicKey;
+  const metadata = keypair(3).publicKey;
+  const metadataUri = "https://example.com/metadata.json";
+  const authority = deriveBuybackBurnAuthority(BUYBACK_BURN_PROGRAM_ID);
+  const fee = {
+    feeMode: "buybackBurn" as const,
+    feeLamports: 100_000_000,
+    feeLckdRaw: "123456789",
+    feeTreasury: authority.toBase58(),
+  };
+  const config = freezeAtomicLaunchConfig({
+    name: "Atomic", ticker: "ATM", buyAmountSol: 0.1, lockDurationDays: 30,
+    lockPercentage: 99, ...fee,
+  });
+  const plan = await buildAtomicLaunchInstructions(
+    { config, walletPublicKey: wallet, mintPublicKey: mint, metadataPublicKey: metadata, metadataUri },
+    {
+      quotedTokenAmount: new BN("250000000000000"), maxQuoteAmount: new BN("110000000"),
+      streamflowFeePercent: 0.19, unlockTimestamp: 1_900_000_000,
+    },
+  );
+  const protocolLookupAddresses = buybackProtocolLookupAddresses(plan, wallet);
+  const protocolSet = new Set(protocolLookupAddresses.map((address) => address.toBase58()));
+  const lookupAddresses = canonicalLookupAddresses(plan.instructions, [wallet, mint, metadata])
+    .filter((address) => !protocolSet.has(address.toBase58()));
+  const lookupTable = testLookupTable(keypair(4).publicKey, wallet, lookupAddresses);
+  const protocolLookupTable = testLookupTable(
+    keypair(6).publicKey,
+    keypair(7).publicKey,
+    protocolLookupAddresses,
+  );
+  const blockhash = keypair(5).publicKey.toBase58();
+  const expectation = {
+    wallet, mint, metadata, lookupTable, lookupAddresses, protocolLookupTable,
+    protocolLookupAddresses, blockhash, name: config.name, ticker: config.ticker,
+    metadataUri, quotedTokenAmount: plan.quotedTokenAmount.toString(),
+    maxQuoteAmount: plan.maxQuoteAmount.toString(), lockAmount: plan.lockAmount.toString(),
+    unlockTimestamp: plan.unlockTimestamp, fee,
+  };
+  const encoded = transactionBase64(
+    wallet,
+    blockhash,
+    [...plan.instructions],
+    [lookupTable, protocolLookupTable],
+  );
+  const transaction = await validateAtomicLaunchTransactionClient(encoded, expectation);
+  assert.equal(transaction.message.header.numRequiredSignatures, 3);
+  assert.equal(transaction.message.addressTableLookups.length, 2);
+  assert(Buffer.from(encoded, "base64").length <= 1_232);
+
+  await assert.rejects(
+    () => validateAtomicLaunchTransactionClient(encoded, {
+      ...expectation,
+      fee: { ...fee, feeLckdRaw: "123456788" },
+    }),
+    /buyback|instruction|changed/i,
+  );
+  await assert.rejects(
+    () => validateAtomicLaunchTransactionClient(encoded, {
+      ...expectation,
+      protocolLookupAddresses: [...protocolLookupAddresses].reverse(),
+    }),
+    /protocol lookup/i,
+  );
+});
+
+function testLookupTable(
+  tableKey: ReturnType<typeof keypair>["publicKey"],
+  authority: ReturnType<typeof keypair>["publicKey"],
+  addresses: readonly ReturnType<typeof keypair>["publicKey"][],
+) {
+  return new AddressLookupTableAccount({
+    key: tableKey,
+    state: {
+      authority,
+      addresses: [...addresses],
+      deactivationSlot: BigInt("0xffffffffffffffff"),
+      lastExtendedSlot: 10,
+      lastExtendedSlotStartIndex: 0,
+    },
+  });
+}
 
 test("client accepts and locally signs the two-signer lookup setup transaction", async () => {
   const value = await fixture();

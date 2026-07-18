@@ -66,7 +66,7 @@ const serializedTransaction = z.string().min(100).max(2_000).regex(
 );
 
 export const launchFeeConfigFields = {
-  feeMode: z.enum(["waived", "burnLckd", "sol"]).optional(),
+  feeMode: z.enum(["waived", "burnLckd", "sol", "buybackBurn"]).optional(),
   feeLamports: z.number().int().positive().safe().nullable().optional(),
   feeLckdRaw: z.string().regex(/^\d+$/).nullable().optional(),
   feeTreasury: address.nullable().optional(),
@@ -330,6 +330,18 @@ export function canTransitionAtomicStatus(
   next: AtomicLaunchStatus,
 ): boolean {
   return ALLOWED_TRANSITIONS[current].includes(next);
+}
+
+export function canDeactivateAtomicLookupTable(
+  status: AtomicLaunchStatus,
+  fee: {
+    feeMode?: "waived" | "burnLckd" | "sol" | "buybackBurn";
+    feeLamports?: number | null;
+  },
+): boolean {
+  return status === "cleanup_required" ||
+    (status === "completed" && fee.feeMode === "buybackBurn" &&
+      fee.feeLamports === 100_000_000);
 }
 
 export function isExactTransactionReplay(

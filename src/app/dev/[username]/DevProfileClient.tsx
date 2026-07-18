@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import Image from "next/image";
 import Link from "next/link";
-import Badge from "@/components/ui/Badge";
+import Badge, { getTrustBadgeLabel, getTrustTierBadgeLabel } from "@/components/ui/Badge";
 import Bar from "@/components/ui/Bar";
 import { getAccountAge } from "@/lib/accountAge";
 import { TrustTier } from "@/types/index";
@@ -13,13 +13,6 @@ import type { GitHubProfile, ContributionDay } from "@/types/index";
 import type { DisplayToken } from "@/types/display";
 
 type Tab = "launches" | "github" | "settings";
-
-const TIER_LABELS: Record<TrustTier, string> = {
-  [TrustTier.LOCKED]: "LOCKED",
-  [TrustTier.VERIFIED]: "VERIFIED",
-  [TrustTier.BUILDER]: "BUILDER",
-  [TrustTier.SHIPPED]: "SHIPPED",
-};
 
 interface GitHubData {
   github_username: string;
@@ -91,7 +84,7 @@ export default function DevProfileClient({
             <h1 className="font-sans text-xl font-bold tracking-[-0.01em] text-text-1">
               @{profile.github_username}
             </h1>
-            <Badge tier={tier} label={`${TIER_LABELS[tier]} PROFILE`} />
+            <Badge tier={tier} label={getTrustTierBadgeLabel(tier)} />
           </div>
 
           {bio && (
@@ -204,7 +197,7 @@ function LaunchesTab({ tokens }: { tokens: DisplayToken[] }) {
                   <span className="font-mono text-[11px] text-text-3">
                     {t.ticker}
                   </span>
-                  <Badge tier={t.tier} label={`${t.tierLabel} PROFILE`} />
+                  <Badge tier={t.tier} label={getTrustBadgeLabel(t.tierLabel)} />
                 </div>
                 <div className="font-mono text-[10px] text-text-4">
                   {hasLockRecord
@@ -222,7 +215,7 @@ function LaunchesTab({ tokens }: { tokens: DisplayToken[] }) {
               <div className="flex items-center font-mono text-[10px] text-text-2">
                 <span className="mr-1.5 tabular-nums">{t.lock.start} {"\u2192"} {t.lock.end}</span>
                 <div className="min-w-[40px] flex-1"><Bar pct={t.lock.pct} /></div>
-                <span className="ml-1.5 tabular-nums text-text-3">{100 - t.lock.pct}% est. remaining</span>
+                <span className="ml-1.5 tabular-nums text-text-3">{t.lock.pct}% elapsed · {100 - t.lock.pct}% locked</span>
               </div>
             )}
           </Link>
@@ -248,9 +241,8 @@ function GitHubTab({
   return (
     <div className="flex flex-col gap-4">
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-px overflow-hidden rounded-card border border-line-default bg-line-default">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-line-default bg-line-default">
         <StatCell label="Repos" value={String(repos)} />
-        <StatCell label="Commits" value={String(profile.total_commits)} />
         <StatCell label="Account Age" value={accountAge} />
       </div>
 

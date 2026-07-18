@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Badge from "@/components/ui/Badge";
+import Badge, { getTrustBadgeLabel } from "@/components/ui/Badge";
 import TokenImage from "@/components/ui/TokenImage";
 import Bar from "@/components/ui/Bar";
 import OfficialLaunchMonitor from "@/components/feed/OfficialLaunchMonitor";
@@ -36,8 +36,7 @@ export default function FeedClient({ launchMonitorUrl, officialLaunch, tokens }:
           Launch directory
         </h1>
         <p className="mt-2 max-w-2xl font-sans text-[15px] leading-[1.6] text-text-2">
-          Platform records can be incomplete or stale. Profile labels are not audits. Verify
-          mint addresses, market data, and lock contracts before relying on them.
+          LCKD verifies recorded launch and lock receipts. Review linked GitHub and on-chain records independently.
         </p>
       </div>
 
@@ -47,7 +46,7 @@ export default function FeedClient({ launchMonitorUrl, officialLaunch, tokens }:
       />
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-y border-line py-3">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-text-3">Filter profile labels</p>
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-text-3">Filter builder activity</p>
         <div className="flex flex-wrap gap-1.5" aria-label="Filter launch records">
           {(["all", "builders", "shipped"] as Filter[]).map((f) => (
             <button
@@ -125,7 +124,7 @@ export default function FeedClient({ launchMonitorUrl, officialLaunch, tokens }:
                     <span className="font-mono text-xs text-text-3">
                       {t.ticker}
                     </span>
-                    <Badge tier={t.tier} label={`${t.tierLabel} PROFILE`} />
+                    <Badge tier={t.tier} label={getTrustBadgeLabel(t.tierLabel)} />
                   </div>
                   <div className="mt-0.5 truncate font-mono text-[11px] text-text-3">
                     {t.dev.github
@@ -151,7 +150,7 @@ export default function FeedClient({ launchMonitorUrl, officialLaunch, tokens }:
 
               {/* Row 2 */}
               <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2.5 font-mono text-[11px] text-text-2">
+                <div className="flex flex-wrap items-center gap-2.5 font-mono text-[11px] text-text-2">
                   <span className="whitespace-nowrap">
                     {hasLockRecord
                       ? `LOCKED ${t.lock.amount} · ${t.lock.duration}`
@@ -159,11 +158,11 @@ export default function FeedClient({ launchMonitorUrl, officialLaunch, tokens }:
                   </span>
                   {hasLockRecord && (
                     <>
-                      <div className="min-w-[40px] flex-1">
+                      <div className="min-w-[64px] flex-1">
                         <Bar pct={t.lock.pct} />
                       </div>
                       <span className="whitespace-nowrap text-text-3 tabular-nums">
-                        {100 - t.lock.pct}% locked
+                        {t.lock.pct}% elapsed · {100 - t.lock.pct}% locked
                       </span>
                     </>
                   )}

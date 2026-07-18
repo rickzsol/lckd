@@ -28,6 +28,7 @@ import {
   requestAtomicCleanup,
 } from "@/lib/api/atomicLaunchRecovery";
 import {
+  canDeactivateAtomicLookupTable,
   classifyExactIssuedReceipt,
   hasFinalizedIssuedTupleExpired,
   replacementState,
@@ -731,7 +732,7 @@ async function buildCleanupAction(intent: AtomicIntent) {
   }
 
   if (lookupTable.state.deactivationSlot === LOOKUP_TABLE_ACTIVE_SLOT) {
-    if (currentIntent.status !== "cleanup_required") {
+    if (!canDeactivateAtomicLookupTable(currentIntent.status, currentIntent.config)) {
       throw new AtomicLaunchRecoveryError("Completed launch ALT is unexpectedly active", 422);
     }
     if (currentIntent.altStatus === "deactivating") {
@@ -1072,7 +1073,7 @@ export async function POST(request: NextRequest) {
       return apiResponse(result);
     }
     if (body.phase === "alt_deactivating") {
-      if (intent.status !== "cleanup_required") {
+      if (!canDeactivateAtomicLookupTable(intent.status, intent.config)) {
         return apiError("ALT deactivation is not available for this launch state", 409);
       }
       if (body.previousSignature) {

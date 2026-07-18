@@ -15,7 +15,13 @@ const EXACT_HOSTS = [
   "avatars.githubusercontent.com",
   "i.imgur.com",
 ];
-const HOST_SUFFIXES = [".ipfs.w3s.link", ".nftstorage.link", ".pinata.cloud", ".pump.fun"];
+const HOST_SUFFIXES = [
+  ".ipfs.w3s.link",
+  ".nftstorage.link",
+  ".pinata.cloud",
+  ".mypinata.cloud",
+  ".pump.fun",
+];
 
 function canOptimize(src: string): boolean {
   if (src.startsWith("/")) return true;
@@ -30,7 +36,17 @@ function canOptimize(src: string): boolean {
   }
 }
 
-export default function TokenImage({ src, alt }: { src: string; alt: string }) {
+export default function TokenImage({
+  src,
+  alt,
+  size = 48,
+  isEager = false,
+}: {
+  src: string;
+  alt: string;
+  size?: number;
+  isEager?: boolean;
+}) {
   const [hasError, setHasError] = useState(false);
   const isUrl = src.startsWith("http") || src.startsWith("/");
 
@@ -46,9 +62,12 @@ export default function TokenImage({ src, alt }: { src: string; alt: string }) {
     <Image
       src={src}
       alt={alt}
-      width={96}
-      height={96}
-      sizes="96px"
+      width={size}
+      height={size}
+      sizes={`${size}px`}
+      quality={75}
+      loading={isEager ? "eager" : "lazy"}
+      fetchPriority={isEager ? "high" : "auto"}
       className="h-full w-full object-cover"
       unoptimized={!canOptimize(src)}
       onError={() => setHasError(true)}

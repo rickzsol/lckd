@@ -12,6 +12,8 @@ import BN from "bn.js";
 import {
   buildAtomicLaunchInstructions,
   buildAtomicLaunchInstructionsFromSnapshot,
+  buildAtomicLaunchTransaction,
+  buybackProtocolLookupAddresses,
   calculateAtomicUnlockTimestamp,
   freezeAtomicLaunchConfig,
   hashAtomicTransactionMessage,
@@ -20,6 +22,7 @@ import {
   validateAtomicLaunchTransaction,
 } from "./atomicLaunchBuilder.server";
 import { buildLookupTablePreparation, canonicalLookupAddresses } from "./lookupTable";
+import { BUYBACK_BURN_PROGRAM_ID, deriveBuybackBurnAuthority } from "./buybackBurn";
 
 const seededKeypair = (value: number) =>
   Keypair.fromSeed(Uint8Array.from({ length: 32 }, () => value));
@@ -122,6 +125,52 @@ test("builds a packet-sized atomic launch with three static signers and one exac
   assert.equal(setup.transaction.length, 1_224);
 });
 
+test("builds the mandatory buyback launch under packet size with two exact ALTs and no fourth signer", async () => {
+  const wallet = seededKeypair(1).publicKey;
+  const mint = seededKeypair(2).publicKey;
+  const metadata = seededKeypair(3).publicKey;
+  const metadataPrefix = "https://example.com/";
+  const metadataUri = metadataPrefix + "m".repeat(200 - metadataPrefix.length);
+  const authority = deriveBuybackBurnAuthority(BUYBACK_BURN_PROGRAM_ID);
+  const config = freezeAtomicLaunchConfig({
+    name: "N".repeat(32), ticker: "T".repeat(13), buyAmountSol: 0.1,
+    lockDurationDays: 30, lockPercentage: 99, feeMode: "buybackBurn",
+    feeLamports: 100_000_000, feeLckdRaw: "123456789", feeTreasury: authority.toBase58(),
+  });
+  const plan = await buildAtomicLaunchInstructions(
+    { config, walletPublicKey: wallet, mintPublicKey: mint, metadataPublicKey: metadata, metadataUri },
+    {
+      quotedTokenAmount: new BN("250000000000000"), maxQuoteAmount: new BN("110000000"),
+      streamflowFeePercent: 0.19, unlockTimestamp: 1_900_000_000,
+    },
+  );
+  const protocolLookupAddresses = buybackProtocolLookupAddresses(plan, wallet);
+  const protocolSet = new Set(protocolLookupAddresses.map(String));
+  const lookupAddresses = canonicalLookupAddresses(plan.instructions, [wallet, mint, metadata])
+    .filter((address) => !protocolSet.has(address.toBase58()));
+  const lookupTable = lookup(seededKeypair(4).publicKey, wallet, lookupAddresses);
+  const protocolLookupTable = lookup(seededKeypair(6).publicKey, seededKeypair(7).publicKey, protocolLookupAddresses);
+  const blockhash = seededKeypair(5).publicKey.toBase58();
+  const transaction = new VersionedTransaction(new TransactionMessage({
+    payerKey: wallet,
+    recentBlockhash: blockhash,
+    instructions: [...plan.instructions],
+  }).compileToV0Message([lookupTable, protocolLookupTable]));
+  const bytes = transaction.serialize();
+  const validated = validateAtomicLaunchTransaction(bytes, {
+    config, walletPublicKey: wallet, mintPublicKey: mint, metadataPublicKey: metadata, metadataUri,
+    lookupTable, lookupAddresses, protocolLookupTable, protocolLookupAddresses,
+    instructions: plan.instructions, quotedTokenAmount: plan.quotedTokenAmount,
+    maxQuoteAmount: plan.maxQuoteAmount, lockAmount: plan.lockAmount,
+    unlockTimestamp: plan.unlockTimestamp, blockhash,
+  });
+  assert(bytes.length <= 1_232, `buyback atomic launch is ${bytes.length} bytes`);
+  assert.equal(validated.message.header.numRequiredSignatures, 3);
+  assert.equal(validated.message.addressTableLookups.length, 2);
+  assert.equal(validated.message.compiledInstructions.length, 7);
+  assert(validated.message.staticAccountKeys.every((key) => !key.equals(authority)));
+});
+
 test("rejects instruction mutation even when accounts and ALT remain valid", async () => {
   const fixture = await buildFixture();
   const mutatedInstructions = [
@@ -184,6 +233,55 @@ test("requires an immutable validated launch config", async () => {
     /exact frozen snapshot/,
   );
 });
+
+test("fails buyback construction closed before RPC when the protocol ALT is unconfigured", async () => {
+  const previous = process.env.BUYBACK_BURN_LOOKUP_TABLE;
+  delete process.env.BUYBACK_BURN_LOOKUP_TABLE;
+  const wallet = seededKeypair(1).publicKey;
+  const authority = deriveBuybackBurnAuthority(BUYBACK_BURN_PROGRAM_ID);
+  const config = freezeAtomicLaunchConfig({
+    name: "Atomic", ticker: "ATM", buyAmountSol: 0.1, lockDurationDays: 30,
+    lockPercentage: 99, feeMode: "buybackBurn", feeLamports: 100_000_000,
+    feeLckdRaw: "123456789", feeTreasury: authority.toBase58(),
+  });
+  try {
+    await assert.rejects(() => buildAtomicLaunchTransaction(
+      {
+        config,
+        walletPublicKey: wallet,
+        mintPublicKey: seededKeypair(2).publicKey,
+        metadataPublicKey: seededKeypair(3).publicKey,
+        metadataUri: "https://example.com/metadata.json",
+      },
+      seededKeypair(4).publicKey,
+      {
+        quotedTokenAmount: "250000000000000", maxQuoteAmount: "110000000",
+        lockAmount: "247025000000000", unlockTimestamp: 1_900_000_000,
+        streamflowFeePercent: 0.19,
+      },
+    ), /construction is unavailable/);
+  } finally {
+    if (previous === undefined) delete process.env.BUYBACK_BURN_LOOKUP_TABLE;
+    else process.env.BUYBACK_BURN_LOOKUP_TABLE = previous;
+  }
+});
+
+function lookup(
+  key: ReturnType<typeof seededKeypair>["publicKey"],
+  authority: ReturnType<typeof seededKeypair>["publicKey"],
+  addresses: readonly ReturnType<typeof seededKeypair>["publicKey"][],
+) {
+  return new AddressLookupTableAccount({
+    key,
+    state: {
+      authority,
+      addresses: [...addresses],
+      deactivationSlot: BigInt("0xffffffffffffffff"),
+      lastExtendedSlot: 10,
+      lastExtendedSlotStartIndex: 0,
+    },
+  });
+}
 
 test("buffers the unlock time so finalized duration does not floor one day short", () => {
   const clusterTimestamp = 1_900_000_000;

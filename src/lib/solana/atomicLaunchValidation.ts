@@ -42,6 +42,13 @@ import {
 } from "./streamflow";
 import { readU64LE } from "./u64";
 import { buildLaunchFeeInstruction, type LaunchFeeTerms } from "./launchFee";
+import {
+  BUYBACK_BURN_LAMPORTS,
+  BUYBACK_BURN_PROGRAM_ID,
+  deriveBuybackBurnAuthority,
+  validatePumpBuyExactQuoteInInstruction,
+} from "./buybackBurn";
+import { PUMP_AMM_PROGRAM_ID } from "@pump-fun/pump-swap-sdk";
 
 const ATOMIC_COMPUTE_UNIT_LIMIT = 400_000;
 const U64_MAX = BigInt("0xffffffffffffffff");
@@ -142,6 +149,8 @@ export interface AtomicTransactionExpectation {
   metadata: PublicKey;
   lookupTable: AddressLookupTableAccount;
   lookupAddresses: readonly PublicKey[];
+  protocolLookupTable?: AddressLookupTableAccount;
+  protocolLookupAddresses?: readonly PublicKey[];
   blockhash: string;
   name: string;
   ticker: string;
@@ -256,13 +265,27 @@ function assertExactLookupTable(expectation: AtomicTransactionExpectation): void
   ) {
     throw new Error("Active lookup table does not match the reviewed address vector");
   }
+  const isBuybackBurn = expectation.fee.feeMode === "buybackBurn";
+  if (isBuybackBurn) {
+    const protocol = expectation.protocolLookupTable;
+    const addresses = expectation.protocolLookupAddresses;
+    if (
+      !protocol || !addresses || protocol.state.deactivationSlot !== U64_MAX ||
+      protocol.state.addresses.length !== addresses.length ||
+      protocol.state.addresses.some((address, index) => !address.equals(addresses[index]))
+    ) {
+      throw new Error("Protocol lookup table does not match the reviewed address vector");
+    }
+  } else if (expectation.protocolLookupTable || expectation.protocolLookupAddresses) {
+    throw new Error("Legacy atomic launch must not use a protocol lookup table");
+  }
 }
 
 function decompile(
   transaction: VersionedTransaction,
-  lookupTable: AddressLookupTableAccount,
+  lookupTables: AddressLookupTableAccount[],
 ): TransactionInstruction[] {
-  const keys = transaction.message.getAccountKeys({ addressLookupTableAccounts: [lookupTable] });
+  const keys = transaction.message.getAccountKeys({ addressLookupTableAccounts: lookupTables });
   return transaction.message.compiledInstructions.map((instruction) => {
     const programId = keys.get(instruction.programIdIndex);
     if (!programId) throw new Error("Atomic launch program cannot be resolved");
@@ -328,6 +351,41 @@ function assertExactInstructions(
   });
 }
 
+function validateBuybackBurnInstruction(
+  instruction: TransactionInstruction,
+  expectation: AtomicTransactionExpectation,
+): void {
+  const minimumBaseAmountOut = BigInt(expectation.fee.feeLckdRaw!);
+  const authority = deriveBuybackBurnAuthority(BUYBACK_BURN_PROGRAM_ID);
+  if (
+    expectation.fee.feeLamports !== BUYBACK_BURN_LAMPORTS ||
+    expectation.fee.feeTreasury !== authority.toBase58() ||
+    !instruction.programId.equals(BUYBACK_BURN_PROGRAM_ID) ||
+    instruction.keys.length !== 27 ||
+    !instruction.keys[0].pubkey.equals(expectation.wallet) ||
+    !instruction.keys[0].isSigner || !instruction.keys[0].isWritable ||
+    instruction.data.length !== 9 || instruction.data[0] !== 0 ||
+    instruction.data.readBigUInt64LE(1) !== minimumBaseAmountOut
+  ) {
+    throw new Error("Atomic buyback-and-burn instruction changed");
+  }
+  const pumpData = Buffer.alloc(25);
+  Buffer.from([198, 46, 21, 82, 180, 217, 232, 112]).copy(pumpData);
+  pumpData.writeBigUInt64LE(BigInt(BUYBACK_BURN_LAMPORTS), 8);
+  pumpData.writeBigUInt64LE(minimumBaseAmountOut, 16);
+  const pumpWritable = new Set([0, 1, 5, 6, 7, 8, 10, 17, 20, 25]);
+  const pumpKeys = instruction.keys.slice(1).map((account, index) => ({
+    ...account,
+    isSigner: index === 1,
+    isWritable: pumpWritable.has(index),
+  }));
+  validatePumpBuyExactQuoteInInstruction(new TransactionInstruction({
+    programId: PUMP_AMM_PROGRAM_ID,
+    keys: pumpKeys,
+    data: pumpData,
+  }), authority, minimumBaseAmountOut);
+}
+
 export async function validateAtomicLaunchTransactionClient(
   transactionBase64: string,
   expectation: AtomicTransactionExpectation,
@@ -340,24 +398,51 @@ export async function validateAtomicLaunchTransactionClient(
   const message = transaction.message;
   const signers = message.staticAccountKeys.slice(0, message.header.numRequiredSignatures);
   const expectedSigners = [expectation.wallet, expectation.mint, expectation.metadata];
+  const isBuybackBurn = expectation.fee.feeMode === "buybackBurn";
+  const expectedLookupTables = isBuybackBurn
+    ? [expectation.lookupTable, expectation.protocolLookupTable!]
+    : [expectation.lookupTable];
   if (
     message.recentBlockhash !== expectation.blockhash ||
-    message.addressTableLookups.length !== 1 ||
-    !message.addressTableLookups[0]?.accountKey.equals(expectation.lookupTable.key) ||
+    message.addressTableLookups.length !== expectedLookupTables.length ||
+    message.addressTableLookups.some((lookup, index) =>
+      !lookup.accountKey.equals(expectedLookupTables[index].key)) ||
     signers.length !== expectedSigners.length ||
     signers.some((signer, index) => !signer.equals(expectedSigners[index]))
   ) {
     throw new Error("Atomic launch transaction envelope does not match the reviewed launch");
   }
 
-  const instructions = decompile(transaction, expectation.lookupTable);
+  const instructions = decompile(transaction, expectedLookupTables);
   const expectedLimit = ComputeBudgetProgram.setComputeUnitLimit({
     units: ATOMIC_COMPUTE_UNIT_LIMIT,
   });
   const expectedPrice = ComputeBudgetProgram.setComputeUnitPrice({
     microLamports: DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
   });
-  const feeInstruction = buildLaunchFeeInstruction(expectation.wallet, expectation.fee);
+  const feeInstruction = isBuybackBurn
+    ? instructions[6]
+    : buildLaunchFeeInstruction(expectation.wallet, expectation.fee);
+  if (isBuybackBurn) {
+    if (!feeInstruction) throw new Error("Atomic buyback-and-burn instruction is missing");
+    validateBuybackBurnInstruction(feeInstruction, expectation);
+    const seen = new Set<string>();
+    const expectedProtocolAddresses = feeInstruction.keys.slice(1)
+      .map((account) => account.pubkey)
+      .filter((address) => {
+        const encoded = address.toBase58();
+        if (seen.has(encoded)) return false;
+        seen.add(encoded);
+        return true;
+      });
+    if (
+      expectedProtocolAddresses.length !== expectation.protocolLookupAddresses!.length ||
+      expectedProtocolAddresses.some((address, index) =>
+        !address.equals(expectation.protocolLookupAddresses![index]))
+    ) {
+      throw new Error("Atomic buyback protocol lookup vector changed");
+    }
+  }
   const expectedPrograms = [
     ComputeBudgetProgram.programId,
     ComputeBudgetProgram.programId,
@@ -366,7 +451,7 @@ export async function validateAtomicLaunchTransactionClient(
     PUMPFUN_PROGRAM_ID,
     STREAMFLOW_V13_PROGRAM_ID,
     ...(feeInstruction ? [feeInstruction.programId] : []),
-    AddressLookupTableProgram.programId,
+    ...(!isBuybackBurn ? [AddressLookupTableProgram.programId] : []),
   ];
   if (
     instructions.length !== expectedPrograms.length ||
@@ -430,7 +515,7 @@ export async function validateAtomicLaunchTransactionClient(
       keys: [...lockExpectation.keys],
     }),
     ...(feeInstruction ? [feeInstruction] : []),
-    deactivate,
+    ...(!isBuybackBurn ? [deactivate] : []),
   ];
   assertExactInstructions(instructions, expectedInstructions, expectation.wallet);
 
@@ -478,14 +563,16 @@ export async function validateAtomicLaunchTransactionClient(
     data: instructions[5].data,
     keys: [...lockExpectation.keys],
   }), lockExpectation);
-  const deactivateActual = instructions[instructions.length - 1];
-  if (
-    !deactivateActual.data.equals(deactivate.data) ||
-    deactivateActual.keys.length !== deactivate.keys.length ||
-    deactivateActual.keys.some((account, index) =>
-      !account.pubkey.equals(deactivate.keys[index].pubkey))
-  ) {
-    throw new Error("Atomic launch lookup cleanup instruction changed");
+  if (!isBuybackBurn) {
+    const deactivateActual = instructions[instructions.length - 1];
+    if (
+      !deactivateActual.data.equals(deactivate.data) ||
+      deactivateActual.keys.length !== deactivate.keys.length ||
+      deactivateActual.keys.some((account, index) =>
+        !account.pubkey.equals(deactivate.keys[index].pubkey))
+    ) {
+      throw new Error("Atomic launch lookup cleanup instruction changed");
+    }
   }
   return transaction;
 }

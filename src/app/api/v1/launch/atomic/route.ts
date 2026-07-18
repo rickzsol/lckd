@@ -201,6 +201,11 @@ export async function POST(request: NextRequest) {
       lookupTableAddress: responseBundle.lookupTableAddress.toBase58(),
       lookupAddresses: intent.altAddresses,
       lookupAddressesHash: responseBundle.addressHash,
+      protocolLookupTableAddress: responseBundle.protocolLookupTableAddress?.toBase58(),
+      protocolLookupAddresses: responseBundle.protocolLookupAddresses?.map(
+        (addressValue) => addressValue.toBase58(),
+      ),
+      protocolLookupAddressesHash: responseBundle.protocolAddressHash,
       blockhash: responseBundle.blockhash,
       lastValidBlockHeight: responseBundle.lastValidBlockHeight,
       quotedTokenAmount: responseBundle.quotedTokenAmount,

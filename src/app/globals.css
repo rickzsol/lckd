@@ -29,8 +29,8 @@
   /* text */
   --color-text-1: #f2f5f3;
   --color-text-2: #a8b2ac;
-  --color-text-3: #6e7873;
-  --color-text-4: #4a524e;
+  --color-text-3: #8f9994;
+  --color-text-4: #69736e;
 
   /* semantic */
   --color-warn: #e0a73e;
@@ -517,6 +517,18 @@
   }
   .wallet-adapter-button .wallet-adapter-button-start-icon {
     display: none !important;
+  }
+  .nav-wallet .wallet-adapter-button,
+  .nav-wallet .wallet-adapter-button-trigger {
+    border: 1px solid var(--color-line-strong) !important;
+    background: var(--color-surface-2) !important;
+    color: var(--color-text-1) !important;
+    box-shadow: none !important;
+  }
+  .nav-wallet .wallet-adapter-button:hover {
+    border-color: rgba(43, 209, 126, 0.4) !important;
+    background: var(--color-surface-3) !important;
+    box-shadow: none !important;
   }
   .wallet-adapter-dropdown {
     z-index: 100 !important;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 interface RevealProps {
   children: React.ReactNode;
@@ -8,24 +8,30 @@ interface RevealProps {
   className?: string;
 }
 
-// Quiet scroll reveal: rise 16px + fade once when the block enters the viewport.
 export default function Reveal({ children, delay = 0, className }: RevealProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      const frame = requestAnimationFrame(() => setIsVisible(true));
-      return () => cancelAnimationFrame(frame);
-    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
-          setIsVisible(true);
+          el.animate(
+            [
+              { opacity: 0.72, transform: "translateY(12px)" },
+              { opacity: 1, transform: "translateY(0)" },
+            ],
+            {
+              duration: 600,
+              delay,
+              easing: "cubic-bezier(0.16,1,0.3,1)",
+              fill: "both",
+            }
+          );
           observer.disconnect();
         }
       },
@@ -33,18 +39,10 @@ export default function Reveal({ children, delay = 0, className }: RevealProps) 
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [delay]);
 
   return (
-    <div
-      ref={ref}
-      className={className}
-      style={{
-        opacity: isVisible ? 1 : 0,
-        transform: isVisible ? "translateY(0)" : "translateY(16px)",
-        transition: `opacity 600ms cubic-bezier(0.16,1,0.3,1) ${delay}ms, transform 600ms cubic-bezier(0.16,1,0.3,1) ${delay}ms`,
-      }}
-    >
+    <div ref={ref} className={className}>
       {children}
     </div>
   );

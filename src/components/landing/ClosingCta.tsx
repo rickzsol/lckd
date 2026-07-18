@@ -21,10 +21,9 @@ export default function ClosingCta({ showMascot = true }: ClosingCtaProps) {
         <h2 className="m-0 mb-4 font-sans text-[clamp(30px,5.5vw,56px)] font-bold leading-[1.05] tracking-[-0.03em] text-text-1">
           Ready to <span className="text-accent">ship</span>?
         </h2>
-        <p className="mx-auto mb-8 max-w-[420px] font-mono text-[13px] font-medium leading-[1.8] text-text-3">
-          Create your token. Lock selected creator tokens.
-          <br />
-          Verify both finalized receipts.
+        <p className="mx-auto mb-8 max-w-[460px] font-sans text-[15px] font-normal leading-[1.7] text-text-3">
+          Create, buy, and lock in one atomic transaction. Verify the finalized
+          receipt.
         </p>
         <div className="mb-11 flex flex-wrap justify-center gap-3">
           <Link

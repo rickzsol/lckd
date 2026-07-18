@@ -34,6 +34,21 @@ export interface DisplayCommit {
   time: string;
 }
 
+export interface DisplayTokenMetadata {
+  description: string;
+  creatorWallet: string;
+  createdAt: string;
+  buyAmountSol: number;
+  launchTx: string;
+  lockTx: string;
+  launchVerifiedAt: string | null;
+  lockVerifiedAt: string | null;
+  unlockAt: string | null;
+  twitterUrl: string | null;
+  telegramUrl: string | null;
+  websiteUrl: string | null;
+}
+
 export interface DisplayToken {
   id: string;
   name: string;
@@ -41,6 +56,7 @@ export interface DisplayToken {
   tier: TrustTier;
   tierLabel: string;
   image: string;
+  metadata: DisplayTokenMetadata;
   dev: DisplayDev;
   repo?: DisplayRepo;
   lock: DisplayLock;

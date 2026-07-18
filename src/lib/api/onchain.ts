@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { isValidSolanaAddress } from "@/lib/api/validation";
 import {
   assertLaunchFeeTerms,
@@ -13,6 +14,8 @@ import {
   PublicKey,
   SYSVAR_RENT_PUBKEY,
   SystemProgram,
+  TransactionInstruction,
+  VersionedTransaction,
 } from "@solana/web3.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -20,9 +23,11 @@ import {
   getAssociatedTokenAddressSync,
   getExtensionTypes,
   getMint,
+  NATIVE_MINT,
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
+import { PUMP_AMM_PROGRAM_ID } from "@pump-fun/pump-swap-sdk";
 import {
   ICluster,
   SolanaStreamClient,
@@ -39,6 +44,15 @@ import {
   parsePumpTradeEvent,
   type VerifiedPumpTradeEvent,
 } from "@/lib/solana/pumpTradeEvent";
+import {
+  BUYBACK_BURN_LAMPORTS,
+  BUYBACK_BURN_PROGRAM_ID,
+  LCKD_MINT,
+  deriveBuybackBurnAtas,
+  deriveBuybackBurnAuthority,
+  validatePumpBuyExactQuoteInInstruction,
+  wrapBuybackBurnInstruction,
+} from "@/lib/solana/buybackBurn";
 
 const PUMPFUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
 const DEFAULT_STREAMFLOW_PROGRAM_ID = "strmRqUCoQUgGUan5YhzUZa6KqdzwX5L6FpUxfmKg5m";
@@ -58,6 +72,8 @@ const ATOMIC_COMPUTE_UNIT_PRICE = 100_000;
 const ATOMIC_OUTER_INSTRUCTION_COUNT = 7;
 const PUMP_EXACT_TOKEN_BUY_DISCRIMINATOR = "66063d1201daebea";
 const LOCK_COVERAGE_TOLERANCE = BigInt(10);
+const BUYBACK_BURN_FEE_INSTRUCTION_INDEX = 6;
+const PUMP_BUY_EXACT_QUOTE_IN_WRITABLE_INDEXES = new Set([0, 1, 5, 6, 7, 8, 10, 17, 20, 25]);
 const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 const SAFE_TOKEN_2022_EXTENSIONS = new Set([
   ExtensionType.MetadataPointer,
@@ -69,6 +85,18 @@ interface RawInstruction {
   accounts?: PublicKey[];
   data?: string;
   parsed?: { type?: string; info?: Record<string, unknown> };
+  stackHeight?: number | null;
+}
+
+interface RawInnerInstructionGroup {
+  index: number;
+  instructions: RawInstruction[];
+}
+
+interface AtomicAccountKey {
+  pubkey: PublicKey;
+  signer: boolean;
+  writable: boolean;
 }
 
 export interface VerifiedLock {
@@ -94,6 +122,11 @@ interface TransactionTokenBalance {
   uiTokenAmount: { amount: string };
 }
 
+export interface VerifiedBuybackBurnReceipt {
+  burnedRawAmount: bigint;
+  protocolLookupAddresses: readonly string[];
+}
+
 export interface AtomicLaunchExpectation {
   name: string;
   symbol: string;
@@ -108,15 +141,19 @@ export interface AtomicLaunchExpectation {
   lockDurationDays: number;
   lockPercentage: number;
   fee: LaunchFeeTerms;
+  issuedAtomicTransaction?: string;
+  issuedAtomicMessageHash?: string;
 }
 
 export interface VerifiedAtomicLaunch extends VerifiedLaunch {
   signature: string;
+  executedAt: string;
   metadataAddress: string;
   lookupTableAddress: string;
   walletDelta: string;
   walletFinalBalance: string;
   escrowBalance: string;
+  burnedLckdRawAmount: string | null;
   lock: VerifiedLock;
 }
 
@@ -611,6 +648,14 @@ function assertAtomicExpectation(expectation: AtomicLaunchExpectation): void {
   ) {
     throw new OnChainVerificationError("Atomic launch expectation is invalid", 422);
   }
+  if (
+    expectation.fee.feeMode === "buybackBurn" &&
+    (typeof expectation.issuedAtomicTransaction !== "string" ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(expectation.issuedAtomicTransaction) ||
+      !/^[0-9a-f]{64}$/.test(expectation.issuedAtomicMessageHash ?? ""))
+  ) {
+    throw new OnChainVerificationError("Atomic buyback issuance proof is invalid", 422);
+  }
 }
 
 function assertExactAtomicSigners(
@@ -676,14 +721,16 @@ async function assertFinalizedAtomicLookupTable(
   lookupTable: PublicKey,
   wallet: PublicKey,
   expectedAddresses: readonly string[],
+  expectedDeactivated = true,
 ): Promise<void> {
   const { value } = await connection.getAddressLookupTable(lookupTable, {
     commitment: "finalized",
   });
+  const isDeactivated = value?.state.deactivationSlot !== BigInt("18446744073709551615");
   if (
     !value ||
     !value.state.authority?.equals(wallet) ||
-    value.state.deactivationSlot === BigInt("18446744073709551615") ||
+    isDeactivated !== expectedDeactivated ||
     value.state.addresses.length !== expectedAddresses.length ||
     value.state.addresses.some(
       (address, index) => address.toBase58() !== expectedAddresses[index],
@@ -693,27 +740,102 @@ async function assertFinalizedAtomicLookupTable(
   }
 }
 
-function assertAtomicLookupTable(
+async function verifyBuybackIssuance(params: {
+  connection: Connection;
+  signature: string;
+  lookupTable: PublicKey;
+  expectation: AtomicLaunchExpectation;
+}): Promise<{ protocolLookupTable: PublicKey; protocolLookupAddresses: readonly string[] }> {
+  let issued: VersionedTransaction;
+  try {
+    issued = VersionedTransaction.deserialize(
+      Buffer.from(params.expectation.issuedAtomicTransaction!, "base64"),
+    );
+  } catch {
+    throw new OnChainVerificationError("Atomic buyback issuance transaction is invalid", 422);
+  }
+  const issuedMessage = issued.message.serialize();
+  const issuedHash = createHash("sha256").update(issuedMessage).digest("hex");
+  const lookups = issued.message.addressTableLookups;
+  if (
+    issuedHash !== params.expectation.issuedAtomicMessageHash ||
+    lookups.length !== 2 ||
+    !lookups[0]?.accountKey.equals(params.lookupTable)
+  ) {
+    throw new OnChainVerificationError("Atomic buyback issuance lookup tables are invalid", 422);
+  }
+  const issuedProtocolLookup = lookups[1];
+  const finalized = await params.connection.getTransaction(params.signature, {
+    commitment: "finalized",
+    maxSupportedTransactionVersion: 0,
+  });
+  if (
+    !finalized || finalized.meta?.err ||
+    !Buffer.from(finalized.transaction.message.serialize()).equals(Buffer.from(issuedMessage))
+  ) {
+    throw new OnChainVerificationError("Finalized buyback message does not match issuance", 422);
+  }
+  const { value } = await params.connection.getAddressLookupTable(issuedProtocolLookup.accountKey, {
+    commitment: "finalized",
+  });
+  if (!value || value.state.deactivationSlot !== BigInt("18446744073709551615")) {
+    throw new OnChainVerificationError("Buyback protocol lookup table is invalid", 422);
+  }
+  const referencedIndexes = [
+    ...issuedProtocolLookup.writableIndexes,
+    ...issuedProtocolLookup.readonlyIndexes,
+  ];
+  const issuedAddressCount = Math.max(...referencedIndexes) + 1;
+  if (
+    referencedIndexes.length === 0 ||
+    issuedAddressCount > value.state.addresses.length
+  ) {
+    throw new OnChainVerificationError("Buyback protocol lookup table no longer resolves", 422);
+  }
+  return {
+    protocolLookupTable: issuedProtocolLookup.accountKey,
+    // Lookup tables are append-only. Freeze the prefix addressable by the
+    // immutable issued message so later extensions cannot invalidate receipts.
+    protocolLookupAddresses: value.state.addresses
+      .slice(0, issuedAddressCount)
+      .map((address) => address.toBase58()),
+  };
+}
+
+function assertAtomicLookupTables(
   transaction: NonNullable<Awaited<ReturnType<Connection["getParsedTransaction"]>>>,
-  expectedLookupTable: PublicKey,
-  expectedAddresses: readonly string[],
+  expected: readonly {
+    lookupTable: PublicKey;
+    addresses: readonly string[];
+    requireAllAddresses: boolean;
+  }[],
 ): void {
   const lookups = transaction.transaction.message.addressTableLookups ?? [];
   const loadedAddresses = transaction.transaction.message.accountKeys
     .filter((account) => account.source === "lookupTable")
     .map((account) => account.pubkey.toBase58());
-  const loadedAddressSet = new Set(loadedAddresses);
-  const lookupIndexCount =
-    (lookups[0]?.writableIndexes.length ?? 0) +
-    (lookups[0]?.readonlyIndexes.length ?? 0);
+  const resolveIndexes = (kind: "writableIndexes" | "readonlyIndexes") =>
+    lookups.flatMap((lookup, tableIndex) => lookup[kind].map((addressIndex) => {
+      const address = expected[tableIndex]?.addresses[addressIndex];
+      if (!address) {
+        throw new OnChainVerificationError("Atomic launch lookup index is invalid", 422);
+      }
+      return address;
+    }));
+  const expectedLoaded = [
+    ...resolveIndexes("writableIndexes"),
+    ...resolveIndexes("readonlyIndexes"),
+  ];
   if (
-    lookups.length !== 1 ||
-    !lookups[0]?.accountKey.equals(expectedLookupTable) ||
-    lookupIndexCount !== expectedAddresses.length ||
-    loadedAddresses.length !== expectedAddresses.length ||
-    expectedAddresses.some((address) => !loadedAddressSet.has(address))
+    lookups.length !== expected.length ||
+    lookups.some((lookup, index) => !lookup.accountKey.equals(expected[index].lookupTable)) ||
+    loadedAddresses.length !== expectedLoaded.length ||
+    loadedAddresses.some((address, index) => address !== expectedLoaded[index]) ||
+    expected.some((table, index) => table.requireAllAddresses &&
+      lookups[index].writableIndexes.length + lookups[index].readonlyIndexes.length !==
+        table.addresses.length)
   ) {
-    throw new OnChainVerificationError("Atomic launch must use the reviewed address lookup table", 422);
+    throw new OnChainVerificationError("Atomic launch must use the reviewed address lookup tables", 422);
   }
 }
 
@@ -778,6 +900,261 @@ function assertAtomicFeeInstruction(
   ) {
     throw new OnChainVerificationError("Atomic launch SOL fee transfer is invalid", 422);
   }
+}
+
+function instructionAccountMeta(
+  accountKeys: readonly AtomicAccountKey[],
+  pubkey: PublicKey,
+  isSigner: boolean,
+  isWritable: boolean,
+) {
+  const account = accountKeys.find((candidate) => candidate.pubkey.equals(pubkey));
+  if (!account) {
+    throw new OnChainVerificationError("Buyback account is missing from the transaction", 422);
+  }
+  return { pubkey, isSigner, isWritable };
+}
+
+function decodePositiveTokenAmount(info: Record<string, unknown>): bigint | null {
+  const tokenAmount = info.tokenAmount;
+  const amount = typeof info.amount === "string"
+    ? info.amount
+    : tokenAmount && typeof tokenAmount === "object"
+      ? (tokenAmount as { amount?: unknown }).amount
+      : null;
+  if (typeof amount !== "string" || !/^\d+$/.test(amount)) return null;
+  const parsed = BigInt(amount);
+  return parsed > BigInt(0) ? parsed : null;
+}
+
+function matchingInnerInstructions(
+  instructions: readonly RawInstruction[],
+  predicate: (instruction: RawInstruction) => boolean,
+): Array<{ instruction: RawInstruction; index: number }> {
+  return instructions.flatMap((instruction, index) =>
+    predicate(instruction) ? [{ instruction, index }] : []);
+}
+
+function assertBuybackTokenBalances(params: {
+  accountKeys: readonly AtomicAccountKey[];
+  preTokenBalances: TransactionTokenBalance[] | null | undefined;
+  postTokenBalances: TransactionTokenBalance[] | null | undefined;
+  authority: PublicKey;
+  lckdAta: PublicKey;
+  wsolAta: PublicKey;
+}): bigint {
+  const balance = (balances: TransactionTokenBalance[] | null | undefined, account: PublicKey, mint: PublicKey) => {
+    const matches = (balances ?? []).filter((candidate) =>
+      candidate.mint === mint.toBase58() &&
+      candidate.owner === params.authority.toBase58() &&
+      params.accountKeys[candidate.accountIndex]?.pubkey.equals(account));
+    if (matches.length !== 1) {
+      throw new OnChainVerificationError("Buyback PDA token balance proof is incomplete", 422);
+    }
+    return BigInt(matches[0].uiTokenAmount.amount);
+  };
+  const preLckd = balance(params.preTokenBalances, params.lckdAta, LCKD_MINT);
+  const postLckd = balance(params.postTokenBalances, params.lckdAta, LCKD_MINT);
+  const preWsol = balance(params.preTokenBalances, params.wsolAta, NATIVE_MINT);
+  const postWsol = balance(params.postTokenBalances, params.wsolAta, NATIVE_MINT);
+  if (preLckd !== postLckd || postWsol !== BigInt(0)) {
+    throw new OnChainVerificationError("Buyback PDA token balances were not restored", 422);
+  }
+  return preWsol;
+}
+
+function buildVerifiedInnerPumpInstruction(params: {
+  instruction: RawInstruction;
+  accountKeys: readonly AtomicAccountKey[];
+  authority: PublicKey;
+  minimumBaseAmountOut: bigint;
+}): TransactionInstruction {
+  if (!params.instruction.data || !params.instruction.accounts) {
+    throw new OnChainVerificationError("Buyback Pump AMM instruction is incomplete", 422);
+  }
+  const instruction = new TransactionInstruction({
+    programId: params.instruction.programId,
+    keys: params.instruction.accounts.map((pubkey, index) =>
+      instructionAccountMeta(
+        params.accountKeys,
+        pubkey,
+        index === 1,
+        PUMP_BUY_EXACT_QUOTE_IN_WRITABLE_INDEXES.has(index),
+      )),
+    data: decodeBase58(params.instruction.data),
+  });
+  try {
+    validatePumpBuyExactQuoteInInstruction(
+      instruction,
+      params.authority,
+      params.minimumBaseAmountOut,
+    );
+  } catch (error) {
+    throw new OnChainVerificationError(
+      error instanceof Error ? error.message : "Buyback Pump AMM instruction is invalid",
+      422,
+    );
+  }
+  return instruction;
+}
+
+function assertExactBuybackOuterInstruction(params: {
+  outerInstruction: RawInstruction;
+  pumpInstruction: TransactionInstruction;
+  accountKeys: readonly AtomicAccountKey[];
+  launcher: PublicKey;
+  authority: PublicKey;
+  minimumBaseAmountOut: bigint;
+}): void {
+  const expected = wrapBuybackBurnInstruction({
+    programId: BUYBACK_BURN_PROGRAM_ID,
+    launcher: params.launcher,
+    authority: params.authority,
+    pumpInstruction: params.pumpInstruction,
+    minimumBaseAmountOut: params.minimumBaseAmountOut,
+  });
+  const accounts = params.outerInstruction.accounts ?? [];
+  if (
+    !params.outerInstruction.programId.equals(BUYBACK_BURN_PROGRAM_ID) ||
+    !instructionHasData(params.outerInstruction, expected.data) ||
+    accounts.length !== expected.keys.length ||
+    accounts.some((account, index) => !account.equals(expected.keys[index].pubkey)) ||
+    expected.keys.some((meta) => {
+      const actual = params.accountKeys.find((account) => account.pubkey.equals(meta.pubkey));
+      return !actual || actual.signer !== meta.isSigner || actual.writable !== meta.isWritable;
+    })
+  ) {
+    throw new OnChainVerificationError("Atomic buyback-and-burn instruction is invalid", 422);
+  }
+}
+
+export function verifyBuybackBurnReceipt(params: {
+  outerInstruction: RawInstruction;
+  innerInstructionGroups: readonly RawInnerInstructionGroup[];
+  accountKeys: readonly AtomicAccountKey[];
+  preTokenBalances: TransactionTokenBalance[] | null | undefined;
+  postTokenBalances: TransactionTokenBalance[] | null | undefined;
+  launcher: PublicKey;
+  fee: LaunchFeeTerms;
+}): VerifiedBuybackBurnReceipt {
+  assertLaunchFeeTerms(params.fee);
+  const authority = deriveBuybackBurnAuthority(BUYBACK_BURN_PROGRAM_ID);
+  if (
+    params.fee.feeMode !== "buybackBurn" ||
+    params.fee.feeLamports !== BUYBACK_BURN_LAMPORTS ||
+    params.fee.feeTreasury !== authority.toBase58()
+  ) {
+    throw new OnChainVerificationError("Atomic buyback-and-burn terms are invalid", 422);
+  }
+  const minimumBaseAmountOut = BigInt(params.fee.feeLckdRaw!);
+  const groups = params.innerInstructionGroups.filter(
+    (group) => group.index === BUYBACK_BURN_FEE_INSTRUCTION_INDEX,
+  );
+  if (groups.length !== 1) {
+    throw new OnChainVerificationError("Atomic buyback inner instructions are missing", 422);
+  }
+  const instructions = groups[0].instructions;
+  const pumpMatches = matchingInnerInstructions(instructions, (instruction) =>
+    instruction.programId.equals(PUMP_AMM_PROGRAM_ID));
+  if (pumpMatches.length !== 1) {
+    throw new OnChainVerificationError("Atomic buyback must execute Pump AMM exactly once", 422);
+  }
+  const pumpInstruction = buildVerifiedInnerPumpInstruction({
+    instruction: pumpMatches[0].instruction,
+    accountKeys: params.accountKeys,
+    authority,
+    minimumBaseAmountOut,
+  });
+  assertExactBuybackOuterInstruction({ ...params, pumpInstruction, authority, minimumBaseAmountOut });
+  return verifyBuybackInnerEffects({
+    ...params,
+    instructions,
+    authority,
+    pumpInstruction,
+    pumpIndex: pumpMatches[0].index,
+    minimumBaseAmountOut,
+  });
+}
+
+function verifyBuybackInnerEffects(params: {
+  instructions: readonly RawInstruction[];
+  accountKeys: readonly AtomicAccountKey[];
+  preTokenBalances: TransactionTokenBalance[] | null | undefined;
+  postTokenBalances: TransactionTokenBalance[] | null | undefined;
+  launcher: PublicKey;
+  authority: PublicKey;
+  pumpInstruction: TransactionInstruction;
+  pumpIndex: number;
+  minimumBaseAmountOut: bigint;
+}): VerifiedBuybackBurnReceipt {
+  const atas = deriveBuybackBurnAtas(params.authority);
+  const systemTransfers = matchingInnerInstructions(params.instructions, (instruction) => {
+    const info = instruction.parsed?.info ?? {};
+    return instruction.programId.equals(SystemProgram.programId) &&
+      instruction.parsed?.type === "transfer" &&
+      info.source === params.launcher.toBase58() && info.destination === atas.wsol.toBase58();
+  });
+  const pool = params.pumpInstruction.keys[0].pubkey.toBase58();
+  const poolLckd = params.pumpInstruction.keys[7].pubkey.toBase58();
+  const tokenTransfers = matchingInnerInstructions(params.instructions, (instruction) => {
+    const info = instruction.parsed?.info ?? {};
+    return instruction.programId.equals(TOKEN_2022_PROGRAM_ID) &&
+      ["transfer", "transferChecked"].includes(instruction.parsed?.type ?? "") &&
+      info.source === poolLckd && info.destination === atas.lckd.toBase58() &&
+      info.authority === pool && (info.mint === undefined || info.mint === LCKD_MINT.toBase58());
+  });
+  const burns = matchingInnerInstructions(params.instructions, (instruction) => {
+    const info = instruction.parsed?.info ?? {};
+    return instruction.programId.equals(TOKEN_2022_PROGRAM_ID) && instruction.parsed?.type === "burn" &&
+      info.account === atas.lckd.toBase58() && info.mint === LCKD_MINT.toBase58() &&
+      info.authority === params.authority.toBase58();
+  });
+  const systemInfo = systemTransfers[0]?.instruction.parsed?.info ?? {};
+  if (
+    systemTransfers.length !== 1 || systemInfo.lamports !== BUYBACK_BURN_LAMPORTS ||
+    tokenTransfers.length !== 1 || burns.length !== 1
+  ) {
+    throw new OnChainVerificationError("Atomic buyback-and-burn inner effects are invalid", 422);
+  }
+  const transferred = decodePositiveTokenAmount(tokenTransfers[0].instruction.parsed?.info ?? {});
+  const burned = decodePositiveTokenAmount(burns[0].instruction.parsed?.info ?? {});
+  if (
+    transferred === null || burned === null || transferred !== burned ||
+    burned < params.minimumBaseAmountOut ||
+    !(systemTransfers[0].index < params.pumpIndex && params.pumpIndex < tokenTransfers[0].index &&
+      tokenTransfers[0].index < burns[0].index)
+  ) {
+    throw new OnChainVerificationError("Atomic buyback-and-burn amounts are invalid", 422);
+  }
+  const preWsol = assertBuybackTokenBalances({
+    ...params,
+    lckdAta: atas.lckd,
+    wsolAta: atas.wsol,
+  });
+  const protocolWsol = params.pumpInstruction.keys[10].pubkey.toBase58();
+  const donationSweeps = matchingInnerInstructions(params.instructions, (instruction) => {
+    const info = instruction.parsed?.info ?? {};
+    return instruction.programId.equals(TOKEN_PROGRAM_ID) &&
+      instruction.parsed?.type === "transfer" &&
+      info.source === atas.wsol.toBase58() && info.destination === protocolWsol &&
+      info.authority === params.authority.toBase58();
+  }).filter((match) => match.index < systemTransfers[0].index);
+  const swept = donationSweeps.length === 1
+    ? decodePositiveTokenAmount(donationSweeps[0].instruction.parsed?.info ?? {})
+    : null;
+  if (
+    donationSweeps.length > 1 ||
+    (donationSweeps.length === 1 && swept === null) ||
+    (preWsol > BigInt(0) && (swept === null || swept < preWsol))
+  ) {
+    throw new OnChainVerificationError("Buyback donated WSOL sweep is invalid", 422);
+  }
+  return {
+    burnedRawAmount: burned,
+    protocolLookupAddresses: [...new Set(
+      params.pumpInstruction.keys.map((account) => account.pubkey.toBase58()),
+    )],
+  };
 }
 
 function assertAtomicLookupDeactivation(
@@ -971,8 +1348,24 @@ export async function verifyFinalizedAtomicLaunchTransaction(
   const mint = new PublicKey(mintAddress);
   const metadata = new PublicKey(metadataAddress);
   const lookupTable = new PublicKey(expectation.lookupTableAddress);
+  const isBuybackBurn = expectation.fee.feeMode === "buybackBurn";
+  const connection = await getConnection();
   assertExactAtomicSigners(transaction, wallet, mint, metadata, signature);
-  assertAtomicLookupTable(transaction, lookupTable, expectation.lookupTableAddresses);
+  const buybackIssuance = isBuybackBurn
+    ? await verifyBuybackIssuance({ connection, signature, lookupTable, expectation })
+    : null;
+  assertAtomicLookupTables(transaction, [
+    {
+      lookupTable,
+      addresses: expectation.lookupTableAddresses,
+      requireAllAddresses: true,
+    },
+    ...(buybackIssuance ? [{
+      lookupTable: buybackIssuance.protocolLookupTable,
+      addresses: buybackIssuance.protocolLookupAddresses,
+      requireAllAddresses: false,
+    }] : []),
+  ]);
   assertNoUnusedAtomicAccounts(transaction);
   const meta = transaction.meta;
   if (!meta) {
@@ -987,7 +1380,7 @@ export async function verifyFinalizedAtomicLaunchTransaction(
     microLamports: ATOMIC_COMPUTE_UNIT_PRICE,
   }).data;
   assertLaunchFeeTerms(expectation.fee);
-  const expectedInstructionCount = expectation.fee.feeMode === "waived"
+  const expectedInstructionCount = expectation.fee.feeMode === "waived" || isBuybackBurn
     ? ATOMIC_OUTER_INSTRUCTION_COUNT
     : ATOMIC_OUTER_INSTRUCTION_COUNT + 1;
   if (
@@ -1069,10 +1462,33 @@ export async function verifyFinalizedAtomicLaunchTransaction(
   ) {
     throw new OnChainVerificationError("Atomic Streamflow schedule does not match the intent", 422);
   }
-  if (expectation.fee.feeMode !== "waived") {
+  let verifiedBuyback: VerifiedBuybackBurnReceipt | null = null;
+  if (isBuybackBurn) {
+    verifiedBuyback = verifyBuybackBurnReceipt({
+      outerInstruction: instructions[BUYBACK_BURN_FEE_INSTRUCTION_INDEX],
+      innerInstructionGroups: (meta.innerInstructions ?? []) as RawInnerInstructionGroup[],
+      accountKeys: transaction.transaction.message.accountKeys,
+      preTokenBalances: meta.preTokenBalances,
+      postTokenBalances: meta.postTokenBalances,
+      launcher: wallet,
+      fee: expectation.fee,
+    });
+    if (
+      !buybackIssuance ||
+      verifiedBuyback.protocolLookupAddresses.length !==
+        buybackIssuance.protocolLookupAddresses.length ||
+      verifiedBuyback.protocolLookupAddresses.some(
+        (address, index) => address !== buybackIssuance.protocolLookupAddresses[index],
+      )
+    ) {
+      throw new OnChainVerificationError("Buyback protocol lookup address vector is invalid", 422);
+    }
+  } else if (expectation.fee.feeMode !== "waived") {
     assertAtomicFeeInstruction(instructions[6], wallet, expectation.fee);
   }
-  assertAtomicLookupDeactivation(instructions[instructions.length - 1], wallet, lookupTable);
+  if (!isBuybackBurn) {
+    assertAtomicLookupDeactivation(instructions[instructions.length - 1], wallet, lookupTable);
+  }
 
   let tradeEvent: VerifiedPumpTradeEvent | null = null;
   try {
@@ -1156,7 +1572,6 @@ export async function verifyFinalizedAtomicLaunchTransaction(
     throw new OnChainVerificationError("Atomic lock percentage is invalid", 422);
   }
 
-  const connection = await getConnection();
   await Promise.all([
     assertFinalizedAtomicAccounts(
       connection,
@@ -1172,15 +1587,18 @@ export async function verifyFinalizedAtomicLaunchTransaction(
       lookupTable,
       wallet,
       expectation.lookupTableAddresses,
+      !isBuybackBurn,
     ),
   ]);
   return {
     signature,
+    executedAt: new Date((transaction.blockTime ?? 0) * 1_000).toISOString(),
     metadataAddress,
     lookupTableAddress: lookupTable.toBase58(),
     walletDelta: walletDelta.toString(),
     walletFinalBalance: postWalletBalance.toString(),
     escrowBalance: postEscrowBalance.toString(),
+    burnedLckdRawAmount: verifiedBuyback?.burnedRawAmount.toString() ?? null,
     purchasedAmount: tradeEvent.tokenAmount,
     name: createData.name,
     symbol: createData.symbol,

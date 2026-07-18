@@ -50,7 +50,7 @@ export default function Hero({ launchMonitorUrl, officialLaunch }: Props) {
         className="m-0 mb-9 max-w-[460px] font-mono text-[clamp(12px,3.2vw,15px)] font-medium leading-[1.8] text-text-3"
         style={{ animation: RISE, animationDelay: "160ms" }}
       >
-        Ship code. Lock tokens. Prove it on-chain. Built on pump.fun +
+        Create, buy, and lock in one atomic transaction. Built on pump.fun +
         Streamflow.
       </p>
 

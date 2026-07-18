@@ -10,7 +10,6 @@ import WizardPanel from "./WizardPanel";
 import { isInAppBrowser } from "@/lib/inAppBrowser";
 
 export default function LaunchPageClient({ callbackUrl }: { callbackUrl: "/launch" | "/launch-test" }) {
-  const wizard = useLaunchWizard();
   const { data: session, status } = useSession();
   const { connected, publicKey } = useWallet();
   const [walletCheck, setWalletCheck] = useState<{
@@ -135,5 +134,10 @@ export default function LaunchPageClient({ callbackUrl }: { callbackUrl: "/launc
     );
   }
 
+  return <AuthenticatedWizard callbackUrl={callbackUrl} />;
+}
+
+function AuthenticatedWizard({ callbackUrl }: { callbackUrl: "/launch" | "/launch-test" }) {
+  const wizard = useLaunchWizard();
   return <WizardPanel wizard={wizard} callbackUrl={callbackUrl} />;
 }

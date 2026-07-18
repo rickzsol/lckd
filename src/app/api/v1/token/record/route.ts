@@ -64,12 +64,16 @@ const atomicIntentSchema = z.object({
   lockMetadataId: solanaAddress,
   lockAmount: z.string().regex(/^\d+$/),
   unlockTimestamp: z.number().int().positive().safe(),
+  issuedAtomicTransaction: z.string().min(100).max(2_000).regex(
+    /^[A-Za-z0-9+/]+={0,2}$/,
+  ).nullable(),
+  issuedAtomicMessageHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
 }).passthrough();
 
 const atomicRecordResultSchema = z.object({
   status: z.literal("completed"),
   stateVersion: z.number().int().nonnegative().safe(),
-  altStatus: z.enum(["deactivating", "close_submitted", "closed"]),
+  altStatus: z.enum(["ready", "deactivating", "close_submitted", "closed"]),
   altStateVersion: z.number().int().nonnegative().safe(),
   replayed: z.boolean(),
   updated: z.boolean(),
@@ -90,6 +94,14 @@ function persistenceError(error: { code?: string; message: string }) {
     isConflict ? "Launch recovery state does not match finalized receipts" : "Failed to record token",
     isConflict ? 409 : 503,
   );
+}
+
+function formatRawLckdAmount(rawAmount: string): string {
+  const raw = BigInt(rawAmount);
+  const scale = BigInt(10 ** LCKD_DECIMALS);
+  const whole = raw / scale;
+  const fraction = (raw % scale).toString().padStart(LCKD_DECIMALS, "0");
+  return `${whole}.${fraction}`;
 }
 
 async function recordAtomicLaunch(
@@ -148,6 +160,8 @@ async function recordAtomicLaunch(
         lockDurationDays: config.lockDurationDays,
         lockPercentage: config.lockPercentage,
         fee: launchFeeTermsFromConfig(config as Record<string, unknown>),
+        issuedAtomicTransaction: intent.issuedAtomicTransaction ?? undefined,
+        issuedAtomicMessageHash: intent.issuedAtomicMessageHash ?? undefined,
       },
     );
     metadata = await fetchApprovedMetadata(verified.metadataUri);
@@ -169,6 +183,13 @@ async function recordAtomicLaunch(
   }
 
   const verifiedAt = new Date().toISOString();
+  const feeTerms = launchFeeTermsFromConfig(config as Record<string, unknown>);
+  const burnedLckdAmount = feeTerms.feeMode === "buybackBurn"
+    ? verified.burnedLckdRawAmount && formatRawLckdAmount(verified.burnedLckdRawAmount)
+    : null;
+  if (feeTerms.feeMode === "buybackBurn" && !burnedLckdAmount) {
+    return apiError("Finalized buyback burn amount is unavailable", 422);
+  }
   const { data: wasUpdated, error } = await serverClient.rpc(
     "record_verified_atomic_launch",
     {
@@ -197,12 +218,13 @@ async function recordAtomicLaunch(
       p_website_url: metadata.website ?? null,
       p_verified_at: verifiedAt,
       p_expected_state_version: intent.stateVersion,
+      p_burned_lckd_amount: burnedLckdAmount,
+      p_burn_executed_at: feeTerms.feeMode === "buybackBurn" ? verified.executedAt : null,
     },
   );
   if (error) return persistenceError(error);
   const result = atomicRecordResultSchema.safeParse(wasUpdated);
   if (!result.success) return apiError("Atomic launch persistence returned an invalid state", 503);
-  const feeTerms = launchFeeTermsFromConfig(config as Record<string, unknown>);
   if (feeTerms.feeMode === "burnLckd" && !result.data.replayed) {
     // Ledger row is best-effort: the launch itself is the on-chain source of
     // truth and a missing row must never fail an otherwise recorded launch.

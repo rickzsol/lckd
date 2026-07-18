@@ -49,6 +49,21 @@ const DEMO_TOKEN: DisplayToken = {
   tier: TrustTier.SHIPPED,
   tierLabel: "SHIPPED",
   image: "/lckd-token.png",
+  metadata: {
+    description:
+      "AI-routed swaps on Solana. Open source, audited, and shipped by a public builder profile.",
+    creatorWallet: DEMO_MINT,
+    createdAt: DETECTED_AT,
+    buyAmountSol: 0.1,
+    launchTx: DEMO_SIG,
+    lockTx: DEMO_SIG,
+    launchVerifiedAt: DETECTED_AT,
+    lockVerifiedAt: DETECTED_AT,
+    unlockAt: UNLOCK_AT,
+    twitterUrl: "https://x.com/launchlckd",
+    telegramUrl: null,
+    websiteUrl: "https://neuralswap.app",
+  },
   dev: {
     github: "rickzsol",
     avatar: "R",
@@ -173,7 +188,8 @@ function useDemoWizard(): WizardContext {
       launchPhase: 2,
       launchPhases: [...LAUNCH_PHASES_WITH_LOCK],
       recoveryStatus: status === "partial" ? "atomic_submitted" : null,
-      resolvedFee: status === "launching" ? "burn 4,938.27 LCKD" : null,
+      recoveryAltStatus: status === "success" ? "closed" : null,
+      resolvedFee: status === "launching" ? "0.1 SOL buyback and burn" : null,
       launchResult:
         status === "success"
           ? DEMO_RESULT

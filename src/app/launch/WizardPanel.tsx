@@ -27,13 +27,13 @@ export default function WizardPanel({
         )}
       </div>
       <p className="mb-6 font-mono text-xs text-text-3">
-        Prepare lookup table &middot; create, buy, and lock atomically
+        Prepare lookup table &middot; create, buy, lock, and burn atomically
       </p>
 
       <div className="warning-box mb-6">
         <span className="callout-title">two wallet approvals</span>
         Launch requires two wallet signatures. The first prepares the lookup table. The second
-        creates, buys, and locks the token atomically with Streamflow.
+        creates, buys, locks, and burns the fixed LCKD buyback atomically.
       </div>
 
       <div className="relative overflow-hidden rounded-modal border border-line-default bg-surface p-5 sm:p-8">

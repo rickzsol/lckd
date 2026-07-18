@@ -83,6 +83,20 @@ export function tokenToDisplay(
     tier: displayTier,
     tierLabel: isUnlocked ? "UNLOCKED" : TIER_LABELS[displayTier],
     image: t.image_uri,
+    metadata: {
+      description: t.description,
+      creatorWallet: t.creator_wallet,
+      createdAt: t.created_at,
+      buyAmountSol: t.buy_amount_sol,
+      launchTx: t.launch_tx,
+      lockTx: t.lock_tx,
+      launchVerifiedAt: t.launch_verified_at,
+      lockVerifiedAt: t.lock_verified_at,
+      unlockAt: t.lock_unlock_at,
+      twitterUrl: t.twitter_url,
+      telegramUrl: t.telegram_url,
+      websiteUrl: t.website_url,
+    },
     dev: {
       github: t.github_username,
       avatar: t.github_username

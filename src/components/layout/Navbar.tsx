@@ -191,7 +191,7 @@ export default function Navbar() {
           <Link href="/launch" className="btn-primary hidden md:inline-flex">
             launch token
           </Link>
-          <div className="hidden md:block">
+          <div className="nav-wallet hidden md:block">
             <WalletMultiButton />
           </div>
 
@@ -331,7 +331,7 @@ export default function Navbar() {
                 </span>
               </Link>
             )}
-            <div className="pt-2">
+            <div className="nav-wallet pt-2">
               <WalletMultiButton />
             </div>
           </div>
