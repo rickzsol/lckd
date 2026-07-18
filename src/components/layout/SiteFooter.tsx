@@ -23,6 +23,7 @@ export default function SiteFooter() {
         <nav aria-label="Footer" className="flex flex-wrap items-center gap-5">
           <a href="/docs" className="footer-link">docs</a>
           <a href="/api-docs" className="footer-link">api</a>
+          <a href="/burn" className="footer-link">burn</a>
           <a href="/risk" className="footer-link">risk</a>
           <a
             href="https://github.com/rickzsol/lckd"

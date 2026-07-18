@@ -3,7 +3,7 @@
 ## Now
 
 - [ ] Complete the TEST token verify step in the wizard so `Aowscp3jNqDEutohPUNYdCNzobwi3wXnoUi5xqzDG2FH` records to the directory (owner action).
-- [ ] Map `github_repo` into `tokenToDisplay` so the Submitted repository card renders on token pages.
+- [x] Map `github_repo` into `tokenToDisplay` so the Submitted repository card renders on token pages (live 2026-07-18, cached repo details + 30-day commit count, hidden on owner mismatch).
 - [ ] Resolve the GitHub Actions billing lock so CI deploys work again (owner action); until then deploy via `vercel deploy --prod` from the launch-fix-dev worktree.
 - [ ] Reconcile or discard the uncommitted two-step revert sitting in the `trudev` worktree on stale local main.
 - [ ] Watch the first public launches in Vercel runtime logs; the atomic pipeline has exactly one full success so far.
