@@ -18,17 +18,18 @@ test("enables launches only for an explicitly enabled local or preview runtime",
   }), true);
 });
 
-test("production and unflagged runtimes always fail closed", () => {
+test("production honors the explicit launch flag", () => {
   assert.equal(shouldEnablePublicLaunches({
     NODE_ENV: "production",
     VERCEL_ENV: "production",
     PUBLIC_LAUNCHES_ENABLED: "true",
-  }), false);
+  }), true);
   assert.equal(shouldEnablePublicLaunches({ NODE_ENV: "development" }), false);
   assert.equal(shouldEnablePublicLaunches({
     NODE_ENV: "production",
-    PUBLIC_LAUNCHES_ENABLED: "true",
+    PUBLIC_LAUNCHES_ENABLED: "false",
   }), false);
+  assert.equal(shouldEnablePublicLaunches({ NODE_ENV: "production" }), false);
 });
 
 test("launch canary matches only exact immutable GitHub IDs", () => {

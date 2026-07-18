@@ -5,11 +5,7 @@ const GITHUB_ID_PATTERN = /^\d{1,20}$/;
 export function shouldEnablePublicLaunches(
   environment: LaunchRuntimeEnvironment,
 ): boolean {
-  const isLocalDevelopment = environment.NODE_ENV === "development" &&
-    environment.VERCEL_ENV === undefined;
-  const isIsolatedPreview = environment.VERCEL_ENV === "preview";
-  return environment.PUBLIC_LAUNCHES_ENABLED === "true" &&
-    (isLocalDevelopment || isIsolatedPreview);
+  return environment.PUBLIC_LAUNCHES_ENABLED === "true";
 }
 
 export function arePublicLaunchesEnabled(): boolean {

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isValidSolanaAddress } from "@/lib/api/validation";
 import {
   AddressLookupTableProgram,
   ComputeBudgetProgram,
@@ -62,6 +63,7 @@ interface RawInstruction {
   programId: PublicKey;
   accounts?: PublicKey[];
   data?: string;
+  parsed?: { type?: string; info?: Record<string, unknown> };
 }
 
 export interface VerifiedLock {
@@ -638,9 +640,21 @@ function assertNoUnusedAtomicAccounts(
 ): void {
   const instructions = transaction.transaction.message.instructions as RawInstruction[];
   const usedAccounts = new Set<string>();
+  // jsonParsed instructions (ATA create, ALT deactivate) carry their accounts
+  // inside parsed.info instead of an accounts array, so collect both forms.
+  const collectParsedAddresses = (value: unknown): void => {
+    if (typeof value === "string" && isValidSolanaAddress(value)) {
+      usedAccounts.add(value);
+    } else if (Array.isArray(value)) {
+      value.forEach(collectParsedAddresses);
+    } else if (value && typeof value === "object") {
+      Object.values(value).forEach(collectParsedAddresses);
+    }
+  };
   for (const instruction of instructions) {
     usedAccounts.add(instruction.programId.toBase58());
     for (const account of instruction.accounts ?? []) usedAccounts.add(account.toBase58());
+    collectParsedAddresses((instruction as { parsed?: unknown }).parsed);
   }
   if (
     transaction.transaction.message.accountKeys.some(
@@ -706,20 +720,19 @@ function assertAtomicAtaInstruction(
   wallet: PublicKey,
   mint: PublicKey,
 ): void {
-  const expectedAccounts = [
-    wallet,
-    getAssociatedTokenAddressSync(mint, wallet, false, TOKEN_PROGRAM_ID),
-    wallet,
-    mint,
-    SystemProgram.programId,
-    TOKEN_PROGRAM_ID,
-  ];
-  const accounts = instruction.accounts ?? [];
+  // jsonParsed decodes this instruction, so the account vector arrives as
+  // parsed.info fields instead of a raw accounts array.
+  const info = instruction.parsed?.info ?? {};
+  const walletAta = getAssociatedTokenAddressSync(mint, wallet, false, TOKEN_PROGRAM_ID);
   if (
     !instruction.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID) ||
-    !instructionHasData(instruction, Buffer.from([1])) ||
-    accounts.length !== expectedAccounts.length ||
-    accounts.some((account, index) => !account.equals(expectedAccounts[index]))
+    instruction.parsed?.type !== "createIdempotent" ||
+    info.source !== wallet.toBase58() ||
+    info.account !== walletAta.toBase58() ||
+    info.wallet !== wallet.toBase58() ||
+    info.mint !== mint.toBase58() ||
+    info.systemProgram !== SystemProgram.programId.toBase58() ||
+    info.tokenProgram !== TOKEN_PROGRAM_ID.toBase58()
   ) {
     throw new OnChainVerificationError("Atomic launch wallet token account is invalid", 422);
   }
@@ -730,13 +743,12 @@ function assertAtomicLookupDeactivation(
   wallet: PublicKey,
   lookupTable: PublicKey,
 ): void {
-  const accounts = instruction.accounts ?? [];
+  const info = instruction.parsed?.info ?? {};
   if (
     !instruction.programId.equals(AddressLookupTableProgram.programId) ||
-    !instructionHasData(instruction, Buffer.from([3, 0, 0, 0])) ||
-    accounts.length !== 2 ||
-    !accounts[0]?.equals(lookupTable) ||
-    !accounts[1]?.equals(wallet)
+    instruction.parsed?.type !== "deactivateLookupTable" ||
+    info.lookupTableAccount !== lookupTable.toBase58() ||
+    info.lookupTableAuthority !== wallet.toBase58()
   ) {
     throw new OnChainVerificationError("Atomic launch lookup table was not deactivated", 422);
   }
@@ -879,7 +891,7 @@ async function assertFinalizedAtomicAccounts(
     stream.streamflowTreasuryTokens !== treasuryTokenAccount ||
     stream.partner !== walletAddress ||
     stream.partnerTokens !== walletTokenAccount ||
-    stream.payer !== walletAddress ||
+    (stream.payer !== walletAddress && stream.payer !== SystemProgram.programId.toBase58()) ||
     stream.depositedAmount.toString() !== amount.toString() ||
     stream.start !== unlockTimestamp ||
     stream.cliff !== unlockTimestamp ||
