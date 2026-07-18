@@ -82,3 +82,73 @@ export interface LaunchConfig {
   telegramUrl: string | null;
   websiteUrl: string | null;
 }
+
+export const ALLOCATION_CATEGORIES = [
+  "treasury",
+  "marketing",
+  "airdrops",
+  "community",
+  "contributors",
+  "liquidity",
+  "other",
+] as const;
+
+export type AllocationCategory = (typeof ALLOCATION_CATEGORIES)[number];
+
+export type AllocationRecordStatus = "active" | "retired";
+
+export type AllocationClassification =
+  | "distributed"
+  | "sold"
+  | "internal"
+  | "burned"
+  | "received"
+  | "unknown";
+
+export interface AllocationBucket {
+  id: string;
+  token_id: string;
+  category: AllocationCategory;
+  label: string;
+  declared_amount: string;
+  status: AllocationRecordStatus;
+  superseded_by: string | null;
+  declared_at: string;
+  retired_at: string | null;
+}
+
+export interface AllocationWallet {
+  id: string;
+  bucket_id: string;
+  token_id: string;
+  wallet_address: string;
+  balance_at_declaration: string;
+  is_creator_wallet: boolean;
+  status: AllocationRecordStatus;
+  created_at: string;
+}
+
+export interface AllocationTransfer {
+  id: string;
+  token_id: string;
+  wallet_address: string;
+  direction: "in" | "out";
+  amount: string;
+  counterparty_wallet: string | null;
+  classification: AllocationClassification;
+  source: string | null;
+  signature: string;
+  slot: number | null;
+  block_time: string | null;
+  recorded_via: "webhook" | "backfill";
+  created_at: string;
+}
+
+export interface AllocationSnapshot {
+  id: string;
+  token_id: string;
+  wallet_address: string;
+  balance: string;
+  drift: string | null;
+  captured_at: string;
+}

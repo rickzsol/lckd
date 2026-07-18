@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/refresh-github",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-allocations",
+      "schedule": "30 3 * * *"
     }
   ]
 }

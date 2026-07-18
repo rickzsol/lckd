@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getTokenByIdOrMint } from "@/lib/queries";
+import { loadAllocationData, type AllocationPageData } from "@/lib/allocations/loadSummary";
 import TokenDetailClient from "./TokenDetailClient";
 
 export const revalidate = 60;
@@ -53,5 +54,16 @@ export default async function TokenDetailPage({ params }: Props) {
     notFound();
   }
 
-  return <TokenDetailClient t={token} />;
+  let allocations: AllocationPageData | null = null;
+  if (token.mintAddress) {
+    try {
+      allocations = await loadAllocationData(token.mintAddress);
+    } catch (error) {
+      // The token page must render even when allocation reads fail; the
+      // panel simply stays hidden until the data source recovers.
+      console.error("[token] Allocation load failed:", error);
+    }
+  }
+
+  return <TokenDetailClient t={token} allocations={allocations} />;
 }
