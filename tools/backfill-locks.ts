@@ -306,6 +306,8 @@ async function main(): Promise<void> {
           end: stream.end,
           cliffAmount: stream.cliffAmount,
           depositedAmount: stream.depositedAmount,
+          period: stream.period,
+          amountPerPeriod: stream.amountPerPeriod,
         });
         if (scheduleMismatch) {
           console.warn(
@@ -451,21 +453,21 @@ async function main(): Promise<void> {
   // count equality does not prove per-token coverage (one stale/extra canonical
   // row offsets one missing token, reading "complete" while an eligible token has
   // no lock). The predicate is atomic and per-token, so neither hole exists.
+  //
+  // The coverage check AND the backfill_complete write happen in ONE definer RPC
+  // (finding 10 residual). Doing them as two round-trips (rpc read, then a separate
+  // upsert) left a TOCTOU window: coverage could change after the read but before
+  // the write, so backfill_complete could flip to 'true' from a coverage read that
+  // was already stale. set_backfill_complete_if_covered evaluates the predicate
+  // inside the same INSERT statement, so the flag can never be set from a stale
+  // coverage read.
   let backfillComplete = false;
   if (!args.dryRun) {
     const { data: complete, error: coverageError } = await supabase.rpc(
-      "backfill_coverage_complete",
+      "set_backfill_complete_if_covered",
     );
-    if (coverageError) throw new Error(`coverage check failed: ${coverageError.message}`);
+    if (coverageError) throw new Error(`coverage set failed: ${coverageError.message}`);
     backfillComplete = complete === true;
-
-    const { error: kvError } = await supabase
-      .from("trust_kv")
-      .upsert(
-        { key: "backfill_complete", value: backfillComplete ? "true" : "false", updated_at: new Date().toISOString() },
-        { onConflict: "key" },
-      );
-    if (kvError) throw new Error(`backfill_complete update failed: ${kvError.message}`);
   }
 
   console.log(

@@ -309,6 +309,48 @@ revoke all on function public.backfill_coverage_complete() from public, anon, au
 grant execute on function public.backfill_coverage_complete() to service_role;
 
 -- ---------------------------------------------------------------------------
+-- set_backfill_complete_if_covered: atomically re-check coverage AND write the
+-- trust_kv.backfill_complete flag in ONE statement (finding 10 residual).
+--
+-- The prior tool did this in two round-trips: it called backfill_coverage_complete()
+-- and then, in a SEPARATE upsert, wrote backfill_complete. Coverage can change
+-- between those two statements (a new eligible token is inserted, or a canonical
+-- lock is deleted), so backfill_complete could be set to 'true' from a coverage
+-- read that was already stale by the time it was written -- a TOCTOU. Here the
+-- NOT EXISTS coverage predicate is evaluated INSIDE the same INSERT ... the value
+-- written is the value of the predicate at write time, so the flag can never be
+-- 'true' based on a coverage read that predates the write. Returns the boolean it
+-- persisted.
+-- ---------------------------------------------------------------------------
+create or replace function public.set_backfill_complete_if_covered()
+returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  covered boolean;
+begin
+  -- Evaluate coverage and persist it in one statement: the INSERT ... SELECT
+  -- computes the predicate and writes exactly that value, so no window exists
+  -- between "checked" and "set" for coverage to drift (finding 10 residual).
+  insert into public.trust_kv (key, value, updated_at)
+  select 'backfill_complete',
+         case when public.backfill_coverage_complete() then 'true' else 'false' end,
+         clock_timestamp()
+  on conflict (key) do update
+    set value = excluded.value,
+        updated_at = excluded.updated_at
+  returning value = 'true' into covered;
+
+  return covered;
+end;
+$$;
+
+revoke all on function public.set_backfill_complete_if_covered() from public, anon, authenticated;
+grant execute on function public.set_backfill_complete_if_covered() to service_role;
+
+-- ---------------------------------------------------------------------------
 -- claim_webhook_inbox: atomically lease a batch of claimable rows for the cron
 -- consumer. SKIP LOCKED prevents two runs from grabbing the same row; the lease
 -- (locked_until) makes a crashed run's rows reclaimable after it expires.
