@@ -10,6 +10,8 @@
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/hooks/useDexMarketData.test.ts && tsx --conditions=react-server --test src/components/evm/robinhoodRecovery.test.ts src/lib/api/atomicLaunchRecoveryValidation.test.ts src/lib/api/launchRecoveryValidation.test.ts src/lib/api/publicStats.test.ts src/lib/api/rateLimit.test.ts src/lib/api/robinhoodLaunchRecovery.test.ts src/lib/evm/pons/pons.test.ts src/lib/launchAvailability.test.ts src/lib/launchMetadataDraft.test.ts src/lib/launchMonitorState.test.ts src/lib/pendingLaunches.test.ts src/lib/solana/atomicLaunchBuilder.test.ts src/lib/solana/atomicLaunchValidation.test.ts src/lib/solana/atomicLookupCleanup.test.ts src/lib/solana/heliusTransactionPayload.test.ts src/lib/solana/lookupTable.test.ts src/lib/solana/pumpBuyValidation.test.ts src/lib/solana/pumpLaunchDetection.test.ts src/lib/solana/streamflow.test.ts src/lib/solana/streamflowInstruction.test.ts src/lib/solana/streamflowLockDetection.test.ts src/lib/solana/transactionValidation.test.ts src/lib/solana/walletSigningIntegrity.test.ts",
+    "e2e": "npm run build && playwright test",
+    "e2e:ci": "playwright test",
     "monitor:start": "tsx workers/solana-launch-monitor.ts",
     "test:robinhood": "hardhat --network robinhoodFork test nodejs --no-compile test/robinhood/pons.fork.test.ts"
   },
@@ -52,10 +54,11 @@
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.7",
+    "@playwright/test": "1.61.1",
     "@quadslab.io/discord-mcp": "2.1.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/bn.js": "^5.2.0",
-    "@types/node": "^20",
+    "@types/node": "^24",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19",
     "@types/ws": "^8.18.1",
@@ -67,6 +70,7 @@
   },
   "packageManager": "npm@11.13.0",
   "engines": {
-    "node": ">=20.9.0"
+    "node": ">=24.16.0 <25",
+    "npm": "11.13.0"
   }
 }
