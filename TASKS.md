@@ -9,7 +9,7 @@
 - [x] Add the Robinhood fork suite and Chromium desktop/mobile Playwright smoke tests to CI.
 - [x] Run lint, typecheck, tests, build, and desktop/mobile E2E against the stabilization diff.
 - [x] Verify the pull-request quality workflow in hosted CI.
-- [ ] Verify the full workflow, including the secret-backed Robinhood fork job, in hosted CI.
+- [x] Verify the full workflow, including the secret-backed Robinhood fork job and Vercel-hosted production deployment, in hosted CI.
 - [ ] Normalize mixed CRLF/LF endings in a separate mechanical commit.
 
 ## Repository controls
