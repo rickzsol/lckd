@@ -1,6 +1,27 @@
 # Project state
 
-Updated: 2026-07-17
+Updated: 2026-07-18
+
+## Production status (2026-07-18)
+
+Public atomic launches are LIVE on lckd.tech. Production serves `main` = `codex/launch-fix-dev` @ 099c1fa (fast-forwarded; the branch was a strict descendant). Deploys go through `vercel deploy --prod --yes` from `C:\Users\offic\Projects\trudev-launch-fix-dev` because the GitHub Actions deploy workflow fails instantly on a billing lock.
+
+The production database is the new Supabase project `lzxdqxtsceizopjqqxdb` (lckd-production, us-east-1). The old project referenced by `trudev/.env.local` no longer resolves. All seven tables exist; `launch_intents` and `launch_alt_resources` are RPC-only by design; the shared rate limiter has live buckets. `PUBLIC_LAUNCHES_ENABLED=true` is set in Vercel production and gates `src/lib/launchAvailability.ts`.
+
+Fixes shipped 2026-07-17/18 to make the atomic flow work end to end:
+- Recovery treats a zero-lamport / empty-data lookup table account as closed (RPC returns an ALT-owned tombstone briefly after close, which crashed `AddressLookupTableAccount.deserialize`).
+- All client-reachable `(read|write)BigUInt64LE` calls moved to DataView helpers in `src/lib/solana/u64.ts` (Next.js ships a browser Buffer polyfill without BigInt methods; the client validation crashed at signing time).
+- Finalized receipt verification in `src/lib/api/onchain.ts` now handles jsonParsed instruction shapes (ATA create and ALT deactivate arrive parsed with no accounts array; the lookup-table address looked like an unused planted account) and accepts the system-program default `payer` on current Streamflow token locks. Before this, every finalized atomic launch was rejected at `POST /api/v1/token/record` with a 422.
+- Token pages resolve by mint without the uuid-cast query error that 404ed every `/token/<mint>` URL.
+- Token page layout: chart + stats + developer profile in the wide column, swap + lock record in the sidebar.
+- Public launch entry points are live links (navbar, hero, closing CTA); `/docs` copy rewritten for the atomic flow.
+- The official LCKD token row was rebuilt from on-chain receipts into the new database (mint `7UTubJ3W6JWwLUj82B9LgHFDmc8wFWtSNLis6u8epump`, launch tx `38wGn9Pf…`, lock tx `4WxjRtgZ…`, 10.2M locked until 2026-07-27 06:00 UTC) and shows on /feed and /token/<mint>.
+
+First atomic launch to clear the full pipeline: mint `Aowscp3jNqDEutohPUNYdCNzobwi3wXnoUi5xqzDG2FH` (TEST) at 2026-07-18 00:20:20 UTC, created + bought + locked in one transaction from wallet `7vy1LbBLqJ8rBHqXN3gyhoNG6Hgf9JMPwPco5uDarDgY`. Its directory record still needs the owner to complete the verify step in the wizard.
+
+Quality gates on the deployed commit: `npm test` 121 passed, typecheck and lint clean, desktop + mobile Playwright screenshots verified.
+
+Known follow-ups: `tokenToDisplay` does not map `github_repo`, so the Submitted repository card never renders; the local `trudev` worktree holds an uncommitted two-step revert on a stale local main and must be reconciled or discarded; the GitHub Actions billing lock blocks CI deploys; several files carry mixed CRLF/LF endings producing noisy diffs.
 
 ## Planning
 
@@ -16,7 +37,7 @@ The official launch monitor and token page are deployed to production. The broad
 
 ## Verified behavior
 
-- Launch uses two explicit wallet approvals: pump.fun create and buy, then Streamflow lock.
+- Launch uses two explicit wallet approvals: the first prepares the address lookup table, the second executes pump.fun create, initial buy, Streamflow lock, and lookup-table deactivation in one atomic transaction.
 - The Streamflow v13 instruction is a cliff-based token lock. Unlockable amount is zero before the selected timestamp and the full locked amount at that timestamp.
 - The lock is non-cancelable, non-transferable, cannot be topped up, cannot be paused, cannot change rate, and does not auto-withdraw.
 - Browser construction, pre-sign instruction decoding, finalized chain verification, and persisted receipt checks enforce the same lock invariants.

@@ -1,5 +1,5 @@
 import { type Token, TrustTier } from "@/types/index";
-import type { DisplayToken } from "@/types/display";
+import type { DisplayRepo, DisplayToken } from "@/types/display";
 import type { DexMarketData } from "./dexscreener";
 import { hasSupabaseConfig } from "./supabase";
 import { isValidSolanaAddress } from "./api/validation";
@@ -23,7 +23,50 @@ function formatTokenAmount(raw: string): string {
   return tokens.toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
-export function tokenToDisplay(t: Token, market?: DexMarketData | null): DisplayToken {
+function formatRelativeAge(iso: string): string {
+  const elapsedMs = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return "0m";
+  const elapsedMinutes = Math.floor(elapsedMs / 60_000);
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours}h`;
+  return `${Math.floor(elapsedHours / 24)}d`;
+}
+
+async function loadRepoCard(t: Token): Promise<DisplayRepo | undefined> {
+  const [owner, name, extra] = (t.github_repo ?? "").split("/");
+  // Launch validation binds the repo owner to the submitting GitHub account,
+  // so a mismatch means stale data and the card should stay hidden.
+  if (!owner || !name || extra !== undefined || owner !== t.github_username) {
+    return undefined;
+  }
+  try {
+    const { getGitHubRepoDetails, getCommitCountSinceLaunch } = await import("./github/api");
+    const pat = process.env.GITHUB_PAT;
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1_000).toISOString();
+    const [details, commits30d] = await Promise.all([
+      getGitHubRepoDetails(owner, name, pat),
+      getCommitCountSinceLaunch(owner, name, since, pat),
+    ]);
+    return {
+      name,
+      lang: details.language ?? "n/a",
+      stars: details.stars,
+      forks: details.forks,
+      lastPush: formatRelativeAge(details.updated_at),
+      commits30d,
+    };
+  } catch (error) {
+    console.error("[loadRepoCard] Error:", error instanceof Error ? error.message : error);
+    return undefined;
+  }
+}
+
+export function tokenToDisplay(
+  t: Token,
+  market?: DexMarketData | null,
+  repo?: DisplayRepo,
+): DisplayToken {
   const lockStartDate = new Date(t.lock_verified_at ?? t.created_at);
   const lockEndDate = new Date(t.lock_unlock_at ?? "");
   const isUnlocked = Number.isFinite(lockEndDate.getTime()) && Date.now() >= lockEndDate.getTime();
@@ -62,6 +105,7 @@ export function tokenToDisplay(t: Token, market?: DexMarketData | null): Display
     liquidity: market?.liquidity ?? undefined,
     live: t.live_url ?? undefined,
     mintAddress: t.mint_address,
+    repo,
   };
 }
 
@@ -127,10 +171,13 @@ export async function getTokenByIdOrMint(
 
       if (!error && data) {
         const token = data as Token;
-        const market = await import("./dexscreener").then((module) =>
-          module.fetchMarketData(token.mint_address),
-        );
-        return tokenToDisplay(token, market);
+        const [market, repo] = await Promise.all([
+          import("./dexscreener").then((module) =>
+            module.fetchMarketData(token.mint_address),
+          ),
+          loadRepoCard(token),
+        ]);
+        return tokenToDisplay(token, market, repo);
       }
     } catch (error) {
       console.error("[getTokenByIdOrMint] Error:", error);

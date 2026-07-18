@@ -1,5 +1,25 @@
 # Tasks
 
+## Now
+
+- [ ] Complete the TEST token verify step in the wizard so `Aowscp3jNqDEutohPUNYdCNzobwi3wXnoUi5xqzDG2FH` records to the directory (owner action).
+- [ ] Map `github_repo` into `tokenToDisplay` so the Submitted repository card renders on token pages.
+- [ ] Resolve the GitHub Actions billing lock so CI deploys work again (owner action); until then deploy via `vercel deploy --prod` from the launch-fix-dev worktree.
+- [ ] Reconcile or discard the uncommitted two-step revert sitting in the `trudev` worktree on stale local main.
+- [ ] Watch the first public launches in Vercel runtime logs; the atomic pipeline has exactly one full success so far.
+- [ ] Normalize line endings repo-wide (mixed CRLF/LF causes full-file diffs).
+
+## Completed 2026-07-17/18 (atomic launch go-live)
+
+- [x] Fix ALT cleanup: accept Phantom guard/compute-budget instructions semantically and treat zero-lamport lookup-table tombstones as closed.
+- [x] Replace client-reachable BigInt Buffer methods with DataView helpers so browser bundles stop crashing at signing.
+- [x] Fix finalized atomic receipt verification for jsonParsed instruction shapes and the Streamflow default payer; first launch recorded end to end.
+- [x] Enable public launches: env flag honored in production, live launch buttons in navbar, hero, and closing CTA.
+- [x] Rebuild the official LCKD token record in the new Supabase project from on-chain receipts; feed and token page live.
+- [x] Fix `/token/<mint>` 404 (uuid cast error) and rebalance the token page layout; verified desktop + mobile via Playwright.
+- [x] Rewrite `/docs` for the atomic create-and-lock flow.
+- [x] Fast-forward `main` to the deployed branch so pushes cannot roll back production.
+
 ## Planned: trust platform (full spec in TRUST_FEATURES_PLAN.md)
 
 - [ ] Phase 1: build the ricomaps intel API in cabal-visualizer (shaper, /api/v1/intel routes, partner key script, spec doc) and add the LCKD client, proxy route, and token page holder intelligence section.
