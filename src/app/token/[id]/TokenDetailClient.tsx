@@ -77,9 +77,33 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
         not audits. Verify the mint and any lock contract independently.
       </div>
 
-      {/* Primary trading area: Chart + (Repo + Swap) */}
-      <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <DexScreenerChart mintAddress={t.mintAddress} />
+      {/* Primary area: (Chart + Stats) left, (Repo + Swap + Lock + Dev) sidebar */}
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="flex min-w-0 flex-col gap-4 lg:gap-5">
+          <DexScreenerChart mintAddress={t.mintAddress} />
+          <div className="stats-strip">
+            {[
+              { l: "MCap", v: t.mcap, isLocked: false },
+              { l: "24h Vol", v: t.vol, isLocked: false },
+              { l: "Liquidity", v: t.liquidity ?? "--", isLocked: false },
+              { l: "Recorded Lock", v: hasLockRecord ? t.lock.amount : "Unverified", isLocked: hasLockRecord },
+              { l: "Recorded Duration", v: hasLockRecord ? t.lock.duration : "Unverified", isLocked: hasLockRecord },
+            ].map((s) => (
+              <div key={s.l}>
+                <div className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3">
+                  {s.l}
+                </div>
+                <div
+                  className={`font-mono text-[clamp(12px,2.5vw,15px)] font-bold tabular-nums ${
+                    s.isLocked ? "text-accent-400" : "text-text-1"
+                  }`}
+                >
+                  {s.v}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
         <div className="flex flex-col gap-4 lg:gap-5">
           {/* Linked Repo, compact */}
           {t.repo && (
@@ -104,36 +128,8 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
             </div>
           )}
           <JupiterSwap mintAddress={t.mintAddress} ticker={t.ticker} />
-        </div>
-      </div>
 
-      {/* Stats strip */}
-      <div className="stats-strip mb-5">
-        {[
-          { l: "MCap", v: t.mcap, isLocked: false },
-          { l: "24h Vol", v: t.vol, isLocked: false },
-          { l: "Liquidity", v: t.liquidity ?? "--", isLocked: false },
-          { l: "Recorded Lock", v: hasLockRecord ? t.lock.amount : "Unverified", isLocked: hasLockRecord },
-          { l: "Recorded Duration", v: hasLockRecord ? t.lock.duration : "Unverified", isLocked: hasLockRecord },
-        ].map((s) => (
-          <div key={s.l}>
-            <div className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3">
-              {s.l}
-            </div>
-            <div
-              className={`font-mono text-[clamp(12px,2.5vw,15px)] font-bold tabular-nums ${
-                s.isLocked ? "text-accent-400" : "text-text-1"
-              }`}
-            >
-              {s.v}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Detail grid */}
-      <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 lg:gap-5">
-        {/* Lock card */}
+          {/* Lock card */}
         <div className={`rounded-card border p-5 ${hasLockRecord ? "border-accent/20 bg-accent-dim" : "border-warn/25 bg-[rgba(224,167,62,0.04)]"}`}>
           <div className="mb-3.5 flex items-center justify-between font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
             <span>Token lock record</span>
@@ -202,8 +198,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
           </div>
         </div>
 
-        {/* Dev profile + product link */}
-        <div className="flex flex-col gap-4 lg:gap-5">
+          {/* Dev profile + product link */}
           {t.dev.github && (
             <div className="rounded-card border border-line-default bg-surface p-5">
               <div className="mb-3.5 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
