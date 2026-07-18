@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -13,10 +13,34 @@ const NAV_LINKS = [
   { href: "/api-docs", label: "API", hideOnMobile: true },
 ] as const;
 
+const MORE_LINKS = [
+  { href: "/burn", label: "Burn ledger" },
+  { href: "/match", label: "Partner launches" },
+  { href: "/risk", label: "Risk" },
+] as const;
+
 export default function Navbar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isMoreOpen) return;
+    const handlePointer = (event: MouseEvent) => {
+      if (!moreRef.current?.contains(event.target as Node)) setIsMoreOpen(false);
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsMoreOpen(false);
+    };
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [isMoreOpen]);
 
   useEffect(() => {
     if (isMobileOpen) {
@@ -55,6 +79,51 @@ export default function Navbar() {
                 </Link>
               );
             })}
+            <div ref={moreRef} className="relative hidden md:block">
+              <button
+                type="button"
+                onClick={() => setIsMoreOpen(!isMoreOpen)}
+                aria-expanded={isMoreOpen}
+                aria-haspopup="true"
+                className={`focus-ring inline-flex min-h-11 items-center gap-1 font-sans text-[15px] font-medium transition-colors hover:text-text-1 ${
+                  MORE_LINKS.some((link) => pathname.startsWith(link.href))
+                    ? "text-text-1"
+                    : "text-[#B8C2BC]"
+                }`}
+              >
+                More
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 10 10"
+                  fill="none"
+                  className={`transition-transform duration-180 ${isMoreOpen ? "rotate-180" : ""}`}
+                  aria-hidden="true"
+                >
+                  <path d="M2 3.5 5 6.5 8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              {isMoreOpen && (
+                <div className="absolute right-0 top-[calc(100%+10px)] w-48 rounded-[14px] border border-white/6 bg-[rgba(9,11,10,0.96)] p-1.5 backdrop-blur-[14px]">
+                  {MORE_LINKS.map((link) => {
+                    const isActive = pathname === link.href || pathname.startsWith(link.href + "/");
+                    return (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        onClick={() => setIsMoreOpen(false)}
+                        aria-current={isActive ? "page" : undefined}
+                        className={`focus-ring flex min-h-10 items-center rounded-[8px] px-3 font-sans text-[14px] font-medium transition-colors hover:bg-white/[0.05] hover:text-text-1 ${
+                          isActive ? "text-text-1" : "text-[#B8C2BC]"
+                        }`}
+                      >
+                        {link.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             <a
               href="https://x.com/launchlckd"
               target="_blank"
@@ -153,6 +222,22 @@ export default function Navbar() {
               launch token
             </Link>
             {NAV_LINKS.map((link) => {
+              const isActive = pathname === link.href || pathname.startsWith(link.href + "/");
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setIsMobileOpen(false)}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`focus-ring flex min-h-11 items-center rounded-md px-2 font-sans text-[15px] font-medium transition-colors hover:text-text-1 ${
+                    isActive ? "text-text-1" : "text-[#B8C2BC]"
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
+            {MORE_LINKS.map((link) => {
               const isActive = pathname === link.href || pathname.startsWith(link.href + "/");
               return (
                 <Link
