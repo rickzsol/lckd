@@ -176,21 +176,86 @@ export interface ExpiredLockInput {
 
 /**
  * The result of driving an expired-lock close, used by the cron to decide whether
- * the durable `sas_close_pending` marker can be cleared:
- *   * "enqueued"           -> a close-only job is durably queued; clear the marker.
- *   * "nothing_to_revoke"  -> there is provably no live attestation to close (and
- *                             SAS is disabled/unconfigured is folded in here too);
- *                             clear the marker, the revocation is a no-op.
- *   * "retry"              -> a transient failure (or an in-flight issuance whose
- *                             attestation row does not exist yet); KEEP the marker
- *                             so the next cron pass re-drives the close.
+ * the durable revocation marker can be advanced (serviced_rev := requested_rev):
+ *   * "enqueued"           -> a close-only job is durably queued; the request is
+ *                             serviced, advance the marker.
+ *   * "nothing_to_revoke"  -> there is provably no live attestation AND no in-flight
+ *                             issuance that could create a replacement; the request
+ *                             is a no-op, advance the marker.
+ *   * "retry"              -> the marker MUST stay pending: SAS is disabled (a
+ *                             previously issued attestation may still be live and can
+ *                             only be revoked once SAS is re-enabled), a transient
+ *                             failure occurred, OR an issuance/reissue is in flight
+ *                             whose attestation row does not exist yet (or was
+ *                             transiently absent) and would leave an unclosed
+ *                             replacement. The next cron pass re-drives.
  */
 export type ExpiredCloseOutcome = "enqueued" | "nothing_to_revoke" | "retry";
 
+/** Live state observed while driving an expired-lock close, fed to the pure decision. */
+export interface ExpiredCloseState {
+  /** SAS_ENABLED: false means a live attestation may exist that we cannot revoke yet. */
+  sasEnabled: boolean;
+  /** null on a transient read/config failure (retry); undefined when not yet read. */
+  hasOpenIssuanceJob?: boolean | null;
+  /** null on a transient read failure; a string/"" when read; undefined when not read. */
+  currentEvidenceHash?: string | null;
+  /** The close trigger's reason when it declined to enqueue, if it was called. */
+  closeDeclinedReason?: "disabled" | "unconfigured" | "no_live_attestation";
+  /** True when the close trigger durably enqueued a close job. */
+  closeEnqueued?: boolean;
+}
+
+/**
+ * Pure marker decision for an expired-lock close. Encodes the three unsafe-clear
+ * fixes so they are unit-testable without a database:
+ *   1. SAS disabled -> retry (never clear; a live attestation may still exist).
+ *   2. An in-flight issue/reissue job -> retry (a replacement may be created that a
+ *      close driven now would miss); also retry when the open-job read failed.
+ *   3. Terminal outcomes (close enqueued, or provably no live attestation and no
+ *      open job) -> advance the marker; every other decline retries.
+ */
+export function decideCloseOutcome(state: ExpiredCloseState): ExpiredCloseOutcome {
+  // Item 1: SAS disabled never clears the marker.
+  if (!state.sasEnabled) return "retry";
+  // Item 2: an in-flight reissue (or a failed open-job read) must retry so the
+  // replacement attestation is closed once the reissue settles.
+  if (state.hasOpenIssuanceJob === null) return "retry";
+  if (state.hasOpenIssuanceJob === true) return "retry";
+  // A transient live-attestation read failure retries rather than clearing.
+  if (state.currentEvidenceHash === null) return "retry";
+  // Nothing open and nothing live: provably nothing to revoke.
+  if (!state.currentEvidenceHash) return "nothing_to_revoke";
+  // A live attestation exists and nothing is in flight: the close was attempted.
+  if (state.closeEnqueued) return "enqueued";
+  // The close declined after we proved nothing is in flight: only a row that
+  // vanished with no replacement is a genuine no-op; disabled/unconfigured (config
+  // changed under us) retries rather than stranding a possibly-live attestation.
+  return state.closeDeclinedReason === "no_live_attestation" ? "nothing_to_revoke" : "retry";
+}
+
+/**
+ * Whether the cron may advance the serviced rev, mirroring the SQL guard in
+ * clear_expired_close_marker. The marker is monotonic: the cron records the rev it
+ * OBSERVED at fetch time, and may only advance serviced_rev to it when no newer
+ * request has bumped requested_rev since. A newer request (higher requested_rev)
+ * leaves the token pending so its replacement attestation is closed on the next pass;
+ * a boolean marker could not represent that newer request and would erase it.
+ */
+export function shouldAdvanceServicedRev(
+  observedRequestedRev: number,
+  currentRequestedRev: number,
+  currentServicedRev: number,
+): boolean {
+  return currentRequestedRev === observedRequestedRev && currentServicedRev < observedRequestedRev;
+}
+
 export async function triggerExpiredLockClose(input: ExpiredLockInput): Promise<ExpiredCloseOutcome> {
-  // SAS disabled: there is nothing this deployment can revoke on chain, so the
-  // marker is safe to clear rather than accumulate forever.
-  if (!isSasEnabled()) return "nothing_to_revoke";
+  // SAS disabled does NOT clear the marker: a previously issued on-chain attestation
+  // may still be live, and this deployment cannot revoke it while disabled. Leave the
+  // request pending so revocation happens once SAS is re-enabled (or an operator runs
+  // the close). Clearing here would silently strand a live attestation open forever.
+  if (!isSasEnabled()) return "retry";
   try {
     const client = getServerClient();
     const { data, error } = await client
@@ -211,7 +276,20 @@ export async function triggerExpiredLockClose(input: ExpiredLockInput): Promise<
       lock_unlock_at: string | null;
     };
 
-    // Only close a live attestation; if there is none there is nothing to revoke.
+    // An in-flight issue/reissue is decisive regardless of what the attestation
+    // read shows. Between our read and the close enqueue, a reissue can transiently
+    // present NO live attestation (the close half ran, the create half has not) and
+    // then create a replacement that our close would never cover. So whenever an
+    // open outbox job exists for this token, retry and let the cron re-drive after
+    // the reissue settles, closing the replacement then. Only when nothing is open
+    // do we trust the attestation read to decide enqueue-vs-noop.
+    const hasOpenJob = await hasOpenIssuanceJob(client, input.tokenId);
+    if (hasOpenJob === null || hasOpenJob) {
+      return decideCloseOutcome({ sasEnabled: true, hasOpenIssuanceJob: hasOpenJob });
+    }
+
+    // No issuance in flight: the live attestation read is now stable. Only close a
+    // live attestation; if there is none there is provably nothing to revoke.
     const { data: liveRow, error: liveErr } = await client
       .from("attestations")
       .select("evidence_hash")
@@ -221,24 +299,17 @@ export async function triggerExpiredLockClose(input: ExpiredLockInput): Promise<
       .limit(1)
       .maybeSingle();
     // A transient read failure must retry, not clear the marker.
-    if (liveErr) return "retry";
-    const currentEvidenceHash = (liveRow as { evidence_hash: string } | null)?.evidence_hash ?? null;
+    if (liveErr) {
+      return decideCloseOutcome({ sasEnabled: true, hasOpenIssuanceJob: false, currentEvidenceHash: null });
+    }
+    const currentEvidenceHash = (liveRow as { evidence_hash: string } | null)?.evidence_hash ?? "";
     if (!currentEvidenceHash) {
-      // No live attestation yet. If an issuance is still IN FLIGHT (an open outbox
-      // issue/reissue job for this token), the attestation row simply does not
-      // exist yet: keep the marker and retry once issuance lands, so an in-flight
-      // issuance is never permanently missed. Only when nothing is open AND nothing
-      // is live is there provably nothing to revoke.
-      const { data: openJob, error: openErr } = await client
-        .from("attestation_outbox")
-        .select("id")
-        .eq("token_id", input.tokenId)
-        .in("operation", ["issue", "reissue"])
-        .in("status", ["pending", "leased", "broadcast"])
-        .limit(1)
-        .maybeSingle();
-      if (openErr) return "retry";
-      return openJob ? "retry" : "nothing_to_revoke";
+      // Nothing live and nothing open: provably nothing to revoke.
+      return decideCloseOutcome({
+        sasEnabled: true,
+        hasOpenIssuanceJob: false,
+        currentEvidenceHash: "",
+      });
     }
 
     // The facts only satisfy the outbox payload constraints; the worker's close
@@ -269,15 +340,40 @@ export async function triggerExpiredLockClose(input: ExpiredLockInput): Promise<
       github: row.github_username ?? "",
       currentEvidenceHash,
     });
-    if (outcome.enqueued) return "enqueued";
-    // The close trigger declined: unconfigured/disabled is a genuine no-op, but a
-    // no_live_attestation here means the row disappeared between our read and the
-    // enqueue, so nothing remains to revoke.
-    return "nothing_to_revoke";
+    return decideCloseOutcome({
+      sasEnabled: true,
+      hasOpenIssuanceJob: false,
+      currentEvidenceHash,
+      closeEnqueued: outcome.enqueued,
+      closeDeclinedReason: outcome.enqueued ? undefined : outcome.reason,
+    });
   } catch (err) {
     // A throw is transient (enqueue RPC failure, etc.): retry on the next pass
     // rather than dropping the revocation.
     console.error("[sas] expired-lock close trigger failed:", err);
     return "retry";
   }
+}
+
+/**
+ * Whether an issue/reissue outbox job for this token is still open (pending,
+ * leased, or broadcast). Returns null on a transient read failure so the caller
+ * retries rather than treating an error as "no open job". An open job means a
+ * replacement attestation may still be created, so any close driven now could miss
+ * it: the caller must retry until the issuance settles.
+ */
+async function hasOpenIssuanceJob(
+  client: ReturnType<typeof getServerClient>,
+  tokenId: string,
+): Promise<boolean | null> {
+  const { data, error } = await client
+    .from("attestation_outbox")
+    .select("id")
+    .eq("token_id", tokenId)
+    .in("operation", ["issue", "reissue"])
+    .in("status", ["pending", "leased", "broadcast"])
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return !!data;
 }

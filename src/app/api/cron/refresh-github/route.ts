@@ -45,23 +45,23 @@ export async function GET(req: Request) {
   }
   const githubToken = process.env.GITHUB_PAT;
   const now = new Date();
-  // Downgrade AND set the durable revocation marker in the SAME statement, so the
-  // on-chain close can never be lost to a transient failure or an in-flight
-  // issuance: the marker persists until the close is durably enqueued (or there is
-  // provably nothing to revoke). A best-effort close after the commit swallowed
-  // failures and permanently missed revocation.
-  const { data: downgradedTokens, error: downgradeError } = await supabase
-    .from("tokens")
-    .update({ trust_tier: 1, sas_close_pending: true })
-    .not("lock_verified_at", "is", null)
-    .lte("lock_unlock_at", now.toISOString())
-    .gt("trust_tier", 1)
-    .select("id");
+  // Downgrade AND advance the durable revocation request nonce in the SAME
+  // statement, so the on-chain close can never be lost to a transient failure or an
+  // in-flight issuance: the marker (requested_rev > serviced_rev) persists until the
+  // close is durably enqueued (or there is provably nothing to revoke). A monotonic
+  // rev, not a boolean, so a second expiry arriving while an earlier request is still
+  // in flight bumps the rev and forces another close pass rather than being erased by
+  // a stale clear. A best-effort close after the commit swallowed failures and
+  // permanently missed revocation.
+  const { data: downgradedTokens, error: downgradeError } = await supabase.rpc(
+    "downgrade_expired_locks",
+    { p_now: now.toISOString() },
+  );
   if (downgradeError) {
     console.error("[cron] Expired lock downgrade failed:", downgradeError.message);
     return NextResponse.json({ error: "Failed to downgrade expired locks" }, { status: 500 });
   }
-  const expiredDowngrades = downgradedTokens?.length ?? 0;
+  const expiredDowngrades = (downgradedTokens as Array<{ id: string }> | null)?.length ?? 0;
 
   // Drive the durable close for EVERY token still marked for revocation, not just
   // this pass's downgrades: a prior pass may have set the marker and failed to
@@ -126,42 +126,46 @@ export async function GET(req: Request) {
 }
 
 /**
- * Drive the durable expired-lock close for every token still carrying the
- * sas_close_pending marker, clearing the marker only on a terminal outcome so a
- * transient failure or an in-flight issuance is retried on the next cron pass
- * rather than lost. Bounded per run so it never scans the whole table at once.
- * Returns the number of markers cleared this pass.
+ * Drive the durable expired-lock close for every token whose revocation request is
+ * still pending (requested_rev > serviced_rev), advancing the serviced rev only on a
+ * terminal outcome so a transient failure or an in-flight issuance is retried on the
+ * next cron pass rather than lost. Bounded per run so it never scans the whole table
+ * at once. Returns the number of markers advanced this pass.
+ *
+ * The observed requested_rev is captured BEFORE driving and passed to the guarded
+ * clear: if a newer downgrade bumps requested_rev in the meantime, the clear no-ops
+ * and the token stays pending, so a revocation request that arrived during one in
+ * flight is never erased.
  */
 async function driveExpiredCloseMarkers(
   supabase: ReturnType<typeof getServerClient>,
 ): Promise<number> {
   const MARKER_BATCH = 200;
-  const { data, error } = await supabase
-    .from("tokens")
-    .select("id")
-    .eq("sas_close_pending", true)
-    .limit(MARKER_BATCH);
+  const { data, error } = await supabase.rpc("list_pending_close_markers", {
+    p_limit: MARKER_BATCH,
+  });
   if (error) {
     console.error("[cron] Expired-close marker fetch failed:", error.message);
     return 0;
   }
-  const marked = (data as Array<{ id: string }> | null) ?? [];
+  const marked = (data as Array<{ id: string; requested_rev: number }> | null) ?? [];
   let cleared = 0;
   for (const row of marked) {
     const outcome = await triggerExpiredLockClose({ tokenId: row.id });
     if (outcome === "retry") continue;
-    // Terminal: the close is durably enqueued or there is nothing to revoke. Clear
-    // the marker, guarded on it still being set so a concurrent set is not lost.
-    const { error: clearError } = await supabase
-      .from("tokens")
-      .update({ sas_close_pending: false })
-      .eq("id", row.id)
-      .eq("sas_close_pending", true);
+    // Terminal: the close is durably enqueued or there is nothing to revoke. Advance
+    // the serviced rev to the rev we observed at fetch time. The RPC guard rejects the
+    // advance if a newer downgrade bumped requested_rev past it, leaving the token
+    // pending so the replacement is closed next pass.
+    const { data: advanced, error: clearError } = await supabase.rpc(
+      "clear_expired_close_marker",
+      { p_token_id: row.id, p_serviced_rev: row.requested_rev },
+    );
     if (clearError) {
       console.error(`[cron] Failed to clear revocation marker for ${row.id}:`, clearError.message);
       continue;
     }
-    cleared++;
+    if (advanced === true) cleared++;
   }
   return cleared;
 }

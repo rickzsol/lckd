@@ -27,19 +27,49 @@ begin;
 alter table public.tokens
   add column if not exists sas_supply_basis text;
 
--- Durable revocation marker. Set atomically with an expired-lock downgrade so the
--- on-chain close is never lost to a transient enqueue failure OR an in-flight
--- issuance whose attestation row does not exist yet: the cron re-drives every
--- token still carrying the marker until the close is durably enqueued (or there is
--- provably nothing to revoke), then clears it. Without this, a downgrade committed
--- before a best-effort close swallowed the failure and permanently missed
+-- Durable revocation marker, modelled as a MONOTONIC pair rather than a boolean.
+-- Each expired-lock downgrade advances sas_close_requested_rev (a request nonce);
+-- the cron records the rev it actually serviced in sas_close_serviced_rev only on a
+-- terminal outcome (close durably enqueued, or provably nothing to revoke). A token
+-- is pending revocation exactly when requested_rev > serviced_rev.
+--
+-- A boolean could not distinguish a second revocation request arriving while the
+-- first was still in flight: clearing after servicing the first would erase the
+-- newer request. With a monotonic rev, a later downgrade bumps requested_rev past
+-- the serviced_rev the cron captured, so the marker stays pending and the
+-- replacement attestation gets closed on the next pass. The cron clears by setting
+-- serviced_rev to the rev it observed, guarded so a newer bump is never lost.
+--
+-- Set atomically with an expired-lock downgrade so the on-chain close is never lost
+-- to a transient enqueue failure OR an in-flight issuance whose attestation row does
+-- not exist yet: the cron re-drives every pending token until the close is durably
+-- enqueued (or there is provably nothing to revoke). Without this, a downgrade
+-- committed before a best-effort close swallowed the failure and permanently missed
 -- revocation.
 alter table public.tokens
-  add column if not exists sas_close_pending boolean not null default false;
+  add column if not exists sas_close_requested_rev bigint not null default 0;
+
+alter table public.tokens
+  add column if not exists sas_close_serviced_rev bigint not null default 0;
+
+-- Migrate any pre-existing boolean marker forward: a token that was mid-revocation
+-- under the old schema becomes requested_rev = 1, serviced_rev = 0 (still pending).
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tokens' and column_name = 'sas_close_pending'
+  ) then
+    update public.tokens
+      set sas_close_requested_rev = 1
+      where sas_close_pending and sas_close_requested_rev = 0;
+    alter table public.tokens drop column sas_close_pending;
+  end if;
+end $$;
 
 create index if not exists tokens_sas_close_pending_idx
   on public.tokens (id)
-  where sas_close_pending;
+  where sas_close_requested_rev > sas_close_serviced_rev;
 
 create table if not exists public.attestations (
   id uuid primary key default gen_random_uuid(),
@@ -1022,5 +1052,72 @@ revoke all on function public.backoff_attestation_broadcast(uuid, uuid, integer)
 grant execute on function public.backoff_attestation_broadcast(uuid, uuid, integer) to service_role;
 revoke all on function public.expire_attestations(integer) from public, anon, authenticated;
 grant execute on function public.expire_attestations(integer) to service_role;
+
+-- Downgrade every expired lock AND bump its revocation request nonce in one
+-- statement, returning the affected token ids. requested_rev advances every time a
+-- lock crosses into expiry, so a second expiry (or a re-expiry after a reissue)
+-- while an earlier request is still being serviced produces a STRICTLY newer rev
+-- that a stale clear cannot erase. A plain boolean set could not express "a newer
+-- request arrived", which is the whole point of the monotonic marker.
+create or replace function public.downgrade_expired_locks(p_now timestamptz)
+returns setof uuid
+language sql
+as $$
+  update public.tokens
+    set trust_tier = 1,
+        sas_close_requested_rev = sas_close_requested_rev + 1
+    where lock_verified_at is not null
+      and lock_unlock_at <= p_now
+      and trust_tier > 1
+  returning id;
+$$;
+
+-- Pending revocation batch: tokens whose request nonce outruns what has been
+-- serviced (requested_rev > serviced_rev). PostgREST cannot compare two columns in a
+-- filter, so this bounded read lives in SQL. Returns the observed requested_rev so
+-- the caller can guard the later clear against a newer request.
+create or replace function public.list_pending_close_markers(p_limit integer default 200)
+returns table (id uuid, requested_rev bigint)
+language sql
+stable
+as $$
+  select id, sas_close_requested_rev
+    from public.tokens
+    where sas_close_requested_rev > sas_close_serviced_rev
+    order by id
+    limit p_limit;
+$$;
+
+-- Advance the serviced rev to the value the cron actually serviced, but ONLY when
+-- no newer request arrived in the meantime. The guard requested_rev = p_serviced_rev
+-- means a downgrade that bumped requested_rev past what the cron observed leaves the
+-- token pending (requested_rev > serviced_rev) so its replacement attestation gets
+-- closed on the next pass. Returns true when the marker was advanced.
+create or replace function public.clear_expired_close_marker(
+  p_token_id uuid,
+  p_serviced_rev bigint
+)
+returns boolean
+language plpgsql
+as $$
+declare
+  v_updated integer;
+begin
+  update public.tokens
+    set sas_close_serviced_rev = p_serviced_rev
+    where id = p_token_id
+      and sas_close_requested_rev = p_serviced_rev
+      and sas_close_serviced_rev < p_serviced_rev;
+  get diagnostics v_updated = row_count;
+  return v_updated > 0;
+end;
+$$;
+
+revoke all on function public.downgrade_expired_locks(timestamptz) from public, anon, authenticated;
+grant execute on function public.downgrade_expired_locks(timestamptz) to service_role;
+revoke all on function public.list_pending_close_markers(integer) from public, anon, authenticated;
+grant execute on function public.list_pending_close_markers(integer) to service_role;
+revoke all on function public.clear_expired_close_marker(uuid, bigint) from public, anon, authenticated;
+grant execute on function public.clear_expired_close_marker(uuid, bigint) to service_role;
 
 commit;
