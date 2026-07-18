@@ -77,7 +77,7 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
         not audits. Verify the mint and any lock contract independently.
       </div>
 
-      {/* Primary area: (Chart + Stats) left, (Repo + Swap + Lock + Dev) sidebar */}
+      {/* Primary area: (Chart + Stats + Dev) left, (Repo + Swap + Lock) sidebar */}
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="flex min-w-0 flex-col gap-4 lg:gap-5">
           <DexScreenerChart mintAddress={t.mintAddress} />
@@ -103,6 +103,72 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
               </div>
             ))}
           </div>
+
+          {/* Dev profile + product link */}
+          {t.dev.github && (
+            <div className="rounded-card border border-line-default bg-surface p-5">
+              <div className="mb-3.5 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
+                Developer Profile
+              </div>
+              <div className="flex items-center gap-3">
+                <Image
+                  src={`https://github.com/${t.dev.github}.png?size=80`}
+                  alt=""
+                  width={40}
+                  height={40}
+                  unoptimized
+                  className="h-10 w-10 shrink-0 rounded-full border border-accent/30 bg-accent-dim object-cover"
+                />
+                <div>
+                  <a
+                    href={`https://github.com/${t.dev.github}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-sm font-bold text-text-1 hover:text-accent-400"
+                  >
+                    @{t.dev.github}
+                  </a>
+                  <div className="font-mono text-[10px] text-text-3 tabular-nums">
+                    {t.dev.repos !== undefined && <>{t.dev.repos} repos &middot; </>}
+                    {t.dev.commits !== undefined && (
+                      <>{t.dev.commits.toLocaleString()} commits &middot; </>
+                    )}
+                    {t.dev.accountAge}
+                  </div>
+                </div>
+              </div>
+
+              <ContributionGraph username={t.dev.github} />
+
+              <p className="mt-4 border-t border-line pt-3.5 font-mono text-[11px] leading-[1.6] text-text-3">
+                GitHub handle submitted with this launch. Review the public account and repository
+                history directly on GitHub.
+              </p>
+            </div>
+          )}
+
+          {t.live && (
+            <div className="rounded-card border border-line-default bg-surface p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="mb-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-accent-400">
+                    Submitted product link
+                  </div>
+                  <a
+                    href={
+                      t.live.startsWith("http") ? t.live : `https://${t.live}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-[13px] text-text-1 hover:text-accent-400"
+                  >
+                    {t.live}
+                  </a>
+                </div>
+                <span className="pulse-dot" />
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex flex-col gap-4 lg:gap-5">
           {/* Linked Repo, compact */}
@@ -197,72 +263,6 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
             )}
           </div>
         </div>
-
-          {/* Dev profile + product link */}
-          {t.dev.github && (
-            <div className="rounded-card border border-line-default bg-surface p-5">
-              <div className="mb-3.5 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
-                Developer Profile
-              </div>
-              <div className="flex items-center gap-3">
-                <Image
-                  src={`https://github.com/${t.dev.github}.png?size=80`}
-                  alt=""
-                  width={40}
-                  height={40}
-                  unoptimized
-                  className="h-10 w-10 shrink-0 rounded-full border border-accent/30 bg-accent-dim object-cover"
-                />
-                <div>
-                  <a
-                    href={`https://github.com/${t.dev.github}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-sm font-bold text-text-1 hover:text-accent-400"
-                  >
-                    @{t.dev.github}
-                  </a>
-                  <div className="font-mono text-[10px] text-text-3 tabular-nums">
-                    {t.dev.repos !== undefined && <>{t.dev.repos} repos &middot; </>}
-                    {t.dev.commits !== undefined && (
-                      <>{t.dev.commits.toLocaleString()} commits &middot; </>
-                    )}
-                    {t.dev.accountAge}
-                  </div>
-                </div>
-              </div>
-
-              <ContributionGraph username={t.dev.github} />
-
-              <p className="mt-4 border-t border-line pt-3.5 font-mono text-[11px] leading-[1.6] text-text-3">
-                GitHub handle submitted with this launch. Review the public account and repository
-                history directly on GitHub.
-              </p>
-            </div>
-          )}
-
-          {t.live && (
-            <div className="rounded-card border border-line-default bg-surface p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="mb-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-accent-400">
-                    Submitted product link
-                  </div>
-                  <a
-                    href={
-                      t.live.startsWith("http") ? t.live : `https://${t.live}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-[13px] text-text-1 hover:text-accent-400"
-                  >
-                    {t.live}
-                  </a>
-                </div>
-                <span className="pulse-dot" />
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
