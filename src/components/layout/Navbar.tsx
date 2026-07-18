@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import WalletMultiButton from "@/components/ui/WalletButton";
 
 const NAV_LINKS = [
@@ -121,6 +121,18 @@ export default function Navbar() {
                       </Link>
                     );
                   })}
+                  {session?.github_username && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMoreOpen(false);
+                        void signOut({ callbackUrl: "/" });
+                      }}
+                      className="focus-ring mt-1 flex min-h-10 w-full items-center rounded-[8px] border-t border-line px-3 pt-1 text-left font-sans text-[14px] font-medium text-[#B8C2BC] transition-colors hover:bg-white/[0.05] hover:text-text-1"
+                    >
+                      Sign out
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -253,6 +265,18 @@ export default function Navbar() {
                 </Link>
               );
             })}
+            {session?.github_username && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileOpen(false);
+                  void signOut({ callbackUrl: "/" });
+                }}
+                className="focus-ring flex min-h-11 w-full items-center rounded-md px-2 text-left font-sans text-[15px] font-medium text-[#B8C2BC] transition-colors hover:text-text-1"
+              >
+                Sign out
+              </button>
+            )}
             <div className="flex items-center gap-1 border-t border-line pt-3">
               <a
                 href="https://x.com/launchlckd"
