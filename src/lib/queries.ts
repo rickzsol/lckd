@@ -119,7 +119,7 @@ export async function getTokenByIdOrMint(
       const { data, error } = await supabase
         .from("tokens")
         .select(TOKEN_COLUMNS)
-        .or(`mint_address.eq.${id},id.eq.${id}`)
+        .eq(UUID_PATTERN.test(id) ? "id" : "mint_address", id)
         .not("launch_verified_at", "is", null)
         .not("lock_verified_at", "is", null)
         .limit(1)
