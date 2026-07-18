@@ -217,11 +217,16 @@ export function bindStreamToLock(
   // cliffAmount === depositedAmount. Requiring strict equality wrongly rejects the
   // documented pattern, so accept the SDK's range instead (finding 3-new).
   if (stream.start !== stream.cliff) return "start does not equal cliff";
-  if (!isFullCliff(stream.cliffAmount, stream.depositedAmount)) {
-    return "cliff does not release the full deposit";
-  }
+  // end MUST be at or after the cliff. An inverted/degenerate schedule (end <
+  // cliff) makes (end - cliff) negative, which would slip past the <= 1s tail
+  // bound below and wrongly accept a schedule that is not a full cliff. Reject it
+  // explicitly before the tail check (finding: inverted-schedule).
+  if (stream.end < stream.cliff) return "inverted schedule (end before cliff)";
   if (stream.end - stream.cliff > MAX_CLIFF_END_GAP_SECONDS) {
     return "schedule has a post-cliff tail";
+  }
+  if (!isFullCliff(stream.cliffAmount, stream.depositedAmount)) {
+    return "cliff does not release the full deposit";
   }
   return null;
 }

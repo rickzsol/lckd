@@ -87,6 +87,40 @@ export function isFullCliffAmount(cliffAmount: BN, depositedAmount: BN): boolean
   return cliffAmount.gte(depositedAmount.subn(1));
 }
 
+/** The Streamflow full-cliff residual tail unlocks within one second of the
+ * cliff. Mirrors MAX_CLIFF_END_GAP_SECONDS in lockVerification. */
+export const MAX_CLIFF_END_GAP_SECONDS = 1;
+
+interface StreamSchedule {
+  start: number;
+  cliff: number;
+  end: number;
+  cliffAmount: BN;
+  depositedAmount: BN;
+}
+
+/**
+ * Asserts a decoded stream is a genuine full-cliff schedule with nothing
+ * unlockable before the cliff (finding 3). Returns null when valid, else a
+ * mismatch reason. The checks mirror bindStreamToLock so backfill and runtime
+ * reconciliation reject the same degenerate/inverted schedules:
+ *  - start === cliff, so calculateUnlockedAmount returns 0 while now < cliff
+ *    (nothing unlocks before the cliff),
+ *  - end >= cliff, rejecting inverted schedules (an inverted end < cliff would
+ *    make (end - cliff) negative and slip past the tail bound),
+ *  - end - cliff <= 1s, rejecting a post-cliff streaming tail,
+ *  - cliffAmount releases the full deposit.
+ */
+export function fullCliffScheduleMismatch(s: StreamSchedule): string | null {
+  if (s.start !== s.cliff) return "start does not equal cliff";
+  if (s.end < s.cliff) return "inverted schedule (end before cliff)";
+  if (s.end - s.cliff > MAX_CLIFF_END_GAP_SECONDS) return "schedule has a post-cliff tail";
+  if (!isFullCliffAmount(s.cliffAmount, s.depositedAmount)) {
+    return "cliff does not release the full deposit";
+  }
+  return null;
+}
+
 interface FinalizedDenominator {
   totalSupplyRaw: bigint;
   decimals: number;
@@ -251,11 +285,21 @@ async function main(): Promise<void> {
           skipped += 1;
           continue;
         }
-        // SDK full-cliff acceptance: cliffAmount within [deposited - 1, deposited].
-        // buildLockParams emits a one-unit residual tail, so strict equality wrongly
-        // rejects valid locks (finding 3-new).
-        if (!isFullCliffAmount(stream.cliffAmount, stream.depositedAmount)) {
-          console.warn(`[backfill] stream ${streamId} is not a full-cliff lock, skipping ${token.id}`);
+        // Full-cliff SCHEDULE check (finding 3): not just the cliff amount but the
+        // whole schedule must be a genuine full cliff with nothing unlockable
+        // before the cliff. Rejects inverted (end < cliff) and post-cliff-tail
+        // schedules, mirroring bindStreamToLock so backfill and runtime agree.
+        const scheduleMismatch = fullCliffScheduleMismatch({
+          start: stream.start,
+          cliff: stream.cliff,
+          end: stream.end,
+          cliffAmount: stream.cliffAmount,
+          depositedAmount: stream.depositedAmount,
+        });
+        if (scheduleMismatch) {
+          console.warn(
+            `[backfill] stream ${streamId} schedule invalid (${scheduleMismatch}) for ${token.id}, skipping`,
+          );
           skipped += 1;
           continue;
         }
@@ -267,11 +311,19 @@ async function main(): Promise<void> {
           skipped += 1;
           continue;
         }
-        // Compare recipient + escrow against the stored provenance rather than
-        // silently trusting the decoded stream (finding 3). When the launch intent
-        // recorded them, the decoded stream must match; a mismatch means this is not
-        // the lock we recorded and must not be credited to this token.
-        if (launchIntent?.recipient && stream.recipient !== launchIntent.recipient) {
+        // Recipient AND escrow comparison against stored provenance is MANDATORY
+        // (finding 3): they are no longer optional. The launch intent MUST carry
+        // both, and each MUST equal the decoded stream. A missing provenance field
+        // or any mismatch fails the backfill for this row rather than crediting a
+        // lock we cannot prove is the one we recorded.
+        if (!launchIntent?.recipient || !launchIntent?.escrow_ata) {
+          console.warn(
+            `[backfill] missing recorded recipient/escrow provenance for ${token.id}, skipping`,
+          );
+          skipped += 1;
+          continue;
+        }
+        if (stream.recipient !== launchIntent.recipient) {
           console.warn(
             `[backfill] stream ${streamId} recipient ${stream.recipient} != recorded ` +
               `${launchIntent.recipient} for ${token.id}, skipping`,
@@ -279,10 +331,32 @@ async function main(): Promise<void> {
           skipped += 1;
           continue;
         }
-        if (launchIntent?.escrow_ata && stream.escrowTokens !== launchIntent.escrow_ata) {
+        if (stream.escrowTokens !== launchIntent.escrow_ata) {
           console.warn(
             `[backfill] stream ${streamId} escrow ${stream.escrowTokens} != recorded ` +
               `${launchIntent.escrow_ata} for ${token.id}, skipping`,
+          );
+          skipped += 1;
+          continue;
+        }
+        // Compare the decoded cliff timestamp against the stored provenance cliff
+        // (token.lock_unlock_at, the recorded unlock time) (finding 3). A stream
+        // whose cliff does not match the recorded unlock time is not the lock we
+        // recorded, even if mint/recipient/escrow line up.
+        const recordedCliffSeconds = Math.floor(
+          new Date(token.lock_unlock_at).getTime() / 1000,
+        );
+        if (!Number.isFinite(recordedCliffSeconds)) {
+          console.warn(
+            `[backfill] token ${token.id} has no valid recorded unlock time, skipping`,
+          );
+          skipped += 1;
+          continue;
+        }
+        if (stream.cliff !== recordedCliffSeconds) {
+          console.warn(
+            `[backfill] stream ${streamId} cliff ${stream.cliff} != recorded unlock ` +
+              `${recordedCliffSeconds} for ${token.id}, skipping`,
           );
           skipped += 1;
           continue;
@@ -359,35 +433,21 @@ async function main(): Promise<void> {
     if (tokens.length < args.pageSize) break;
   }
 
-  // Gate public availability on a verified complete pass. It is NOT enough that
-  // existing canonical locks have no null denominator: a token that was skipped
-  // (no stream metadata, missing provenance, mint/owner mismatch) has NO lock row
-  // at all, and counting only present rows would flip complete=true while eligible
-  // tokens are still unrepresented. Compare EXPECTED eligible tokens against DONE
-  // verified canonical locks and require full coverage (finding 10).
+  // Gate public availability on a verified complete pass. Completeness is "zero
+  // eligible tokens lack a verified canonical lock", evaluated by a SINGLE
+  // NOT EXISTS query in backfill_coverage_complete (finding 10). Count arithmetic
+  // (expected == done) was wrong on two grounds: the two COUNT reads race, and
+  // count equality does not prove per-token coverage (one stale/extra canonical
+  // row offsets one missing token, reading "complete" while an eligible token has
+  // no lock). The predicate is atomic and per-token, so neither hole exists.
   let backfillComplete = false;
-  let expected = 0;
-  let done = 0;
   if (!args.dryRun) {
-    const { count: expectedCount, error: expectedError } = await supabase
-      .from("tokens")
-      .select("id", { count: "exact", head: true })
-      .not("launch_verified_at", "is", null)
-      .not("lock_verified_at", "is", null);
-    if (expectedError) throw new Error(`expected-count check failed: ${expectedError.message}`);
+    const { data: complete, error: coverageError } = await supabase.rpc(
+      "backfill_coverage_complete",
+    );
+    if (coverageError) throw new Error(`coverage check failed: ${coverageError.message}`);
+    backfillComplete = complete === true;
 
-    const { count: doneCount, error: doneError } = await supabase
-      .from("locks")
-      .select("id", { count: "exact", head: true })
-      .eq("canonical", true)
-      .not("total_supply_raw", "is", null)
-      .not("decimals", "is", null)
-      .not("lock_bps", "is", null);
-    if (doneError) throw new Error(`done-count check failed: ${doneError.message}`);
-
-    expected = expectedCount ?? 0;
-    done = doneCount ?? 0;
-    backfillComplete = isBackfillComplete(expected, done);
     const { error: kvError } = await supabase
       .from("trust_kv")
       .upsert(
@@ -399,28 +459,16 @@ async function main(): Promise<void> {
 
   console.log(
     `[backfill] done. inserted=${inserted} skipped=${skipped} ` +
-      `denominatorMissing=${denominatorMissing} expected=${expected} done=${done} ` +
+      `denominatorMissing=${denominatorMissing} ` +
       `backfillComplete=${backfillComplete} dryRun=${args.dryRun}`,
   );
-  if (!backfillComplete && !args.dryRun && expected > done) {
+  if (!backfillComplete && !args.dryRun) {
     console.log(
-      `[backfill] ${expected - done} eligible token(s) still lack a verified canonical lock. ` +
+      "[backfill] one or more eligible tokens still lack a verified canonical lock. " +
         "Re-run once RPC is stable; locks_public stays gated (empty) until every eligible " +
         "token has a verified lock and backfill_complete flips to true.",
     );
   }
-}
-
-/**
- * Backfill is complete only when every eligible token is represented by a fully
- * verified canonical lock: done must equal expected (finding 10). With no eligible
- * tokens (expected 0) there is nothing to withhold, so it is trivially complete.
- * done exceeding expected (stale extra rows) is not treated as complete; it means
- * the counts are inconsistent and a human should look before exposing data.
- */
-export function isBackfillComplete(expected: number, done: number): boolean {
-  if (expected === 0) return true;
-  return done === expected;
 }
 
 const entry = process.argv[1] ?? "";

@@ -198,6 +198,10 @@ async function refreshToken(
     p_github_tier: githubTier,
     p_tier_computed_at: projection.tierComputedAt,
     p_policy_version: TRUST_POLICY_VERSION,
+    // The refresh IS the github-evidence writer: persist exactly what it computed,
+    // including a cleared null when the repo was unlinked/deleted, rather than
+    // coalescing to the stale stored value (finding: github clear).
+    p_set_github_tier: true,
   });
 
   if (updateError) throw new Error(`Tier update failed: ${updateError.message}`);

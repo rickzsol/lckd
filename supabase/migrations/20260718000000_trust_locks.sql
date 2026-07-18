@@ -84,10 +84,24 @@ create unique index if not exists locks_canonical_per_token
   on public.locks (token_id)
   where canonical;
 
+-- One canonical lock per MINT. The keyset cursor pages on (cliff_ts, mint), which
+-- is a total order only if mint is unique among the rows it pages over. The
+-- canonical-per-token index alone does NOT guarantee that: two distinct tokens
+-- could carry the same mint string, giving two canonical rows sharing a mint and
+-- an identical cliff_ts, and the cursor would then skip or duplicate rows. This
+-- partial unique index makes mint provably unique for canonical locks, so
+-- (cliff_ts, mint) is an enforced total order over the calendar's row set
+-- (finding 12).
+create unique index if not exists locks_canonical_mint_unique
+  on public.locks (mint)
+  where canonical;
+
 -- Calendar/keyset index. Ordering column set matches the (cliff_ts, mint)
 -- pagination cursor; only rows still visible in the calendar are indexed. mint is
--- unique per token and the calendar reads only canonical locks, so no internal id
--- tiebreaker is needed and the public view exposes none (finding 12).
+-- enforced unique per canonical lock by locks_canonical_mint_unique and the
+-- calendar reads only canonical locks, so (cliff_ts, mint) is a provably-unique
+-- total order and no internal id tiebreaker is needed (the public view exposes
+-- none) (finding 12).
 create index if not exists locks_cliff_idx
   on public.locks (cliff_ts, mint)
   where status in ('locked', 'unlock_eligible');
@@ -243,6 +257,49 @@ revoke all on function public.is_backfill_complete() from public;
 grant execute on function public.is_backfill_complete() to anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
+-- backfill_coverage_complete: completeness is "zero eligible tokens lack a
+-- verified canonical lock", computed as a SINGLE NOT EXISTS query (finding 10).
+--
+-- The prior gate compared aggregate counts (expected == done). Two separate
+-- COUNT reads race (a token inserted between them shifts the totals), and count
+-- equality does not prove per-token coverage: one extra/stale canonical lock
+-- offsets one missing token so the arithmetic reads "complete" while an eligible
+-- token has NO verified lock. This predicate instead asks, in one statement,
+-- whether any eligible token lacks a fully-verified canonical lock; it is true
+-- only when none do. With no eligible tokens it is trivially true.
+--
+-- "Eligible" = launch + lock verified (matches the backfill's token scan).
+-- "Verified canonical lock" = a canonical lock for that token with all three
+-- finalized denominator columns populated.
+-- ---------------------------------------------------------------------------
+create or replace function public.backfill_coverage_complete()
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select not exists (
+    select 1
+    from public.tokens t
+    where t.launch_verified_at is not null
+      and t.lock_verified_at is not null
+      and not exists (
+        select 1
+        from public.locks l
+        where l.token_id = t.id
+          and l.canonical
+          and l.total_supply_raw is not null
+          and l.decimals is not null
+          and l.lock_bps is not null
+      )
+  );
+$$;
+
+revoke all on function public.backfill_coverage_complete() from public, anon, authenticated;
+grant execute on function public.backfill_coverage_complete() to service_role;
+
+-- ---------------------------------------------------------------------------
 -- claim_webhook_inbox: atomically lease a batch of claimable rows for the cron
 -- consumer. SKIP LOCKED prevents two runs from grabbing the same row; the lease
 -- (locked_until) makes a crashed run's rows reclaimable after it expires.
@@ -354,26 +411,68 @@ $$;
 -- evidence) is written alongside so the refresh persists its evidence and the
 -- projected tier in one place, and the projection never re-reads trust_tier as
 -- evidence. Guarded by lock_verified_at so an unverified token is never tiered.
+--
+-- github_tier update is gated on an EXPLICIT p_set_github_tier boolean, not a
+-- coalesce (finding: github clear). A coalesce made NULL always mean "keep the
+-- old value", so a caller that intends to CLEAR obsolete GitHub evidence
+-- (github_tier -> NULL, e.g. the repo was deleted or unlinked) could never do
+-- so. With the boolean, the reconciliation path passes false (leave github_tier
+-- untouched) while the GitHub refresh passes true and writes exactly what it
+-- computed, including a cleared NULL.
+--
+-- Monotonic, atomic commit under concurrency (finding 5): both the GitHub
+-- refresh and the lock reconciliation compute a projection from a snapshot read
+-- and then write. Two racing writers whose reads interleave would otherwise be
+-- last-writer-wins, so a slow OLD recompute could clobber a newer tier. This
+-- function now (a) locks the token row FOR UPDATE, serializing concurrent
+-- commits on the same token, and (b) gates the write on p_tier_computed_at being
+-- strictly newer than the stored tier_computed_at. An incoming evidence stamp
+-- that is not newer than what is stored is a no-op: a racing older recompute
+-- cannot overwrite a fresher tier. A first write (stored tier_computed_at NULL)
+-- always applies.
 -- ---------------------------------------------------------------------------
 create or replace function public.commit_token_tier(
   p_token_id uuid,
   p_trust_tier int,
   p_github_tier int,
   p_tier_computed_at timestamptz,
-  p_policy_version int
+  p_policy_version int,
+  p_set_github_tier boolean default false
 )
 returns void
-language sql
+language plpgsql
 security definer
 set search_path = pg_catalog, public
 as $$
+declare
+  stored_computed_at timestamptz;
+  is_verified boolean;
+begin
+  -- Lock the token row so two concurrent tier commits serialize instead of
+  -- racing between their snapshot read and their write (finding 5).
+  select tier_computed_at, (lock_verified_at is not null)
+    into stored_computed_at, is_verified
+  from public.tokens
+  where id = p_token_id
+  for update;
+
+  if not found or not is_verified then
+    return;
+  end if;
+
+  -- Freshness gate: only overwrite when this evidence is strictly newer than
+  -- what is stored. A racing older recompute (stale snapshot) is a no-op.
+  if stored_computed_at is not null and p_tier_computed_at <= stored_computed_at then
+    return;
+  end if;
+
   update public.tokens
   set trust_tier = p_trust_tier,
-      github_tier = coalesce(p_github_tier, github_tier),
+      github_tier = case when p_set_github_tier then p_github_tier else github_tier end,
       tier_computed_at = p_tier_computed_at,
       policy_version = p_policy_version
-  where id = p_token_id
-    and lock_verified_at is not null;
+  where id = p_token_id;
+end;
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -416,12 +515,21 @@ begin
   -- Lease-gated path: verify the inbox lease is still held and unprocessed before
   -- touching any lock/token state. A lost lease means another worker owns the row
   -- now, so this worker must not commit (finding 8).
+  --
+  -- The row is locked FOR UPDATE and re-checked in THIS transaction, closing the
+  -- TOCTOU window: without the row lock, the lease could be reclaimed (a new
+  -- claim_webhook_inbox rewrites lease_id) or the row marked processed between an
+  -- unlocked check and the lock/token writes below. Holding the row lock for the
+  -- remainder of the transaction means no concurrent claim/complete/fail can
+  -- interleave with this commit; the lease we validated is the lease that is
+  -- still held when the writes land (finding 8).
   if p_inbox_id is not null then
     perform 1
     from public.webhook_inbox
     where id = p_inbox_id
       and lease_id = p_lease_id
-      and processed_at is null;
+      and processed_at is null
+    for update;
     if not found then
       return false;
     end if;
@@ -440,12 +548,14 @@ begin
 
   -- Only the canonical lock carries a token id; a noncanonical lock passes NULL
   -- and must NOT move tokens.trust_tier (finding 5). Delegate the tier write to
-  -- commit_token_tier, the single trust_tier writer. p_github_tier is NULL here
-  -- (reconciliation does not recompute GitHub evidence), so the coalesce inside
-  -- commit_token_tier preserves the stored github_tier.
+  -- commit_token_tier, the single trust_tier writer. Reconciliation does not
+  -- recompute GitHub evidence, so it passes p_set_github_tier => false and the
+  -- stored github_tier is left untouched. The tier write is monotonic on
+  -- p_verified_at inside commit_token_tier, so a slow stale reconcile cannot
+  -- clobber a newer tier (finding 5).
   if p_token_id is not null then
     perform public.commit_token_tier(
-      p_token_id, p_trust_tier, p_github_tier, p_verified_at, p_policy_version
+      p_token_id, p_trust_tier, p_github_tier, p_verified_at, p_policy_version, false
     );
   end if;
 
@@ -488,7 +598,7 @@ revoke all on function public.fail_inbox_row(uuid, uuid, boolean, timestamptz)
 revoke all on function public.commit_lock_reconciliation(
   uuid, uuid, text, numeric, timestamptz, text, bigint, int, int, uuid, uuid, int
 ) from public, anon, authenticated;
-revoke all on function public.commit_token_tier(uuid, int, int, timestamptz, int)
+revoke all on function public.commit_token_tier(uuid, int, int, timestamptz, int, boolean)
   from public, anon, authenticated;
 revoke all on function public.mark_lock_attempt(uuid, timestamptz)
   from public, anon, authenticated;
@@ -502,7 +612,7 @@ grant execute on function public.fail_inbox_row(uuid, uuid, boolean, timestamptz
 grant execute on function public.commit_lock_reconciliation(
   uuid, uuid, text, numeric, timestamptz, text, bigint, int, int, uuid, uuid, int
 ) to service_role;
-grant execute on function public.commit_token_tier(uuid, int, int, timestamptz, int)
+grant execute on function public.commit_token_tier(uuid, int, int, timestamptz, int, boolean)
   to service_role;
 grant execute on function public.mark_lock_attempt(uuid, timestamptz)
   to service_role;

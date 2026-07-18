@@ -43,7 +43,39 @@ Built the public trust API, unlock calendar, and live lock pipeline per plan sec
 - `/unlocks` page (date-grouped, mono countdowns, warn under 7d, unlockable danger + pulse dot, mascot empty state), navbar link, sitemap, OG image, feed next-unlock strip. Trust + unlocks sections added to `/api-docs`.
 - Tools: `tools/backfill-locks.ts` (staged, nullable-first, finalized RPC denominator, NOT NULL follow-up stub) and `tools/register-helius-webhook.ts` (tracked-address batched edits, never auto-run).
 
-Verification: 176 tests pass. typecheck + lint + production build clean.
+Verification: 190 tests pass. typecheck + lint + production build clean.
+
+Round-4 (final) review resolved the remaining round-3 partials plus three new
+defects it introduced. All on this branch:
+- 3 (final): backfill now makes recipient AND escrow comparison MANDATORY (a
+  missing provenance field or any mismatch fails the row, no longer optional),
+  compares the decoded cliff timestamp against the stored unlock provenance, and
+  asserts the full-cliff SCHEDULE (start==cliff, end>=cliff, no post-cliff tail)
+  so nothing is unlockable before the cliff.
+- 5 (final): commit_token_tier is now atomic + monotonic — it SELECT ... FOR
+  UPDATE locks the token row and gates the write on tier_computed_at being
+  strictly newer than stored, so a racing older recompute is a no-op instead of
+  last-writer-wins.
+- 8 (final): commit_lock_reconciliation SELECT ... FOR UPDATE locks the inbox row
+  and re-checks lease_id + processed_at IS NULL in the SAME transaction as the
+  lock/token write, closing the TOCTOU window.
+- 10 (final): backfill completeness is a single NOT EXISTS query
+  (backfill_coverage_complete: zero eligible tokens lacking a verified canonical
+  lock), replacing the racing expected==done count arithmetic. isBackfillComplete
+  arithmetic helper removed.
+- NEW: bindStreamToLock rejected inverted schedules because end < cliff made
+  (end - cliff) negative and slipped past the <=1s tail bound. Restored an
+  explicit end >= cliff guard in bind and backfill.
+- NEW: github_tier was coalesced (null could never clear obsolete GitHub
+  evidence). Added p_set_github_tier boolean; the GitHub refresh passes true and
+  writes exactly what it computed (including a cleared null), reconciliation
+  passes false.
+- NEW: (cliff_ts, mint) was not a provably-unique order. Added
+  locks_canonical_mint_unique partial unique index so mint is unique per
+  canonical lock and pagination cannot skip/duplicate on duplicate cliff_ts.
+Tests added: monotonic tier gate, NOT EXISTS coverage (tierCommitPolicy),
+inverted-schedule rejection (bind + backfill), github-clear param, cursor
+total-order pagination.
 
 Round-3 confirmation review (BLOCKED) found several round-2 fixes did not fully
 land plus one new defect; all addressed across 4 more commits on this branch:

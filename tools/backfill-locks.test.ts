@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import BN from "bn.js";
-import { deriveBackfillStatus, isBackfillComplete, isFullCliffAmount } from "./backfill-locks";
+import {
+  deriveBackfillStatus,
+  fullCliffScheduleMismatch,
+  isFullCliffAmount,
+} from "./backfill-locks";
 
 // --- full-cliff acceptance (finding 3-new) ---------------------------------
 
@@ -24,24 +28,48 @@ test("cliffAmount above deposited is not a full cliff", () => {
   assert.equal(isFullCliffAmount(new BN(101), new BN(100)), false);
 });
 
-// --- completion gating (finding 10) ----------------------------------------
+// --- full-cliff SCHEDULE sanity (finding 3, inverted-schedule) -------------
 
-test("complete only when every eligible token has a verified lock", () => {
-  assert.equal(isBackfillComplete(10, 10), true);
+const validSchedule = {
+  start: 1_000,
+  cliff: 1_000,
+  end: 1_001,
+  cliffAmount: new BN(100),
+  depositedAmount: new BN(100),
+};
+
+test("a canonical full-cliff schedule passes", () => {
+  assert.equal(fullCliffScheduleMismatch(validSchedule), null);
 });
 
-test("a skipped/unrepresented eligible token blocks completion", () => {
-  // 10 eligible tokens but only 8 verified canonical locks: 2 were skipped and
-  // have no row. Counting present rows alone would flip complete=true wrongly.
-  assert.equal(isBackfillComplete(10, 8), false);
+test("start !== cliff is rejected", () => {
+  assert.equal(
+    fullCliffScheduleMismatch({ ...validSchedule, start: 900 }),
+    "start does not equal cliff",
+  );
 });
 
-test("no eligible tokens is trivially complete", () => {
-  assert.equal(isBackfillComplete(0, 0), true);
+test("inverted schedule (end < cliff) is rejected, not silently accepted", () => {
+  // end - cliff is negative here, which satisfies a bare (end - cliff) <= 1 tail
+  // check; the explicit end >= cliff guard must reject it.
+  assert.equal(
+    fullCliffScheduleMismatch({ ...validSchedule, end: 500 }),
+    "inverted schedule (end before cliff)",
+  );
 });
 
-test("more done than expected is not treated as complete", () => {
-  assert.equal(isBackfillComplete(10, 11), false);
+test("post-cliff streaming tail is rejected", () => {
+  assert.equal(
+    fullCliffScheduleMismatch({ ...validSchedule, end: 5_000 }),
+    "schedule has a post-cliff tail",
+  );
+});
+
+test("cliff that does not release the full deposit is rejected", () => {
+  assert.equal(
+    fullCliffScheduleMismatch({ ...validSchedule, cliffAmount: new BN(50) }),
+    "cliff does not release the full deposit",
+  );
 });
 
 // --- status derivation (existing behavior, guarded) ------------------------

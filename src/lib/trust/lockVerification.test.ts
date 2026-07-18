@@ -129,6 +129,19 @@ test("a post-cliff tail is rejected", () => {
   assert.match(bindStreamToLock(decoded({ end: CLIFF_RAW + 100 }), identity())!, /tail/);
 });
 
+test("an inverted schedule (end < cliff) is rejected, not accepted (finding: inverted)", () => {
+  // (end - cliff) is negative here, satisfying a bare <= 1s tail check; the
+  // explicit end >= cliff guard must reject it before that check.
+  assert.match(
+    bindStreamToLock(decoded({ end: CLIFF_RAW - 50 }), identity())!,
+    /inverted/,
+  );
+});
+
+test("end === cliff (no tail) still binds", () => {
+  assert.equal(bindStreamToLock(decoded({ end: CLIFF_RAW }), identity()), null);
+});
+
 // --- read-failure handling (finding 2) -------------------------------------
 
 test("an rpc error never becomes a withdrawal: it throws", () => {
