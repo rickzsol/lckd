@@ -116,15 +116,24 @@ export async function getTokenByIdOrMint(
       const { getSupabase } = await import("./supabase");
       const supabase = getSupabase();
 
+      // The id column is a uuid; matching it against a Solana address makes
+      // Postgres reject the cast and fail the whole query.
+      const idFilter = UUID_PATTERN.test(id)
+        ? `mint_address.eq.${id},id.eq.${id}`
+        : `mint_address.eq.${id}`;
+
       const { data, error } = await supabase
         .from("tokens")
         .select(TOKEN_COLUMNS)
-        .or(`mint_address.eq.${id},id.eq.${id}`)
+        .or(idFilter)
         .not("launch_verified_at", "is", null)
         .not("lock_verified_at", "is", null)
         .limit(1)
-        .single();
+        .maybeSingle();
 
+      if (error) {
+        console.error("[getTokenByIdOrMint] Supabase error:", error.message);
+      }
       if (!error && data) {
         const token = data as Token;
         const market = await import("./dexscreener").then((module) =>

@@ -7,6 +7,7 @@ import Image from "next/image";
 import Link from "next/link";
 import Badge from "@/components/ui/Badge";
 import Bar from "@/components/ui/Bar";
+import { getAccountAge } from "@/lib/accountAge";
 import { TrustTier } from "@/types/index";
 import type { GitHubProfile, ContributionDay } from "@/types/index";
 import type { DisplayToken } from "@/types/display";
@@ -38,16 +39,6 @@ interface Props {
 function truncateAddress(addr: string): string {
   if (addr.length <= 10) return addr;
   return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
-}
-
-function getAccountAge(createdAt: string): string {
-  const diff = Date.now() - new Date(createdAt).getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  if (days < 30) return `${days}d`;
-  if (days < 365) return `${Math.floor(days / 30)}mo`;
-  const years = Math.floor(days / 365);
-  const remainingMonths = Math.floor((days % 365) / 30);
-  return remainingMonths > 0 ? `${years}y ${remainingMonths}mo` : `${years}y`;
 }
 
 function getHighestTier(tokens: DisplayToken[]): TrustTier {

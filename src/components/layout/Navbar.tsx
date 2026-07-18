@@ -9,6 +9,7 @@ import WalletMultiButton from "@/components/ui/WalletButton";
 
 const NAV_LINKS = [
   { href: "/feed", label: "Explore" },
+  { href: "/developers", label: "Developers" },
   { href: "/docs", label: "Docs", hideOnMobile: true },
   { href: "/api-docs", label: "API", hideOnMobile: true },
 ] as const;

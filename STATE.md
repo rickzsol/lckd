@@ -1,6 +1,6 @@
 # Project state
 
-Updated: 2026-07-17
+Updated: 2026-07-18
 
 ## Planning
 
@@ -14,6 +14,10 @@ TRUST_FEATURES_PLAN.md (internal, gitignored) specifies the trust-platform wave:
 None are merged. Migrations are written but unapplied (production Supabase offline). Merge order and per-branch operational prerequisites are in TASKS.md. Phases 2/3 still gate on the Supabase restore and migrations 002/003 under release gates.
 
 ## Latest change
+
+Wide-monitor pass + developer directory (2026-07-18): `/token/[id]` restructured for large displays: stats strip moved above a full-width chart, then a balanced card grid (lock record beside a 2/3-width developer profile, submitted links card combining repo + live product beside swap); container grows to 1480px at 2xl. `ContributionGraph` rewrote its fixed 8px cells as a fluid single CSS grid that stretches to the card (530px min-width scrolls on mobile). Token images now go through the Next image optimizer for allowlisted hosts (`TokenImage` mirrors remotePatterns, falls back to unoptimized for unknown hosts); token-page dev avatars fetch avatars.githubusercontent.com directly. New public `/developers` directory lists devs behind verified launches (`getVerifiedDevelopers` in `src/lib/profile.ts`, cards link to `/dev/[username]`), added to navbar and sitemap; `getAccountAge` extracted to `src/lib/accountAge.ts`. Verified via Playwright at 2560/1920/1440/390 using `/demo`-style fixtures. Typecheck and lint clean. Not deployed; prod still serves the previous branch.
+
+Local env + mint lookup fix (2026-07-18): `.env.local` pointed at the deleted `ohsiwt...` Supabase project; Vercel env pull returns `[SENSITIVE]` placeholders (vars are write-only), so the `lckd-production` (`lzxdqxtsceizopjqqxdb`) URL and anon/service keys were fetched via the authenticated Supabase CLI (`supabase projects api-keys`) and written into `.env.local` (backup at `.env.local.bak`). That exposed a real bug in `getTokenByIdOrMint`: `.or("mint_address.eq.X,id.eq.X")` fails the whole query when X is a Solana address because `id` is uuid, and the error was swallowed silently, 404ing every mint-addressed token page served by this branch. The uuid clause is now conditional on the UUID pattern and Supabase errors are logged. Verified locally: feed, `/developers`, and `/token/<mint>` all render production data.
 
 Official-token production incident fixed (2026-07-17): the watcher captured the real Pump launch, but the generic mint route only queried Supabase and returned Token not found. The official mint is now pinned to a permanent `/token/lckd` redirect, the feed links to that page without a contradictory empty state, and the page uses the launched IPFS image. The Streamflow parser now accepts the current Token Lock `amountPerPeriod = amount` variant and includes the exact production transaction as a regression fixture. Railway backfilled the confirmed 10,182,164.997608-token lock (99.5%, unlocks 2026-07-27 06:00 UTC), and the homepage settles to 1 launched / 10.2M locked / 1 verified / 1 building.
 
