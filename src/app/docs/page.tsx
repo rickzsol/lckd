@@ -14,6 +14,7 @@ const DOC_SECTIONS: TocSection[] = [
   { id: "overview", label: "Overview" },
   { id: "launch-flow", label: "Launch flow" },
   { id: "lock-behavior", label: "Lock behavior" },
+  { id: "trust", label: "Trust surface" },
   { id: "verification", label: "Verification" },
   { id: "profiles", label: "Profile labels" },
   { id: "buyers", label: "For buyers" },
@@ -124,6 +125,53 @@ export default function DocsPage() {
                 Streamflow Token Lock
               </a>
               . Protocol behavior and fees can change.
+            </Prose>
+          </section>
+
+          <section className="space-y-5">
+            <SectionHeading id="trust">Trust surface</SectionHeading>
+            <Prose>
+              Every program a launch touches is pinned in the open-source client and server
+              code. A transaction that references anything else is rejected before signing
+              and again at receipt verification.
+            </Prose>
+            <div className="overflow-x-auto rounded-card border border-line-default bg-surface">
+              <table className="w-full text-left font-mono text-xs">
+                <tbody>
+                  {[
+                    ["Token lock", "Streamflow v13", "strmRqUCoQUgGUan5YhzUZa6KqdzwX5L6FpUxfmKg5m"],
+                    ["Token creation and buy", "pump.fun", "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"],
+                    ["LCKD platform token", "SPL mint, no mint or freeze authority", "7UTubJ3W6JWwLUj82B9LgHFDmc8wFWtSNLis6u8epump"],
+                  ].map(([role, program, addressValue]) => (
+                    <tr key={addressValue} className="border-b border-line last:border-b-0">
+                      <td className="px-4 py-3 whitespace-nowrap text-text-3">{role}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-text-2">{program}</td>
+                      <td className="px-4 py-3 break-all text-text-1 tabular-nums">{addressValue}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <SubHeading>What LCKD cannot do</SubHeading>
+            <ul className="space-y-3 pl-5 text-[15px] leading-[1.6] text-text-2">
+              <li className="list-disc marker:text-text-3">Cancel, modify, transfer, pause, or seize any lock. Locks are contracts between the launcher wallet and the Streamflow program; LCKD holds no admin key over them.</li>
+              <li className="list-disc marker:text-text-3">Custody tokens or liquidity. The lock escrow is owned by the Streamflow program, and liquidity is pump.fun&apos;s own bonding curve and graduation. There is no LP position held by LCKD.</li>
+              <li className="list-disc marker:text-text-3">Change a launch after review. The server builds the transaction, but the browser independently re-validates every instruction byte for byte before the wallet signs, and the finalized receipt is verified again before anything is recorded.</li>
+            </ul>
+            <SubHeading>Execution guarantees</SubHeading>
+            <Prose>
+              A signed Solana message is immutable, so nothing can change between simulation
+              and execution. The buy carries a hard spend cap and the lock amount is fixed in
+              the instruction rather than recomputed at execution. If the market moves past
+              the cap, the whole transaction fails and no token exists. Any launch fee
+              executes inside the same transaction under the same rules.
+            </Prose>
+            <Prose>
+              The validation code is public. Read it at{" "}
+              <a className="font-mono text-accent-300 underline underline-offset-4 hover:text-accent-400" href="https://github.com/rickzsol/lckd" target="_blank" rel="noreferrer">
+                github.com/rickzsol/lckd
+              </a>
+              .
             </Prose>
           </section>
 
