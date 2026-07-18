@@ -8,7 +8,7 @@ Token launch workflows with explicit wallet approvals and verified on-chain rece
 
 [Website](https://lckd.tech) · [Product docs](https://lckd.tech/docs) · [API reference](https://lckd.tech/api-docs) · [Risk disclosure](https://lckd.tech/risk)
 
-LCKD is a launch interface and public receipt index. On Solana, it creates and buys a token through pump.fun, then places selected creator tokens into a separate Streamflow time lock. An experimental Robinhood Chain path uses Pons to create a fixed-supply token and permanently transfer its Uniswap v3 LP position to the Pons locker in one transaction.
+LCKD is a launch interface and public receipt index. On Solana, it creates and buys a token through pump.fun and places the selected creator tokens into a Streamflow time lock in the same atomic transaction. An experimental Robinhood Chain path uses Pons to create a fixed-supply token and permanently transfer its Uniswap v3 LP position to the Pons locker in one transaction.
 
 > [!CAUTION]
 > This project is pre-release. Robinhood mainnet sending is disabled by default, and Robinhood launches are not yet written to public profiles. Do not use meaningful funds without reviewing the transactions, contracts, deployment configuration, and current release state yourself.
@@ -19,12 +19,12 @@ LCKD is a launch interface and public receipt index. On Solana, it creates and b
 
 1. Sign in with GitHub and link a Solana wallet by signing an ownership message.
 2. Upload token metadata and its image to IPFS through Pinata.
-3. Build and validate a pump.fun create-and-buy transaction, then approve it in the linked wallet.
-4. Wait for confirmation and read the purchased token balance from the connected wallet.
-5. Build and validate a Streamflow lock for the selected amount and unlock time, then approve it separately.
-6. Verify the finalized create and lock receipts before recording the launch.
+3. Review the quoted buy, lock amount, unlock time, and any launch fee.
+4. Approve a setup transaction that creates and extends a dedicated address lookup table, then wait for it to finalize.
+5. Validate and approve the issued atomic transaction. It creates the token, performs the initial buy, creates the Streamflow lock, and deactivates the lookup table together.
+6. Simulate the signed transaction, submit it, and verify the finalized launch and lock receipt before recording the launch.
 
-Creation and locking are separate transactions. Creation can finalize while the lock is rejected, expires, or fails. LCKD preserves the partial launch state and offers a lock retry, but the purchased tokens remain liquid until a valid lock confirms.
+The setup transaction cannot create the token. The token creation, initial buy, and lock either finalize together or do not execute. Recovery checkpoints reconcile ambiguous submissions and require the lookup table to be closed before its rent can be reclaimed.
 
 ### Robinhood Chain launch
 
@@ -56,7 +56,7 @@ These checks reduce transaction mismatch and receipt spoofing risk. They do not 
 
 ## Local setup
 
-Requires Node.js 20.9 or newer and npm 11.
+Requires Node.js 24.16.0 and npm 11.13.0.
 
 ```bash
 npm ci
@@ -68,19 +68,24 @@ PowerShell users can replace the copy command with `Copy-Item .env.example .env.
 
 ### Environment
 
-| Variables | Purpose |
-| --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public Supabase reads |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Server-only verified writes and recovery state |
-| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub OAuth |
-| `NEXTAUTH_SECRET`, `NEXTAUTH_URL` | Session signing and canonical application URL |
-| `ALLOWED_ORIGIN` | HTTPS origin accepted by state-changing routes |
-| `HELIUS_RPC_URL`, `NEXT_PUBLIC_HELIUS_RPC_URL` | Server and browser Solana RPC endpoints |
-| `NEXT_PUBLIC_STREAMFLOW_CLUSTER`, `STREAMFLOW_PROGRAM_ID` | Streamflow cluster and optional verifier override |
-| `PINATA_JWT`, `PINATA_GATEWAY` | IPFS metadata uploads and public gateway |
-| `GITHUB_PAT`, `CRON_SECRET` | Optional GitHub API quota and authenticated refresh job |
-| `ROBINHOOD_RPC_URL` | Robinhood Chain reads, recovery scans, and fork tests |
-| `NEXT_PUBLIC_ENABLE_ROBINHOOD_LAUNCHES` | Enables Robinhood mainnet wallet requests when set to `true`; defaults to simulation only |
+| Group | Variables | Purpose |
+| --- | --- | --- |
+| Supabase | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public reads |
+| Supabase | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Server-only verified writes and recovery state |
+| Authentication | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub OAuth |
+| Authentication | `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `ALLOWED_ORIGIN` | Session signing, canonical URL, and accepted state-changing origin |
+| Launch access | `PUBLIC_LAUNCHES_ENABLED`, `LAUNCH_TEST_GITHUB_IDS` | Public launch gate and preview allowlist |
+| Solana RPC | `HELIUS_RPC_URL`, `NEXT_PUBLIC_HELIUS_RPC_URL`, `HELIUS_API_KEY` | Server RPC, browser RPC, and launch-monitor access |
+| Launch monitor | `LAUNCH_MONITOR_URL`, `NEXT_PUBLIC_LAUNCH_MONITOR_URL` | Server and browser monitor origins |
+| Launch monitor | `LAUNCH_MONITOR_ALLOWED_ORIGIN`, `LAUNCH_MONITOR_STATE_PATH` | Monitor CORS origin and persistent state path |
+| Launch monitor | `OFFICIAL_LAUNCH_START_SLOT`, `OFFICIAL_TOKEN_MINT` | Official-wallet scan boundary and optional pinned mint |
+| Streamflow | `NEXT_PUBLIC_STREAMFLOW_CLUSTER`, `STREAMFLOW_PROGRAM_ID` | Cluster and optional verifier override |
+| Metadata | `PINATA_JWT`, `PINATA_GATEWAY` | IPFS uploads and approved public gateway |
+| GitHub refresh | `GITHUB_PAT`, `CRON_SECRET` | Optional API quota and authenticated refresh job |
+| Robinhood | `ROBINHOOD_RPC_URL`, `NEXT_PUBLIC_ENABLE_ROBINHOOD_LAUNCHES` | Chain reads/fork tests and the mainnet wallet-request gate |
+| Sentry | `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_AUTH_TOKEN` | Runtime reporting and source-map uploads |
+| Launch fees | `LAUNCH_FEE_LAMPORTS`, `LAUNCH_FEE_TREASURY` | Optional flat SOL fee and recipient |
+| Launch fees | `LAUNCH_FEE_WAIVER_LCKD_RAW`, `LAUNCH_FEE_BURN_DISCOUNT_BPS` | Optional LCKD holding waiver and burn discount |
 
 Never expose service-role keys, OAuth secrets, RPC credentials, Pinata credentials, or cron secrets to client code. Only variables prefixed with `NEXT_PUBLIC_` belong in the browser bundle.
 
@@ -93,10 +98,17 @@ supabase/migrations/001_initial.sql
 supabase/migrations/002_backend_hardening.sql
 supabase/migrations/003_distributed_rate_limits.sql
 supabase/migrations/004_launch_recovery.sql
-supabase/migrations/005_robinhood_launch_recovery.sql
+supabase/migrations/005_atomic_launch.sql
+supabase/migrations/006_real_stats.sql
+supabase/migrations/007_atomic_cleanup_races.sql
+supabase/migrations/20260717204559_exact_atomic_issuance.sql
+supabase/migrations/20260717210156_robinhood_launch_recovery.sql
+supabase/migrations/20260717210158_match_applications.sql
+supabase/migrations/20260717214000_fee_inclusive_atomic_lock_coverage.sql
+supabase/migrations/20260718020000_burn_ledger.sql
 ```
 
-The migrations create the public token and profile tables, harden row-level access, add distributed API throttling, and persist recovery state for both launch paths. Review every migration against the target database before applying it. Do not enable Robinhood mainnet sending until migration `005` is applied and tested in a disposable environment.
+The migrations create the public directory, recovery state, shared throttling, atomic issuance, launch-fee coverage, match applications, and burn ledger. Review every migration against the target database before applying it. Do not enable Robinhood mainnet sending until `20260717210156_robinhood_launch_recovery.sql` is applied and its concurrent recovery transitions pass in a disposable environment.
 
 ## Commands
 
@@ -107,6 +119,7 @@ The migrations create the public token and profile tables, harden row-level acce
 | `npm run typecheck` | Run TypeScript without emitting files |
 | `npm test` | Run unit and integration tests |
 | `npm run test:robinhood` | Run the pinned Robinhood Chain fork suite |
+| `npm run e2e` | Run Chromium desktop and mobile public-route smoke tests |
 | `npm run build` | Create a production build |
 | `npm run start` | Serve the production build |
 
