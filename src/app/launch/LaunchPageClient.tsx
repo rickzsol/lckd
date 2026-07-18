@@ -7,6 +7,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { useLaunchWizard } from "@/hooks/useLaunchWizard";
 import WalletButton from "@/components/ui/WalletButton";
 import WizardPanel from "./WizardPanel";
+import { isInAppBrowser } from "@/lib/inAppBrowser";
 
 export default function LaunchPageClient({ callbackUrl }: { callbackUrl: "/launch" | "/launch-test" }) {
   const wizard = useLaunchWizard();
@@ -70,6 +71,13 @@ export default function LaunchPageClient({ callbackUrl }: { callbackUrl: "/launc
           The first approval creates the address lookup table. The second atomically creates,
           buys, and locks the token in one transaction.
         </div>
+        {isInAppBrowser() && (
+          <div className="warning-box mt-6">
+            <span className="callout-title">in-app browser detected</span>
+            GitHub sign-in fails inside the X, Discord, and Instagram browsers. Open
+            lckd.tech in Safari or Chrome to continue.
+          </div>
+        )}
         <button
           type="button"
           onClick={() => signIn("github", { callbackUrl })}

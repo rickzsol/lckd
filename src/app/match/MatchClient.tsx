@@ -2,6 +2,7 @@
 
 import { signIn, useSession } from "next-auth/react";
 import MatchForm from "./MatchForm";
+import { isInAppBrowser } from "@/lib/inAppBrowser";
 
 const STEPS = [
   {
@@ -64,6 +65,13 @@ export default function MatchClient() {
               Sign in with GitHub to submit an application. We use your account to
               verify repository ownership and to follow up on selected launches.
             </p>
+            {isInAppBrowser() && (
+              <div className="warning-box mt-5">
+                <span className="callout-title">in-app browser detected</span>
+                GitHub sign-in fails inside the X, Discord, and Instagram browsers. Open
+                lckd.tech in Safari or Chrome to continue.
+              </div>
+            )}
             <button
               type="button"
               onClick={() => signIn("github", { callbackUrl: "/match" })}
