@@ -229,7 +229,7 @@ async function exactCleanupTable(intent: AtomicIntent) {
     connection.getAccountInfo(lookupTable, "finalized"),
     connection.getSlot("finalized"),
   ]);
-  if (!accountInfo) return null;
+  if (!accountInfo || accountInfo.lamports === 0 || accountInfo.data.length === 0) return null;
   return assertExactLookupTableForCleanup(accountInfo, {
     wallet: new PublicKey(intent.creatorWallet),
     lookupTable,
