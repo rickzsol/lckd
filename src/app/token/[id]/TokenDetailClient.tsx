@@ -14,9 +14,10 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
     t.lock.amount !== "--" &&
     t.lock.amount !== "0" &&
     t.lock.duration !== "--";
+  const hasLinks = Boolean(t.repo || t.live);
 
   return (
-    <div className="mx-auto max-w-[1360px] px-4 pt-28 pb-16 sm:px-6 lg:px-10">
+    <div className="mx-auto max-w-[1360px] px-4 pt-28 pb-16 sm:px-6 lg:px-10 2xl:max-w-[1480px]">
       <Link
         href="/feed"
         className="mb-4 inline-block font-mono text-xs text-text-3 transition-colors duration-180 ease-out hover:text-accent-400"
@@ -77,125 +78,38 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
         not audits. Verify the mint and any lock contract independently.
       </div>
 
-      {/* Primary area: (Chart + Stats + Dev) left, (Repo + Swap + Lock) sidebar */}
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <div className="flex min-w-0 flex-col gap-4 lg:gap-5">
-          <DexScreenerChart mintAddress={t.mintAddress} />
-          <div className="stats-strip">
-            {[
-              { l: "MCap", v: t.mcap, isLocked: false },
-              { l: "24h Vol", v: t.vol, isLocked: false },
-              { l: "Liquidity", v: t.liquidity ?? "--", isLocked: false },
-              { l: "Recorded Lock", v: hasLockRecord ? t.lock.amount : "Unverified", isLocked: hasLockRecord },
-              { l: "Recorded Duration", v: hasLockRecord ? t.lock.duration : "Unverified", isLocked: hasLockRecord },
-            ].map((s) => (
-              <div key={s.l}>
-                <div className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3">
-                  {s.l}
-                </div>
-                <div
-                  className={`font-mono text-[clamp(12px,2.5vw,15px)] font-bold tabular-nums ${
-                    s.isLocked ? "text-accent-400" : "text-text-1"
-                  }`}
-                >
-                  {s.v}
-                </div>
-              </div>
-            ))}
+      {/* Stats strip */}
+      <div className="stats-strip mb-5">
+        {[
+          { l: "MCap", v: t.mcap, isLocked: false },
+          { l: "24h Vol", v: t.vol, isLocked: false },
+          { l: "Liquidity", v: t.liquidity ?? "--", isLocked: false },
+          { l: "Recorded Lock", v: hasLockRecord ? t.lock.amount : "Unverified", isLocked: hasLockRecord },
+          { l: "Recorded Duration", v: hasLockRecord ? t.lock.duration : "Unverified", isLocked: hasLockRecord },
+        ].map((s) => (
+          <div key={s.l}>
+            <div className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3">
+              {s.l}
+            </div>
+            <div
+              className={`font-mono text-[clamp(12px,2.5vw,15px)] font-bold tabular-nums ${
+                s.isLocked ? "text-accent-400" : "text-text-1"
+              }`}
+            >
+              {s.v}
+            </div>
           </div>
+        ))}
+      </div>
 
-          {/* Dev profile + product link */}
-          {t.dev.github && (
-            <div className="rounded-card border border-line-default bg-surface p-5">
-              <div className="mb-3.5 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
-                Developer Profile
-              </div>
-              <div className="flex items-center gap-3">
-                <Image
-                  src={`https://github.com/${t.dev.github}.png?size=80`}
-                  alt=""
-                  width={40}
-                  height={40}
-                  unoptimized
-                  className="h-10 w-10 shrink-0 rounded-full border border-accent/30 bg-accent-dim object-cover"
-                />
-                <div>
-                  <a
-                    href={`https://github.com/${t.dev.github}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-sm font-bold text-text-1 hover:text-accent-400"
-                  >
-                    @{t.dev.github}
-                  </a>
-                  <div className="font-mono text-[10px] text-text-3 tabular-nums">
-                    {t.dev.repos !== undefined && <>{t.dev.repos} repos &middot; </>}
-                    {t.dev.commits !== undefined && (
-                      <>{t.dev.commits.toLocaleString()} commits &middot; </>
-                    )}
-                    {t.dev.accountAge}
-                  </div>
-                </div>
-              </div>
+      {/* Chart, full width */}
+      <div className="mb-5">
+        <DexScreenerChart mintAddress={t.mintAddress} />
+      </div>
 
-              <ContributionGraph username={t.dev.github} />
-
-              <p className="mt-4 border-t border-line pt-3.5 font-mono text-[11px] leading-[1.6] text-text-3">
-                GitHub handle submitted with this launch. Review the public account and repository
-                history directly on GitHub.
-              </p>
-            </div>
-          )}
-
-          {t.live && (
-            <div className="rounded-card border border-line-default bg-surface p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="mb-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-accent-400">
-                    Submitted product link
-                  </div>
-                  <a
-                    href={
-                      t.live.startsWith("http") ? t.live : `https://${t.live}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-[13px] text-text-1 hover:text-accent-400"
-                  >
-                    {t.live}
-                  </a>
-                </div>
-                <span className="pulse-dot" />
-              </div>
-            </div>
-          )}
-        </div>
-        <div className="flex flex-col gap-4 lg:gap-5">
-          {/* Linked Repo, compact */}
-          {t.repo && (
-            <div className="rounded-card border border-line-default bg-surface p-4">
-              <div className="mb-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
-              Submitted repository
-              </div>
-              <a
-                href={`https://github.com/${t.dev.github}/${t.repo.name}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block rounded-control border border-line-default bg-surface-deep px-3 py-2.5 transition-colors duration-180 ease-out hover:border-accent/35"
-              >
-                <div className="font-mono text-xs font-bold text-text-1">
-                  {t.dev.github}/{t.repo.name}
-                </div>
-                <div className="mt-0.5 font-mono text-[10px] text-text-3 tabular-nums">
-                  {t.repo.lang} &middot; {t.repo.stars} stars &middot;{" "}
-                  {t.repo.forks} forks &middot; {t.repo.commits30d} commits (30d) &middot; pushed {t.repo.lastPush} ago
-                </div>
-              </a>
-            </div>
-          )}
-          <JupiterSwap mintAddress={t.mintAddress} ticker={t.ticker} />
-
-          {/* Lock card */}
+      {/* Detail grid */}
+      <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 lg:gap-5 xl:grid-cols-3">
+        {/* Lock card */}
         <div className={`rounded-card border p-5 ${hasLockRecord ? "border-accent/20 bg-accent-dim" : "border-warn/25 bg-[rgba(224,167,62,0.04)]"}`}>
           <div className="mb-3.5 flex items-center justify-between font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
             <span>Token lock record</span>
@@ -263,6 +177,94 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
             )}
           </div>
         </div>
+
+        {/* Dev profile */}
+        {t.dev.github && (
+          <div className="rounded-card border border-line-default bg-surface p-5 xl:col-span-2">
+            <div className="mb-3.5 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
+              Developer Profile
+            </div>
+            <div className="flex items-center gap-3">
+              <Image
+                src={`https://avatars.githubusercontent.com/${t.dev.github}?size=80`}
+                alt=""
+                width={40}
+                height={40}
+                sizes="40px"
+                className="h-10 w-10 shrink-0 rounded-full border border-accent/30 bg-accent-dim object-cover"
+              />
+              <div>
+                <a
+                  href={`https://github.com/${t.dev.github}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-sm font-bold text-text-1 hover:text-accent-400"
+                >
+                  @{t.dev.github}
+                </a>
+                <div className="font-mono text-[10px] text-text-3 tabular-nums">
+                  {t.dev.repos !== undefined && <>{t.dev.repos} repos &middot; </>}
+                  {t.dev.commits !== undefined && (
+                    <>{t.dev.commits.toLocaleString()} commits &middot; </>
+                  )}
+                  {t.dev.accountAge}
+                </div>
+              </div>
+            </div>
+
+            <ContributionGraph username={t.dev.github} />
+
+            <p className="mt-4 border-t border-line pt-3.5 font-mono text-[11px] leading-[1.6] text-text-3">
+              GitHub handle submitted with this launch. Review the public account and repository
+              history directly on GitHub.
+            </p>
+          </div>
+        )}
+
+        {hasLinks && (
+          <div className="rounded-card border border-line-default bg-surface p-5 xl:col-span-2">
+            <div className="mb-3.5 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
+              Submitted links
+            </div>
+            <div className="flex flex-col gap-2.5">
+              {t.repo && (
+                <a
+                  href={`https://github.com/${t.dev.github}/${t.repo.name}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block rounded-control border border-line-default bg-surface-deep px-3 py-2.5 transition-colors duration-180 ease-out hover:border-accent/35"
+                >
+                  <div className="font-mono text-xs font-bold text-text-1">
+                    {t.dev.github}/{t.repo.name}
+                  </div>
+                  <div className="mt-0.5 font-mono text-[10px] text-text-3 tabular-nums">
+                    {t.repo.lang} &middot; {t.repo.stars} stars &middot;{" "}
+                    {t.repo.forks} forks &middot; {t.repo.commits30d} commits (30d) &middot; pushed {t.repo.lastPush} ago
+                  </div>
+                </a>
+              )}
+              {t.live && (
+                <a
+                  href={t.live.startsWith("http") ? t.live : `https://${t.live}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between rounded-control border border-line-default bg-surface-deep px-3 py-2.5 transition-colors duration-180 ease-out hover:border-accent/35"
+                >
+                  <div>
+                    <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-accent-400">
+                      Live product
+                    </div>
+                    <div className="mt-0.5 font-mono text-xs text-text-1">{t.live}</div>
+                  </div>
+                  <span className="pulse-dot" />
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className={hasLinks ? "" : "md:col-span-2 xl:col-span-3"}>
+          <JupiterSwap mintAddress={t.mintAddress} ticker={t.ticker} isWide={!hasLinks} />
         </div>
       </div>
     </div>

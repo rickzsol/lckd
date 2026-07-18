@@ -1,4 +1,4 @@
-import { type Token } from "@/types/index";
+import { type Token, TrustTier } from "@/types/index";
 import type { GitHubProfile } from "@/types/index";
 import type { DisplayToken } from "@/types/display";
 import { tokenToDisplay } from "./queries";
@@ -57,6 +57,96 @@ export async function getTokensByCreator(
     return (data as Token[]).map((t) => tokenToDisplay(t));
   } catch (error) {
     console.error("[getTokensByCreator] Error:", error);
+    return [];
+  }
+}
+
+export interface DeveloperSummary {
+  username: string;
+  avatar: string | null;
+  accountCreatedAt: string | null;
+  publicRepos: number | null;
+  totalCommits: number | null;
+  hasLinkedWallet: boolean;
+  highestTier: TrustTier;
+  launchCount: number;
+  latestLaunchAt: string;
+  tickers: string[];
+}
+
+/** Developers behind verified launches, most active first. */
+export async function getVerifiedDevelopers(): Promise<DeveloperSummary[]> {
+  if (!hasSupabaseConfig()) return [];
+
+  try {
+    const { getSupabase } = await import("./supabase");
+    const supabase = getSupabase();
+
+    const { data: tokens, error } = await supabase
+      .from("tokens")
+      .select("github_username, ticker, trust_tier, created_at")
+      .not("launch_verified_at", "is", null)
+      .not("lock_verified_at", "is", null)
+      .not("github_username", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    if (error) {
+      console.error("[getVerifiedDevelopers] Supabase error:", error.message);
+      return [];
+    }
+    if (!tokens || tokens.length === 0) return [];
+
+    const byDev = new Map<string, DeveloperSummary>();
+    for (const t of tokens as Pick<Token, "github_username" | "ticker" | "trust_tier" | "created_at">[]) {
+      if (!t.github_username) continue;
+      const existing = byDev.get(t.github_username);
+      if (existing) {
+        existing.launchCount += 1;
+        existing.highestTier = Math.max(existing.highestTier, t.trust_tier) as TrustTier;
+        if (existing.tickers.length < 3) existing.tickers.push(`$${t.ticker}`);
+        continue;
+      }
+      byDev.set(t.github_username, {
+        username: t.github_username,
+        avatar: null,
+        accountCreatedAt: null,
+        publicRepos: null,
+        totalCommits: null,
+        hasLinkedWallet: false,
+        highestTier: t.trust_tier,
+        launchCount: 1,
+        latestLaunchAt: t.created_at,
+        tickers: [`$${t.ticker}`],
+      });
+    }
+
+    const { data: profiles, error: profileError } = await supabase
+      .from("github_profiles")
+      .select(PROFILE_COLUMNS)
+      .in("github_username", [...byDev.keys()]);
+
+    if (profileError) {
+      console.error("[getVerifiedDevelopers] Profile query error:", profileError.message);
+    }
+
+    for (const p of (profiles ?? []) as GitHubProfile[]) {
+      const dev = byDev.get(p.github_username);
+      if (!dev) continue;
+      dev.avatar = p.github_avatar || null;
+      dev.accountCreatedAt = p.account_created_at;
+      dev.publicRepos = p.public_repos;
+      dev.totalCommits = p.total_commits;
+      dev.hasLinkedWallet = Boolean(p.wallet_address);
+    }
+
+    return [...byDev.values()].sort(
+      (a, b) =>
+        b.launchCount - a.launchCount ||
+        Date.parse(b.latestLaunchAt) - Date.parse(a.latestLaunchAt),
+    );
+  } catch (error) {
+    console.error("[getVerifiedDevelopers] Error:", error);
     return [];
   }
 }
