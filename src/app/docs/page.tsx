@@ -23,11 +23,11 @@ const DOC_SECTIONS: TocSection[] = [
 export const metadata: Metadata = {
   title: "Product documentation",
   description:
-    "How LCKD authentication, pump.fun token creation, the separate Streamflow lock transaction, partial failures, and independent verification work.",
+    "How LCKD authentication, the atomic pump.fun create, buy, and Streamflow lock transaction, lookup-table recovery, and independent verification work.",
   alternates: { canonical: "/docs" },
   openGraph: {
     title: "Product documentation | LCKD",
-    description: "Understand the create-then-lock workflow before signing.",
+    description: "Understand the atomic create-and-lock workflow before signing.",
     url: "/docs",
     type: "article",
   },
@@ -46,8 +46,8 @@ export default function DocsPage() {
             Know what you are signing
           </h1>
           <p className="mt-5 max-w-2xl text-[15px] leading-[1.6] text-text-2">
-            LCKD coordinates token creation and a required token time lock. They are separate
-            transactions with separate outcomes.
+            LCKD coordinates token creation and a required token time lock. Both execute in
+            one atomic transaction: no token is created without its lock.
           </p>
         </div>
       </header>
@@ -63,14 +63,16 @@ export default function DocsPage() {
               separately and keeps control of every wallet signature.
             </Prose>
             <Prose>
-              Token creation uses pump.fun infrastructure. The browser waits for creation to
-              confirm, reads the new token balance, and then builds a
-              Streamflow token lock. LCKD does not combine those actions atomically.
+              Token creation uses pump.fun infrastructure. The browser validates a
+              server-built transaction that creates the token, executes the initial buy,
+              deposits the selected amount into a Streamflow time lock, and deactivates the
+              launch lookup table in a single atomic transaction.
             </Prose>
             <Notice>
-              A confirmed create transaction is final even if the later lock fails or is
-              rejected. In that state, the purchased tokens remain in the wallet and can be
-              moved until a lock transaction confirms.
+              If any instruction in the launch transaction fails, the entire transaction
+              fails and no token is created. The only state a failed launch can leave behind
+              is its address lookup table, which the wizard deactivates and closes so the
+              wallet reclaims the rent.
             </Notice>
           </section>
 
@@ -79,16 +81,17 @@ export default function DocsPage() {
             <div className="space-y-5 rounded-card border border-line-default bg-surface p-5">
               <FlowStep n={1} label="Authenticate" sub="Sign in with GitHub. This creates the session required by launch and metadata endpoints." />
               <FlowStep n={2} label="Configure" sub="Add token metadata, choose an initial SOL buy, and select the time-lock duration and percentage." />
-              <FlowStep n={3} label="Approve create and buy" sub="Your wallet signs the pump.fun transaction. LCKD submits it and waits for confirmation." />
-              <FlowStep n={4} label="Approve the lock" sub="A second wallet request deposits the selected token amount into a Streamflow time lock." />
-              <FlowStep n={5} label="Verify receipts" sub="Check the create and lock signatures independently before relying on any platform label." />
+              <FlowStep n={3} label="Prepare the lookup table" sub="The first wallet signature creates an address lookup table that lets the launch fit in one transaction." />
+              <FlowStep n={4} label="Approve the atomic launch" sub="The second signature creates the token, executes the buy, deposits the Streamflow lock, and deactivates the lookup table in one transaction." />
+              <FlowStep n={5} label="Verify receipts" sub="Check the launch signature and lock state independently before relying on any platform label." />
             </div>
 
             <SubHeading>Partial failure</SubHeading>
             <Prose>
-              If the first transaction confirms but the second fails, the wizard shows a
-              partial-failure state and offers a lock retry. Do not describe the token as
-              locked until the retry confirms on-chain.
+              If the lookup table lands but the atomic launch cannot complete, no token
+              exists. The wizard walks the same wallet through deactivating and closing the
+              table, then unlocks a fresh launch. There is no state where a token exists
+              without its recorded lock.
             </Prose>
 
             <SubHeading>Estimated costs</SubHeading>
@@ -108,7 +111,7 @@ export default function DocsPage() {
               selected period.
             </Prose>
             <ul className="space-y-3 pl-5 text-[15px] leading-[1.6] text-text-2">
-              <li className="list-disc marker:text-text-3">The lock amount is based on the token balance found in the connected wallet.</li>
+              <li className="list-disc marker:text-text-3">The lock amount is computed from the exact token quote of the launch buy.</li>
               <li className="list-disc marker:text-text-3">A percentage below 100 leaves the remainder liquid.</li>
               <li className="list-disc marker:text-text-3">Streamflow fees mean the deposited amount can be slightly below the selected percentage.</li>
               <li className="list-disc marker:text-text-3">The recorded percentage is recomputed from the finalized deposit and the tokens acquired in the launch transaction.</li>
@@ -179,12 +182,13 @@ export default function DocsPage() {
           <section className="space-y-4">
             <SectionHeading id="faq">FAQ</SectionHeading>
             <FaqItem q="Does launch and lock use one transaction?">
-              No. Token creation and the Streamflow lock are separate transactions. The lock
-              is built only after creation confirms.
+              Yes. Creation, the initial buy, and the Streamflow lock execute in a single
+              atomic transaction. If any part fails, the whole transaction fails.
             </FaqItem>
             <FaqItem q="Can token creation succeed while locking fails?">
-              Yes. The wizard exposes this as a partial failure and lets the authenticated
-              wallet retry the lock.
+              No. The lock is part of the same transaction as creation. A failed launch
+              leaves no token; at most the prepared lookup table remains, and the wizard
+              cleans it up before the next launch.
             </FaqItem>
             <FaqItem q="Is GitHub optional?">
               GitHub authentication is required to use the browser launch workflow. Linking a

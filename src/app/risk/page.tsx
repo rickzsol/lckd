@@ -15,8 +15,8 @@ export const metadata: Metadata = {
 
 const RISKS = [
   {
-    title: "Two-transaction execution",
-    body: "Token creation and token locking are separate transactions. Creation can confirm while locking fails, expires, is rejected, or lacks funds. In that state, the token exists and the purchased balance remains liquid until a later lock confirms.",
+    title: "Atomic execution scope",
+    body: "Token creation, the initial buy, and the token lock execute in one atomic transaction: no token is created without its lock. A failed launch can still leave a prepared address lookup table that must be deactivated and closed by the same wallet before another launch, and network conditions can delay or expire a submitted transaction.",
   },
   {
     title: "Limited lock scope",

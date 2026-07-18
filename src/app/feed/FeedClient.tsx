@@ -78,9 +78,9 @@ export default function FeedClient({ launchMonitorUrl, officialLaunch, tokens }:
               <p className="mt-3 font-mono text-sm text-text-3">
                 No launch records are available.
               </p>
-              <button type="button" disabled className="btn-primary mt-4 cursor-not-allowed opacity-70">
-                public launches soon
-              </button>
+              <Link href="/launch" className="btn-primary mt-4 inline-flex">
+                launch token
+              </Link>
             </>
           ) : (
             <>

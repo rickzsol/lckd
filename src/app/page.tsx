@@ -11,12 +11,12 @@ import {
 export const metadata: Metadata = {
   title: "Solana token launch workflow",
   description:
-    "Create a Solana token, confirm it on-chain, then approve a separate Streamflow token lock. Review both transaction receipts independently.",
+    "Create a Solana token with its Streamflow time lock in one atomic transaction. Review the finalized receipt independently.",
   alternates: { canonical: "/" },
   openGraph: {
     title: "LCKD | Solana token launch workflow",
     description:
-      "A transparent create-then-lock workflow with separate wallet approvals and public receipts.",
+      "A transparent atomic create-and-lock workflow with public receipts.",
     url: "/",
     siteName: "LCKD",
     type: "website",
