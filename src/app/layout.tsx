@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import WalletProvider from "@/components/providers/WalletProvider";
+import EvmProvider from "@/components/providers/EvmProvider";
 import AuthProvider from "@/components/providers/AuthProvider";
 import Navbar from "@/components/layout/Navbar";
 import SiteFooter from "@/components/layout/SiteFooter";
@@ -60,13 +61,15 @@ export default function RootLayout({
           Skip to main content
         </a>
         <AuthProvider>
-          <WalletProvider>
-            <Navbar />
-            <main id="main-content" className="relative z-[1]" tabIndex={-1}>
-              {children}
-            </main>
-            <SiteFooter />
-          </WalletProvider>
+          <EvmProvider>
+            <WalletProvider>
+              <Navbar />
+              <main id="main-content" className="relative z-[1]" tabIndex={-1}>
+                {children}
+              </main>
+              <SiteFooter />
+            </WalletProvider>
+          </EvmProvider>
         </AuthProvider>
       </body>
     </html>

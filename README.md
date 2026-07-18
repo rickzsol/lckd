@@ -1,90 +1,126 @@
+<p align="center">
+  <img src="public/og.png" alt="LCKD, the launchpad that checks receipts" width="900" />
+</p>
+
 # LCKD
 
-LCKD is a Solana launch interface that constructs a pump.fun create-and-buy transaction with the official Pump SDK, then places the creator's purchased tokens into a separate, time-based Streamflow lock. GitHub identity, wallet ownership, launch receipts, and lock receipts are verified before a token is recorded.
+Token launch workflows with explicit wallet approvals and verified on-chain receipts.
 
-## Transaction flow
+[Website](https://lckd.tech) · [Product docs](https://lckd.tech/docs) · [API reference](https://lckd.tech/api-docs) · [Risk disclosure](https://lckd.tech/risk)
 
-1. Sign in with GitHub and link a Solana wallet by signing the displayed ownership message.
-2. Upload token metadata to IPFS through Pinata.
-3. Review and sign the pump.fun creation transaction.
-4. Wait for the creation transaction and purchased token balance to confirm.
-5. Review and sign the Streamflow lock transaction.
-6. Confirm the Streamflow account is a non-cancelable time lock for the selected amount and unlock timestamp.
-7. Record the finalized launch and lock receipts.
+LCKD is a launch interface and public receipt index. On Solana, it creates and buys a token through pump.fun, then places selected creator tokens into a separate Streamflow time lock. An experimental Robinhood Chain path uses Pons to create a fixed-supply token and permanently transfer its Uniswap v3 LP position to the Pons locker in one transaction.
 
-Creation and locking are separate transactions. A creation can succeed while locking or persistence fails. The launch screen preserves this partial state and provides a lock retry path without recreating the token.
+> [!CAUTION]
+> This project is pre-release. Robinhood mainnet sending is disabled by default, and Robinhood launches are not yet written to public profiles. Do not use meaningful funds without reviewing the transactions, contracts, deployment configuration, and current release state yourself.
+
+## How it works
+
+### Solana launch
+
+1. Sign in with GitHub and link a Solana wallet by signing an ownership message.
+2. Upload token metadata and its image to IPFS through Pinata.
+3. Build and validate a pump.fun create-and-buy transaction, then approve it in the linked wallet.
+4. Wait for confirmation and read the purchased token balance from the connected wallet.
+5. Build and validate a Streamflow lock for the selected amount and unlock time, then approve it separately.
+6. Verify the finalized create and lock receipts before recording the launch.
+
+Creation and locking are separate transactions. Creation can finalize while the lock is rejected, expires, or fails. LCKD preserves the partial launch state and offers a lock retry, but the purchased tokens remain liquid until a valid lock confirms.
+
+### Robinhood Chain launch
+
+1. Sign in with GitHub and connect an injected EVM wallet to Robinhood Chain, chain ID `4663`.
+2. Verify the pinned Pons factory, locker, Uniswap contracts, launch settings, fee split, and runtime code before simulation.
+3. Simulate the exact launch call. When mainnet sending is enabled, persist the launch intent and request one wallet approval.
+4. Create a fixed supply of 1 billion tokens, open one-sided Uniswap v3 liquidity, and transfer the LP NFT to the Pons locker in the same transaction.
+5. Wait for 20 confirmations, then verify the launch event, factory record, token state, pool, fee routing, and LP NFT owner.
+
+Recovery checkpoints bind a launch to its GitHub session, wallet, salt, transaction value, and calldata. An ambiguous wallet result blocks another request until the existing intent is reconciled.
+
+## Security boundaries
+
+- Wallets remain the only transaction signers. LCKD does not custody private keys or silently send transactions.
+- Launch and persistence routes require authentication, validate their origin and input, and use server-only credentials for privileged writes.
+- Solana transactions are checked before signing and again against finalized chain data before persistence.
+- Robinhood launches verify pinned contract code and configuration before simulation and immediately before a wallet request.
+- Stored receipts and profile labels are indexes, not audits or endorsements. Verify every address, amount, authority, permission, and receipt independently.
+
+These checks reduce transaction mismatch and receipt spoofing risk. They do not guarantee token value, liquidity, code quality, developer conduct, or third-party protocol safety.
 
 ## Stack
 
 - Next.js 16, React 19, TypeScript, and Tailwind CSS 4
-- Solana Wallet Adapter and `@solana/web3.js`
+- Solana Wallet Adapter, `@solana/web3.js`, and the pump.fun SDK
 - Streamflow JavaScript SDK 13
-- Supabase Postgres
-- NextAuth 4 with GitHub OAuth
-- Pinata for public IPFS metadata
+- wagmi, viem, Hardhat 3, Pons, and Uniswap v3
+- Supabase Postgres, NextAuth with GitHub OAuth, and Pinata
 
 ## Local setup
 
-Requirements: Node.js 20.9 or newer and npm 11.
+Requires Node.js 20.9 or newer and npm 11.
 
 ```bash
 npm ci
-Copy-Item .env.example .env.local
+cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+PowerShell users can replace the copy command with `Copy-Item .env.example .env.local`. Open [http://localhost:3000](http://localhost:3000) after the development server starts.
 
-Configure these values in `.env.local`:
+### Environment
 
-| Variable | Purpose |
+| Variables | Purpose |
 | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL used for public reads |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key used for public reads |
-| `SUPABASE_URL` | Server-only Supabase project URL; may match the public URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-only key for verified writes |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub OAuth application |
-| `NEXTAUTH_SECRET` / `NEXTAUTH_URL` | Session signing secret and canonical application URL |
-| `HELIUS_RPC_URL` | Server-only Solana RPC used to verify finalized receipts |
-| `NEXT_PUBLIC_HELIUS_RPC_URL` | Browser Solana RPC used for wallet transactions |
-| `NEXT_PUBLIC_STREAMFLOW_CLUSTER` | `mainnet`, `devnet`, `testnet`, or `local`; must match the RPC |
-| `STREAMFLOW_PROGRAM_ID` | Optional server verifier override for the selected cluster |
-| `PINATA_JWT` / `PINATA_GATEWAY` | Pinata upload credential and public gateway host |
-| `GITHUB_PAT` | Optional token for higher GitHub API limits and refresh jobs |
-| `CRON_SECRET` | Bearer secret for the GitHub refresh cron route |
-| `ALLOWED_ORIGIN` | Canonical HTTPS origin accepted by state-changing API routes |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public Supabase reads |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Server-only verified writes and recovery state |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub OAuth |
+| `NEXTAUTH_SECRET`, `NEXTAUTH_URL` | Session signing and canonical application URL |
+| `ALLOWED_ORIGIN` | HTTPS origin accepted by state-changing routes |
+| `HELIUS_RPC_URL`, `NEXT_PUBLIC_HELIUS_RPC_URL` | Server and browser Solana RPC endpoints |
+| `NEXT_PUBLIC_STREAMFLOW_CLUSTER`, `STREAMFLOW_PROGRAM_ID` | Streamflow cluster and optional verifier override |
+| `PINATA_JWT`, `PINATA_GATEWAY` | IPFS metadata uploads and public gateway |
+| `GITHUB_PAT`, `CRON_SECRET` | Optional GitHub API quota and authenticated refresh job |
+| `ROBINHOOD_RPC_URL` | Robinhood Chain reads, recovery scans, and fork tests |
+| `NEXT_PUBLIC_ENABLE_ROBINHOOD_LAUNCHES` | Enables Robinhood mainnet wallet requests when set to `true`; defaults to simulation only |
 
-Never expose the service-role key, Pinata JWT, GitHub secret, cron secret, or server RPC credential to client code.
+Never expose service-role keys, OAuth secrets, RPC credentials, Pinata credentials, or cron secrets to client code. Only variables prefixed with `NEXT_PUBLIC_` belong in the browser bundle.
 
 ## Database
 
-Apply migrations in order before starting the production application:
+Apply the Supabase migrations in order:
 
 ```text
 supabase/migrations/001_initial.sql
 supabase/migrations/002_backend_hardening.sql
+supabase/migrations/003_distributed_rate_limits.sql
+supabase/migrations/004_launch_recovery.sql
+supabase/migrations/005_robinhood_launch_recovery.sql
 ```
 
-The second migration adds receipt verification fields, wallet ownership constraints, transaction uniqueness, and server-only mutation policies. Review it against the target database before applying it.
+The migrations create the public token and profile tables, harden row-level access, add distributed API throttling, and persist recovery state for both launch paths. Review every migration against the target database before applying it. Do not enable Robinhood mainnet sending until migration `005` is applied and tested in a disposable environment.
 
 ## Commands
 
-```bash
-npm run lint
-npm run typecheck
-npm test
-npm run build
-npm run start
-```
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the local development server |
+| `npm run lint` | Run ESLint on `src` |
+| `npm run typecheck` | Run TypeScript without emitting files |
+| `npm test` | Run unit and integration tests |
+| `npm run test:robinhood` | Run the pinned Robinhood Chain fork suite |
+| `npm run build` | Create a production build |
+| `npm run start` | Serve the production build |
 
-## Production checks
+The Robinhood fork suite uses the pinned block in `hardhat.config.ts`. Set `ROBINHOOD_RPC_URL` to a provider that can serve that historical state.
 
-- Set every required environment variable in the deployment target.
-- Confirm the RPC and Streamflow cluster match.
-- Apply both database migrations before routing traffic to the new build.
-- Restrict Supabase, Helius, GitHub, and Pinata credentials to the intended origins and scopes.
-- Verify GitHub OAuth callback URLs and `NEXTAUTH_URL` use the production origin.
-- Run lint, type checks, lock invariant tests, the production build, and desktop/mobile browser checks.
-- Test a real launch and lock on the intended cluster with a disposable wallet before enabling public use.
+## Before deployment
 
-No transaction is sent without explicit wallet approval. LCKD records on-chain evidence, but it does not guarantee token value, code quality, liquidity, or developer conduct.
+- Apply and verify all database migrations.
+- Configure separate server and browser credentials with the narrowest available scopes.
+- Confirm the Solana RPC and Streamflow cluster match.
+- Keep Robinhood mainnet sending disabled until recovery, archive RPC access, and the authenticated preview flow are verified.
+- Run lint, type checks, tests, the production build, and desktop and mobile browser checks.
+- Test each enabled launch path with a disposable wallet before routing public traffic.
+
+## Risk
+
+LCKD is transaction tooling and a public directory. It is not an exchange, custodian, auditor, broker, or investment adviser. Token creation, time locks, permanent LP locks, wallet software, RPC providers, and third-party protocols can fail or behave unexpectedly. Read the [risk disclosure](https://lckd.tech/risk) and inspect every wallet prompt before signing.

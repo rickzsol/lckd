@@ -1,16 +1,20 @@
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { apiResponse, apiError, OPTIONS } from "@/lib/api/helpers";
-import { requireLinkedWallet, type LinkedWalletSession } from "@/lib/api/auth";
+import { requireLinkedWallet } from "@/lib/api/auth";
 import { requireSameOrigin } from "@/lib/api/origin";
 import { checkRateLimit } from "@/lib/api/rateLimit";
 import { getServerClient } from "@/lib/supabase";
 import { isValidSolanaAddress } from "@/lib/api/validation";
 import {
   OnChainVerificationError,
-  verifyFinalizedAtomicLaunchTransaction,
+  verifyFinalizedLaunchTransaction,
+  verifyFinalizedLockTransaction,
 } from "@/lib/api/onchain";
-import { fetchApprovedMetadata } from "@/lib/api/finalizedMetadata";
+import {
+  completeLaunchIntent,
+  LaunchRecoveryError,
+} from "@/lib/api/launchRecovery";
 
 export { OPTIONS };
 
@@ -21,56 +25,38 @@ const httpsUrl = z.string().url().max(500).refine(
   "URL must use HTTPS",
 );
 const nullableUrl = httpsUrl.nullable().default(null);
+const MAX_METADATA_BYTES = 16 * 1024;
 
-const atomicRecordSchema = z.object({
+const finalizedMetadataSchema = z.object({
+  name: z.string().trim().min(1).max(32),
+  symbol: z.string().trim().min(1).max(13),
+  description: z.string().max(1000).default(""),
+  image: httpsUrl,
+  twitter: nullableUrl.optional(),
+  telegram: nullableUrl.optional(),
+  website: nullableUrl.optional(),
+}).passthrough();
+
+const fullRecordSchema = z.object({
   mintAddress: solanaAddress,
-  creatorWallet: solanaAddress,
-  atomicTxSignature: transactionSignature,
-  lockMetadataId: solanaAddress,
-}).strict();
-
-const storedConfigSchema = z.object({
   name: z.string().trim().min(1).max(32),
   ticker: z.string().trim().min(1).max(13),
-  description: z.string().max(1000),
+  description: z.string().max(1000).default(""),
+  imageUri: httpsUrl,
+  creatorWallet: solanaAddress,
+  launchTxSignature: transactionSignature,
+  lockTxSignature: transactionSignature,
   lockDurationDays: z.number().int().min(7).max(365),
-  lockPercentage: z.number().int().min(51).max(99),
+  lockPercentage: z.number().int().min(51).max(100),
+  lockAmount: z.string().regex(/^\d+$/),
   buyAmountSol: z.number().finite().positive().max(100),
-  githubUsername: z.string().nullable(),
-  githubRepo: z.string().max(200).nullable(),
+  githubUsername: z.string().nullable().default(null),
+  githubRepo: z.string().max(200).nullable().default(null),
   liveUrl: nullableUrl,
   twitterUrl: nullableUrl,
   telegramUrl: nullableUrl,
   websiteUrl: nullableUrl,
-}).passthrough();
-
-const atomicIntentSchema = z.object({
-  status: z.enum(["atomic_submitted", "completed"]),
-  stateVersion: z.number().int().nonnegative().safe(),
-  creatorWallet: solanaAddress,
-  mintAddress: solanaAddress,
-  metadataAddress: solanaAddress,
-  metadataUri: httpsUrl.max(200),
-  imageUri: httpsUrl,
-  config: storedConfigSchema,
-  altAddress: solanaAddress,
-  altAddresses: z.array(solanaAddress).min(1).max(256),
-  quotedTokenAmount: z.string().regex(/^\d+$/),
-  maxQuoteAmount: z.string().regex(/^\d+$/),
-  atomicTx: transactionSignature,
-  lockMetadataId: solanaAddress,
-  lockAmount: z.string().regex(/^\d+$/),
-  unlockTimestamp: z.number().int().positive().safe(),
-}).passthrough();
-
-const atomicRecordResultSchema = z.object({
-  status: z.literal("completed"),
-  stateVersion: z.number().int().nonnegative().safe(),
-  altStatus: z.enum(["deactivating", "close_submitted", "closed"]),
-  altStateVersion: z.number().int().nonnegative().safe(),
-  replayed: z.boolean(),
-  updated: z.boolean(),
-}).passthrough();
+}).strict();
 
 function verificationError(error: unknown) {
   if (error instanceof OnChainVerificationError) {
@@ -80,137 +66,75 @@ function verificationError(error: unknown) {
   return apiError("On-chain verification is unavailable", 503);
 }
 
-function persistenceError(error: { code?: string; message: string }) {
-  console.error("[token/record] Persistence failed:", error.message);
-  const isConflict = ["23505", "23514", "40001", "55000"].includes(error.code ?? "");
-  return apiError(
-    isConflict ? "Launch recovery state does not match finalized receipts" : "Failed to record token",
-    isConflict ? 409 : 503,
-  );
+function pinataGatewayOrigin(): string {
+  const configured = process.env.PINATA_GATEWAY?.trim();
+  if (!configured) return "https://gateway.pinata.cloud";
+  const gateway = new URL(configured.startsWith("http") ? configured : `https://${configured}`);
+  const isApprovedHost =
+    gateway.hostname === "gateway.pinata.cloud" ||
+    gateway.hostname.endsWith(".mypinata.cloud");
+  if (gateway.protocol !== "https:" || !isApprovedHost) {
+    throw new OnChainVerificationError("PINATA_GATEWAY is not an approved Pinata host", 503);
+  }
+  return gateway.origin;
 }
 
-async function recordAtomicLaunch(
-  body: z.infer<typeof atomicRecordSchema>,
-  session: LinkedWalletSession,
-) {
-  if (body.creatorWallet !== session.wallet_address) {
-    return apiError("creatorWallet does not match the linked wallet", 403);
+async function readLimitedBody(response: Response): Promise<string> {
+  if (!response.body) {
+    throw new OnChainVerificationError("Finalized launch metadata has no body", 422);
   }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > MAX_METADATA_BYTES) {
+      await reader.cancel();
+      throw new OnChainVerificationError("Finalized launch metadata is too large", 422);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
 
-  const serverClient = getServerClient();
-  const { data: intentData, error: intentError } = await serverClient.rpc(
-    "get_owned_atomic_launch_intent",
-    {
-      p_github_id: session.github_id,
-      p_creator_wallet: session.wallet_address,
-      p_mint_address: body.mintAddress,
-    },
-  );
-  if (intentError) return apiError("Atomic launch recovery is unavailable", 503);
-  const parsedIntent = atomicIntentSchema.safeParse(intentData);
-  if (!parsedIntent.success) {
-    return apiError("Atomic launch does not match its reviewed intent", 422);
-  }
-  const intent = parsedIntent.data;
+async function fetchFinalizedMetadata(metadataUri: string) {
+  const url = new URL(metadataUri);
   if (
-    intent.creatorWallet !== session.wallet_address ||
-    intent.mintAddress !== body.mintAddress ||
-    intent.atomicTx !== body.atomicTxSignature ||
-    intent.metadataAddress !== body.lockMetadataId ||
-    intent.lockMetadataId !== body.lockMetadataId
+    url.protocol !== "https:" ||
+    url.origin !== pinataGatewayOrigin() ||
+    !/^\/ipfs\/[A-Za-z0-9]+$/.test(url.pathname) ||
+    url.search ||
+    url.hash
   ) {
-    return apiError("Atomic launch does not match its reviewed intent", 422);
+    throw new OnChainVerificationError("Launch metadata URI is not an approved IPFS gateway URL", 422);
   }
-  const config = intent.config;
 
-  let verified;
-  let metadata;
+  const response = await fetch(url, {
+    cache: "no-store",
+    redirect: "error",
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!response.ok) {
+    throw new OnChainVerificationError("Finalized launch metadata is unavailable", 422);
+  }
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_METADATA_BYTES) {
+    throw new OnChainVerificationError("Finalized launch metadata is too large", 422);
+  }
+  const text = await readLimitedBody(response);
+  let raw: unknown;
   try {
-    verified = await verifyFinalizedAtomicLaunchTransaction(
-      body.atomicTxSignature,
-      session.wallet_address,
-      body.mintAddress,
-      body.lockMetadataId,
-      {
-        name: config.name,
-        symbol: config.ticker,
-        metadataUri: intent.metadataUri,
-        buyAmountSol: config.buyAmountSol,
-        quotedTokenAmount: intent.quotedTokenAmount,
-        maxQuoteAmount: intent.maxQuoteAmount,
-        lookupTableAddress: intent.altAddress,
-        lookupTableAddresses: intent.altAddresses,
-        lockAmount: intent.lockAmount,
-        unlockTimestamp: intent.unlockTimestamp,
-        lockDurationDays: config.lockDurationDays,
-        lockPercentage: config.lockPercentage,
-      },
-    );
-    metadata = await fetchApprovedMetadata(verified.metadataUri);
-  } catch (error) {
-    return verificationError(error);
+    raw = JSON.parse(text);
+  } catch {
+    throw new OnChainVerificationError("Finalized launch metadata is invalid JSON", 422);
   }
-
-  if (
-    metadata.name !== verified.name ||
-    metadata.symbol !== verified.symbol ||
-    metadata.description !== config.description ||
-    metadata.image !== intent.imageUri ||
-    (metadata.twitter ?? null) !== config.twitterUrl ||
-    (metadata.telegram ?? null) !== config.telegramUrl ||
-    (metadata.website ?? null) !== config.websiteUrl ||
-    config.githubUsername !== session.github_username
-  ) {
-    return apiError("Finalized atomic metadata does not match the reviewed intent", 422);
+  const parsed = finalizedMetadataSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new OnChainVerificationError("Finalized launch metadata is invalid", 422);
   }
-
-  const verifiedAt = new Date().toISOString();
-  const { data: wasUpdated, error } = await serverClient.rpc(
-    "record_verified_atomic_launch",
-    {
-      p_github_id: session.github_id,
-      p_creator_wallet: session.wallet_address,
-      p_mint_address: body.mintAddress,
-      p_metadata_uri: verified.metadataUri,
-      p_atomic_tx: verified.signature,
-      p_lock_metadata_id: verified.metadataAddress,
-      p_name: verified.name,
-      p_ticker: verified.symbol,
-      p_description: metadata.description,
-      p_image_uri: metadata.image,
-      p_lock_duration_days: verified.lock.durationDays,
-      p_lock_percentage: verified.lock.percentage,
-      p_lock_unlock_at: verified.lock.unlockAt,
-      p_lock_amount: verified.lock.amount,
-      p_lock_debited_amount: verified.lock.debitedAmount,
-      p_purchased_amount: verified.purchasedAmount.toString(),
-      p_buy_amount_sol: Number(verified.buyAmountLamports) / 1_000_000_000,
-      p_github_username: session.github_username,
-      p_github_repo: config.githubRepo,
-      p_live_url: config.liveUrl,
-      p_twitter_url: metadata.twitter ?? null,
-      p_telegram_url: metadata.telegram ?? null,
-      p_website_url: metadata.website ?? null,
-      p_verified_at: verifiedAt,
-      p_expected_state_version: intent.stateVersion,
-    },
-  );
-  if (error) return persistenceError(error);
-  const result = atomicRecordResultSchema.safeParse(wasUpdated);
-  if (!result.success) return apiError("Atomic launch persistence returned an invalid state", 503);
-  const responseStatus = result.data.replayed || result.data.updated ? 200 : 201;
-  return apiResponse(
-    {
-      success: true,
-      status: result.data.status,
-      stateVersion: result.data.stateVersion,
-      altStatus: result.data.altStatus,
-      altStateVersion: result.data.altStateVersion,
-      updated: result.data.updated,
-      replayed: result.data.replayed,
-    },
-    responseStatus,
-  );
+  return parsed.data;
 }
 
 export async function POST(request: NextRequest) {
@@ -230,7 +154,132 @@ export async function POST(request: NextRequest) {
     return apiError("Invalid JSON", 400);
   }
 
-  const parsed = atomicRecordSchema.safeParse(raw);
+  const parsed = fullRecordSchema.safeParse(raw);
   if (!parsed.success) return apiError(parsed.error.issues[0].message, 400);
-  return recordAtomicLaunch(parsed.data, session);
+
+  const body = parsed.data;
+  if (body.creatorWallet !== session.wallet_address) {
+    return apiError("creatorWallet does not match the linked wallet", 403);
+  }
+  if (body.githubUsername && body.githubUsername !== session.github_username) {
+    return apiError("githubUsername does not match the authenticated user", 403);
+  }
+  if (body.launchTxSignature === body.lockTxSignature) {
+    return apiError("Launch and lock transactions must be different", 400);
+  }
+
+  let launch;
+  let lock;
+  let metadata;
+  try {
+    launch = await verifyFinalizedLaunchTransaction(
+      body.launchTxSignature,
+      session.wallet_address,
+      body.mintAddress,
+    );
+    metadata = await fetchFinalizedMetadata(launch.metadataUri);
+    lock = await verifyFinalizedLockTransaction(
+      body.lockTxSignature,
+      session.wallet_address,
+      body.mintAddress,
+      launch.purchasedAmount,
+    );
+  } catch (error) {
+    return verificationError(error);
+  }
+
+  if (
+    lock.durationDays !== body.lockDurationDays ||
+    lock.percentage < 50 ||
+    lock.percentage > body.lockPercentage ||
+    BigInt(lock.debitedAmount) + BigInt(10) <
+      (launch.purchasedAmount * BigInt(body.lockPercentage)) / BigInt(100)
+  ) {
+    return apiError("Submitted lock terms do not match the finalized transaction", 422);
+  }
+  if (
+    launch.name !== body.name ||
+    launch.symbol !== body.ticker ||
+    metadata.name !== launch.name ||
+    metadata.symbol !== launch.symbol ||
+    metadata.description !== body.description ||
+    metadata.image !== body.imageUri ||
+    (metadata.twitter ?? null) !== body.twitterUrl ||
+    (metadata.telegram ?? null) !== body.telegramUrl ||
+    (metadata.website ?? null) !== body.websiteUrl
+  ) {
+    return apiError("Submitted token details do not match finalized metadata", 422);
+  }
+
+  const supabase = getServerClient();
+  const { data: existing, error: lookupError } = await supabase
+    .from("tokens")
+    .select("id, creator_wallet, launch_tx")
+    .eq("mint_address", body.mintAddress)
+    .maybeSingle();
+
+  if (lookupError) {
+    console.error("[token/record] Token lookup failed:", lookupError.message);
+    return apiError("Failed to verify token ownership", 503);
+  }
+  if (existing?.creator_wallet && existing.creator_wallet !== session.wallet_address) {
+    return apiError("Token is owned by another wallet", 403);
+  }
+  if (existing?.launch_tx && existing.launch_tx !== body.launchTxSignature) {
+    return apiError("Launch transaction cannot be replaced", 409);
+  }
+
+  const verifiedAt = new Date().toISOString();
+  const values = {
+    name: launch.name,
+    ticker: launch.symbol,
+    description: metadata.description,
+    image_uri: metadata.image,
+    creator_wallet: session.wallet_address,
+    launch_tx: body.launchTxSignature,
+    lock_tx: body.lockTxSignature,
+    lock_duration_days: lock.durationDays,
+    lock_percentage: lock.percentage,
+    lock_unlock_at: lock.unlockAt,
+    lock_amount: lock.amount,
+    buy_amount_sol: Number(launch.buyAmountLamports) / 1_000_000_000,
+    github_username: session.github_username,
+    github_repo: body.githubRepo,
+    live_url: body.liveUrl,
+    twitter_url: metadata.twitter ?? null,
+    telegram_url: metadata.telegram ?? null,
+    website_url: metadata.website ?? null,
+    launch_verified_at: verifiedAt,
+    lock_verified_at: verifiedAt,
+  };
+
+  const query = existing
+    ? supabase
+        .from("tokens")
+        .update(values)
+        .eq("id", existing.id)
+        .eq("creator_wallet", session.wallet_address)
+    : supabase.from("tokens").insert({
+        ...values,
+        mint_address: body.mintAddress,
+        trust_tier: 1,
+      });
+
+  const { data, error } = await query.select("id").maybeSingle();
+  if (error) {
+    console.error("[token/record] Persistence failed:", error.message);
+    return apiError(error.code === "23505" ? "Token or transaction is already recorded" : "Failed to record token", error.code === "23505" ? 409 : 503);
+  }
+  if (!data) return apiError("Token ownership changed during update", 409);
+
+  try {
+    await completeLaunchIntent(session, body.mintAddress);
+  } catch (completionError) {
+    if (completionError instanceof LaunchRecoveryError) {
+      return apiError(completionError.message, completionError.status);
+    }
+    return apiError("Failed to complete launch recovery state", 503);
+  }
+
+  return apiResponse({ success: true, updated: Boolean(existing) }, existing ? 200 : 201);
 }

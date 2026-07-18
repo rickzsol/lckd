@@ -26,7 +26,7 @@ const INITIAL_CONFIG: LaunchConfig = {
   imageUri: null,
   buyAmountSol: 1,
   lockDurationDays: 90,
-  lockPercentage: 99,
+  lockPercentage: 100,
   githubUsername: null,
   githubRepo: null,
   liveUrl: null,
@@ -55,7 +55,6 @@ function loadSavedState(): { config: LaunchConfig; step: number } {
         ? {
             ...INITIAL_CONFIG,
             ...parsed.config,
-            lockPercentage: Math.min(Number(parsed.config.lockPercentage ?? 99), 99),
             image: null,
           }
         : INITIAL_CONFIG,
@@ -84,9 +83,6 @@ export function useLaunchWizard() {
     errorMessage,
     launch,
     retryLock,
-    cleanupLookup,
-    recoveryStatus,
-    recoveryAltStatus,
     resetLaunch,
   } = useTokenLaunch(config);
 
@@ -240,12 +236,12 @@ export function useLaunchWizard() {
     return map[computedTier];
   }, [computedTier]);
 
-  const reset = useCallback(async () => {
-    if (!await resetLaunch()) return;
+  const reset = useCallback(() => {
     setStep(1);
     setConfig(INITIAL_CONFIG);
     setImagePreview(null);
     setErrors({});
+    resetLaunch();
     sessionStorage.removeItem(STORAGE_KEY);
   }, [resetLaunch]);
 
@@ -269,9 +265,6 @@ export function useLaunchWizard() {
     goToStep,
     launch,
     retryLock,
-    cleanupLookup,
-    recoveryStatus,
-    recoveryAltStatus,
     reset,
   };
 }

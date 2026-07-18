@@ -4,61 +4,76 @@ Updated: 2026-07-17
 
 ## Decision
 
-**NO-GO for public token launches.** Code-side blockers are addressed in the isolated release candidate, but production Supabase is unavailable and the product owner must explicitly choose between listing-gated two-step locking and a future chain-atomic launcher.
+**NO-GO for public token launches.** The candidate builds cleanly and the transaction validators passed independent review, but production infrastructure and the two-step launch guarantee still have release-blocking gaps.
 
-## Open release blockers
+## Release blockers
 
-### SEC-001 - High - Production data plane unavailable
+### SEC-001 — High — Production data plane unavailable
 
-- Production stats and feed safely return `available: false`.
-- The configured Supabase host no longer resolves and the project is not visible to the authenticated CLI account.
-- Apply migrations 002, 003, and 004 only after restoring the intended project, reviewing existing rows, and running a dry-run.
-- Production `PINATA_JWT`, `HELIUS_RPC_URL`, and `ALLOWED_ORIGIN` are now validated and configured.
+- Live `/api/v1/stats` and `/api/v1/feed` return safe empty payloads with `available: false`; the data plane is not functional.
+- Vercel runtime history shows repeated Supabase fetch failures across stats, feed, developer, and cron routes.
+- The configured Supabase hostname does not resolve and its project reference is absent from the authenticated Supabase account.
+- `PINATA_JWT`, server-only `HELIUS_RPC_URL`, and `ALLOWED_ORIGIN` are not configured in production.
 
-### SEC-002 - High - Locking is listing-gated, not chain-atomic
+Required: restore/provision Supabase, review data, apply migration 002, set scoped credentials, and verify all backend routes on a preview.
 
-- LCKD never records or publishes a launch until both finalized receipts pass exact verification.
-- Pump creation and Streamflow locking still require separate wallet approvals. A user can abandon the second approval and leave a Pump token unlocked outside LCKD.
-- A direct v0 transaction does not fit. A reusable fixed-address lookup table still measures 1,251-1,289 bytes, above Solana's 1,232-byte limit.
-- A prepared per-launch lookup table fits at 910-1,082 bytes and should remain a separate audited project because it needs dynamic ALT preparation and low-level Streamflow construction.
+### SEC-002 — High — Mandatory lock is not atomic
 
-Required: explicitly accept the honest listing-gated guarantee for this release, or hold launch for an independently audited ALT/custom-program atomic implementation.
+- `src/hooks/useTokenLaunch.ts` finalizes Pump creation before requesting a separate Streamflow lock signature.
+- Closing or rejecting the second approval leaves a valid Pump token without a lock.
+- The app prevents an unlocked token from being persisted/listed, but cannot truthfully guarantee every created token is locked.
 
-### SEC-003 - Medium - Database recovery must be exercised on staging
+Required: implement an atomic/escrowed architecture, or narrow the production guarantee and add durable enforcement/recovery.
 
-- The candidate persists an authenticated intent before returning a transaction, checkpoints signatures before broadcast, reconciles finality, and restores mandatory-lock state after refresh.
-- State transitions use atomic compare-and-swap RPCs. Token persistence and intent completion share one database transaction.
-- Metadata and reviewed lock percentage are bound to finalized receipts. A 100% intent cannot be recorded with a 51% lock.
-- SQL integration tests cannot run until a disposable Supabase project is provided; local Docker is unavailable.
+### SEC-003 — High — Partial-launch recovery is not durable
 
-Required: apply migrations to staging and run concurrency, replay, rollback, expiry, OAuth, and recovery tests before production.
+- Mint, launch signature, lock transaction state, and signed lock bytes live only in React memory.
+- A refresh or crash after Pump finalization removes the retry path.
 
-### SEC-004 - Medium - Dependency advisories remain
+Required: persist an authenticated server-side launch intent before creation and recover each finalized phase idempotently.
 
-- `npm audit --omit=dev`: 8 high, 21 moderate, 0 critical.
-- The official Pump SDK adds findings through the existing Solana/Anchor dependency tree. Automated fixes propose incompatible downgrades.
+### SEC-004 — High availability — PumpPortal construction currently fails
 
-Required: record risk acceptance and track upstream patched releases.
+- Repeated unsigned, unsent `trade-local` creation probes returned HTTP 400, including a funded public fee-payer address and live metadata.
+- No transaction was returned for the strict validator.
+
+Required: resolve the current PumpPortal contract/API requirement and pass live unsigned construction before a funded E2E.
+
+### SEC-005 — Medium — Rate limiting is process-local
+
+- `src/lib/api/rateLimit.ts` uses an in-memory `Map`, which is not shared across Vercel instances.
+
+Required: configure Vercel Firewall rate limits or a shared atomic limiter before public traffic.
+
+### SEC-006 — Medium — Dependency advisories remain
+
+- `npm audit --omit=dev`: 5 high, 21 moderate, 0 critical.
+- High paths originate in `bigint-buffer`, Solana SPL dependencies, and Streamflow. Automated fixes propose unsafe major downgrades.
+
+Required: track upstream fixes, assess reachability, and document an explicit risk acceptance if no patched compatible versions exist.
 
 ## Fixed and independently verified
 
-- Broken PumpPortal creation was replaced with official `@pump-fun/pump-sdk@1.36.0` construction.
-- Live unsigned mainnet simulation passed: 1,162 bytes, 5 instructions, 2 signers, 0 ALTs, 198,375 CU, `err=null`.
-- Exact Pump account layouts, official fee recipients, PDAs, ATAs, signers, spend, priority fee, and outer instructions are validated.
-- Distributed rate limiting uses an atomic service-role-only Postgres RPC and fails closed in production.
-- Durable recovery uses immutable prepared intents, CAS checkpoints, expiry-safe abandonment, and one-active-intent enforcement.
-- Exact Streamflow v13 cliff, permissions, fee oracle, PDAs, finalized debit, and requested lock allocation are verified.
-- GitHub identity, immutable wallet ownership, metadata, launch receipt, lock receipt, and persisted row must agree.
-- Security headers, origin checks, bounded metadata fetching, RLS, and server-only writes remain enforced.
+- Immutable first wallet link with compare-and-set ownership enforcement.
+- Exact Pump create/create_v2 and all four current buy layouts from the official IDL.
+- Exact signers, fixed programs, PDAs, ATAs, payload lengths, disabled Mayhem/cashback flags, bounded spend, and total compute priority fee.
+- Finalized outer-instruction allowlist closes transfer/reacquire purchase-denominator manipulation.
+- Finalized Pump TradeEvent binds actual SOL spend and purchased token amount.
+- Finalized Pinata IPFS metadata binds name, symbol, description, image, and social links with redirect, host, timeout, and size restrictions.
+- Exact Streamflow v13 cliff lock, accounts, fee oracle, permissions, program, payload, finalized debit, and actual deposit percentage.
+- Finalized Streamflow deposit must remain at least 50% after protocol fees; the server requires a 51% or greater selected allocation.
+- Production RPC requires a server-only URL and verifies the mainnet genesis hash; production Streamflow program ID is pinned.
+- Public RLS exposes only fully verified launches and safe profile columns after migration 002.
 
 ## Verification
 
-- 21 tests passed
+- 16 tests passed
 - TypeScript passed
 - ESLint passed
-- Production build passed locally and on Vercel Preview
-- Independent Pump, atomic-feasibility, rate-limit, and recovery reviews completed
-- Gitleaks source-tree scan found no secrets
-- Context7 was attempted but quota is exhausted; official primary sources and installed SDK source were used
-- In-app Browser is unavailable in this session
+- Production build passed
+- `git diff --check` passed
+- Gitleaks found no committed secrets
+- Helius mainnet health and priority-fee reads passed
+- Vercel deployment/env/runtime inspection completed
+- Context7 was attempted but its monthly quota is exhausted; official Pump, Streamflow, Supabase, Next.js, Helius, and Vercel sources were used
 - No transaction was signed or sent

@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+/artifacts
+/cache
 /test-results
 /playwright-report
 /.playwright-cli
@@ -40,7 +42,7 @@ yarn-error.log*
 !.env.example
 
 # vercel
-.vercel
+/.vercel
 
 # typescript
 *.tsbuildinfo
@@ -50,17 +52,22 @@ next-env.d.ts
 /cli/
 /scripts/
 CLAUDE.md
+/.agents/
+/.claude/
+/.codex/
+/skills-lock.json
+/LCKD_POST_LAUNCH_TWEETS.md
+/STATE.md
+/TASKS.md
+/TRUST_FEATURES_PLAN.md
+/security_best_practices_report.md
 
 # local Solana/debug artifacts
 *-wallet.json
 sigs*.json
 *tx_debug*.json
 /public/Untitled*.png
-
-# local Supabase CLI state
 /supabase/.temp/
-
-.vercel
-
-.design-handoff/
-.gstack/
+/.launch-monitor-state.json*
+/.design-handoff/
+/.gstack/

@@ -384,25 +384,50 @@
     color: var(--color-accent-400);
   }
 
-  .warning-box {
-    padding: 10px 14px;
+  .warning-box,
+  .error-box {
+    position: relative;
+    padding: 12px 14px 12px 16px;
     border-radius: var(--radius-control);
-    background: rgba(224, 167, 62, 0.07);
-    border: 1px solid rgba(224, 167, 62, 0.25);
+    border: 1px solid;
+    border-left-width: 2px;
     font-family: var(--font-mono);
     font-size: 12px;
     font-weight: 500;
-    color: var(--color-warn);
+    line-height: 1.55;
+    color: var(--color-text-2);
+    text-align: left;
+  }
+
+  .warning-box {
+    background: rgba(224, 167, 62, 0.06);
+    border-color: rgba(224, 167, 62, 0.18);
+    border-left-color: var(--color-warn);
   }
 
   .error-box {
-    padding: 10px 14px;
-    border-radius: var(--radius-control);
-    background: rgba(229, 72, 77, 0.07);
-    border: 1px solid rgba(229, 72, 77, 0.25);
+    background: rgba(229, 72, 77, 0.06);
+    border-color: rgba(229, 72, 77, 0.18);
+    border-left-color: var(--color-danger);
+  }
+
+  /* Optional bright title line inside a callout. */
+  .callout-title {
+    display: block;
+    margin-bottom: 4px;
     font-family: var(--font-mono);
-    font-size: 12px;
-    font-weight: 500;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-text-1);
+  }
+
+  .warning-box .callout-title {
+    color: var(--color-warn);
+  }
+
+  .error-box .callout-title {
     color: var(--color-danger);
   }
 
@@ -430,21 +455,25 @@
   }
 
   .upload-box {
-    width: 90px;
-    height: 90px;
+    width: 100%;
+    min-height: 112px;
+    padding: 20px 16px;
+    gap: 6px;
     border-radius: var(--radius-card);
-    border: 2px dashed var(--color-line-strong);
+    border: 1px dashed var(--color-line-strong);
     display: flex;
     align-items: center;
     justify-content: center;
     flex-direction: column;
     cursor: pointer;
-    background: var(--color-surface);
+    background: var(--color-surface-deep);
     color: var(--color-text-4);
-    transition: border-color var(--duration-hover) ease;
+    transition: border-color var(--duration-hover) ease, background-color var(--duration-hover) ease;
   }
-  .upload-box:hover {
+  .upload-box:hover,
+  .upload-box:focus-visible {
     border-color: rgba(43, 209, 126, 0.4);
+    background: var(--color-accent-dim);
   }
 
   .pulse-dot {

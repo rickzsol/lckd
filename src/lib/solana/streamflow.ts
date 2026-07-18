@@ -196,6 +196,8 @@ export async function getStreamflowTotalFeePercent(
 export function calculateLockAmount(
   totalTokens: bigint,
   lockPercentage: number,
+  // Offline callers retain the protocol's documented default. The production
+  // launch path always supplies the current value read from Streamflow's fee oracle.
   totalFeePercent = 0.19,
 ): BN {
   if (totalTokens < BigInt(1)) throw new Error("Token balance must be positive");
@@ -208,17 +210,13 @@ export function calculateLockAmount(
   }
 
   const feePrecision = BigInt(1_000_000);
-  const percentDenominator = BigInt(100) * feePrecision;
   const feeUnits = BigInt(Math.ceil(totalFeePercent * Number(feePrecision)));
-  const lockAmount = (
-    totalTokens * BigInt(lockPercentage) + BigInt(99)
-  ) / BigInt(100);
-  const totalDebit = (
-    lockAmount * (percentDenominator + feeUnits) + percentDenominator - BigInt(1)
-  ) / percentDenominator;
-  if (totalDebit > totalTokens) {
-    throw new Error("Selected lock percentage leaves insufficient tokens for Streamflow fees");
-  }
+  const desiredTotalDebit =
+    (totalTokens * BigInt(lockPercentage)) / BigInt(100);
+  const lockAmount =
+    (desiredTotalDebit * BigInt(100) * feePrecision) /
+    (BigInt(100) * feePrecision + feeUnits);
+  if (lockAmount < BigInt(1)) throw new Error("Lock amount is too small after fees");
 
   return new BN(lockAmount.toString());
 }

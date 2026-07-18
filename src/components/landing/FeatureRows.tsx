@@ -58,23 +58,23 @@ const ROWS: FeatureRow[] = [
   {
     index: "01",
     icon: LockIcon,
-    title: "Locked on launch.",
-    body: "No more begging devs to lock. No more gambling on promises. Every allocation is locked before the first trade.",
-    kicker: "streamflow token lock. enforced. on-chain.",
+    title: "Lock receipts, verified.",
+    body: "Create the token, then place selected creator tokens into a separate Streamflow time lock. LCKD verifies both finalized receipts before publishing the launch.",
+    kicker: "streamflow token lock. verified on-chain.",
   },
   {
     index: "02",
     icon: GithubIcon,
     title: "Built for builders.",
-    body: "Connect your GitHub. Prove your code. Your commit history becomes your reputation. Ship code, lock tokens, earn your tier.",
-    kicker: "github-verified profiles. real builders only.",
+    body: "Connect GitHub and link a wallet with a signed ownership message. Public profile data and launch receipts stay tied to that identity.",
+    kicker: "github-authenticated profiles. signed wallet links.",
   },
   {
     index: "03",
     icon: BoltIcon,
     title: "Proof, on-chain.",
-    body: "Transparent lock schedules anyone can verify. Dev bags visible. Lock duration public. The chart speaks. The contract proves it.",
-    kicker: "no backroom deals. just proof.",
+    body: "Inspect the deposited amount, unlock time, wallet, and transaction signatures. The receipt shows what is locked and what is not.",
+    kicker: "public evidence. explicit limits.",
   },
 ];
 

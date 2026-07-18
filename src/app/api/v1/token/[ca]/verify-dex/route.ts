@@ -68,7 +68,10 @@ export async function POST(
       pairs: solanaPairs,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "DexScreener lookup failed";
-    return apiError(message, 500);
+    console.error(
+      "[verify-dex] Lookup failed:",
+      err instanceof Error ? err.message : "Unknown error",
+    );
+    return apiError("DexScreener lookup failed", 500);
   }
 }

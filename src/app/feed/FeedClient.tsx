@@ -5,20 +5,20 @@ import Link from "next/link";
 import Badge from "@/components/ui/Badge";
 import TokenImage from "@/components/ui/TokenImage";
 import Bar from "@/components/ui/Bar";
-import PendingLaunchCard from "@/components/token/PendingLaunchCard";
+import OfficialLaunchMonitor from "@/components/feed/OfficialLaunchMonitor";
+import type { OfficialLaunchEvent } from "@/lib/launchMonitor";
 import type { DisplayToken } from "@/types/display";
-import type { PendingManualLaunch } from "@/lib/pendingLaunches";
 
 
 type Filter = "all" | "builders" | "shipped";
 
-export default function FeedClient({
-  tokens,
-  pendingLaunches,
-}: {
+interface Props {
+  launchMonitorUrl: string | null;
+  officialLaunch: OfficialLaunchEvent | null;
   tokens: DisplayToken[];
-  pendingLaunches: readonly PendingManualLaunch[];
-}) {
+}
+
+export default function FeedClient({ launchMonitorUrl, officialLaunch, tokens }: Props) {
   const [filter, setFilter] = useState<Filter>("all");
 
   const list = tokens.filter((t) =>
@@ -41,6 +41,11 @@ export default function FeedClient({
         </p>
       </div>
 
+      <OfficialLaunchMonitor
+        initialLaunch={officialLaunch}
+        monitorUrl={launchMonitorUrl}
+      />
+
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-y border-line py-3">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-text-3">Filter profile labels</p>
         <div className="flex flex-wrap gap-1.5" aria-label="Filter launch records">
@@ -62,29 +67,8 @@ export default function FeedClient({
         </div>
       </div>
 
-      {filter === "all" && pendingLaunches.length > 0 && (
-        <section className="mb-6" aria-labelledby="pending-launches-heading">
-          <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
-            <h2
-              id="pending-launches-heading"
-              className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-text-2"
-            >
-              Pending launches
-            </h2>
-            <span className="font-mono text-[10px] text-text-3">
-              Not included in verified platform totals
-            </span>
-          </div>
-          <div className="flex flex-col gap-2.5">
-            {pendingLaunches.map((launch) => (
-              <PendingLaunchCard key={launch.id} launch={launch} />
-            ))}
-          </div>
-        </section>
-      )}
-
       {/* Empty state */}
-      {list.length === 0 && (
+      {list.length === 0 && !officialLaunch && (
         <div className="flex flex-col items-center py-16">
           <div className="font-mono text-[48px] text-text-4">
             {"{ }"}
@@ -92,7 +76,7 @@ export default function FeedClient({
           {tokens.length === 0 ? (
             <>
               <p className="mt-3 font-mono text-sm text-text-3">
-                No verified launch records are available.
+                No launch records are available.
               </p>
               <Link
                 href="/launch"

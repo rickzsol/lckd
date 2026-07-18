@@ -34,9 +34,6 @@ const BUY_DISCRIMINATOR = Buffer.from("66063d1201daebea", "hex");
 const MAYHEM_PROGRAM_ID = new PublicKey("MAyhSmzXzV1pTf7LsNkrNwkWKTo4ougAJ1PPg47MD4e");
 const PUMP_FEE_PROGRAM_ID = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
 const PUMP_FEE_RECIPIENT = new PublicKey("62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV");
-const PUMP_BUYBACK_FEE_RECIPIENT = new PublicKey(
-  "5YxQFdt3Tr9zJLvkFccqXVUwhdTWJQc1fFg2YPbxvxeD",
-);
 
 function borshString(value: string): Buffer {
   const encoded = Buffer.from(value, "utf8");
@@ -127,8 +124,6 @@ function legacyBuyKeys(wallet: PublicKey, mint: PublicKey, tokenProgram: PublicK
     { pubkey: pda(PUMPFUN_PROGRAM_ID, Buffer.from("user_volume_accumulator"), wallet.toBuffer()), isSigner: false, isWritable: true },
     { pubkey: pda(PUMP_FEE_PROGRAM_ID, Buffer.from("fee_config"), PUMPFUN_PROGRAM_ID.toBuffer()), isSigner: false, isWritable: false },
     { pubkey: PUMP_FEE_PROGRAM_ID, isSigner: false, isWritable: false },
-    { pubkey: pda(PUMPFUN_PROGRAM_ID, Buffer.from("bonding-curve-v2"), mint.toBuffer()), isSigner: false, isWritable: false },
-    { pubkey: PUMP_BUYBACK_FEE_RECIPIENT, isSigner: false, isWritable: true },
   ];
 }
 

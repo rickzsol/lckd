@@ -1,6 +1,7 @@
 {
   "name": "lckd",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -8,7 +9,9 @@
     "start": "next start",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --conditions=react-server --test src/lib/api/atomicLaunchRecoveryValidation.test.ts src/lib/api/launchRecoveryValidation.test.ts src/lib/api/publicStats.test.ts src/lib/api/rateLimit.test.ts src/lib/pendingLaunches.test.ts src/lib/solana/atomicLaunchBuilder.test.ts src/lib/solana/atomicLaunchValidation.test.ts src/lib/solana/atomicLookupCleanup.test.ts src/lib/solana/lookupTable.test.ts src/lib/solana/pumpBuyValidation.test.ts src/lib/solana/streamflow.test.ts src/lib/solana/streamflowInstruction.test.ts src/lib/solana/transactionValidation.test.ts"
+    "test": "tsx --test src/components/evm/robinhoodRecovery.test.ts src/hooks/useDexMarketData.test.ts src/lib/api/rateLimit.test.ts src/lib/api/robinhoodLaunchRecovery.test.ts src/lib/evm/pons/pons.test.ts src/lib/launchMonitorState.test.ts src/lib/officialTokenRoute.test.ts src/lib/solana/heliusTransactionPayload.test.ts src/lib/solana/streamflow.test.ts src/lib/solana/pumpBuyValidation.test.ts src/lib/solana/pumpLaunchDetection.test.ts src/lib/solana/streamflowLockDetection.test.ts src/lib/solana/transactionValidation.test.ts",
+    "monitor:start": "tsx workers/solana-launch-monitor.ts",
+    "test:robinhood": "hardhat --network robinhoodFork test nodejs --no-compile test/robinhood/pons.fork.test.ts"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
@@ -23,6 +26,7 @@
     "@solana/web3.js": "^1.98.4",
     "@streamflow/stream": "^13.0.0",
     "@supabase/supabase-js": "^2.110.7",
+    "@tanstack/react-query": "^5.101.2",
     "@types/three": "^0.185.1",
     "bn.js": "^5.2.5",
     "bs58": "^6.0.0",
@@ -35,33 +39,32 @@
     "pinata": "^2.5.6",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "server-only": "^0.0.1",
     "tailwind-merge": "^3.6.0",
     "three": "^0.185.1",
+    "tsx": "^4.23.1",
     "tweetnacl": "^1.0.3",
+    "viem": "^2.55.2",
+    "wagmi": "^3.7.2",
+    "ws": "^8.21.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.7",
+    "@quadslab.io/discord-mcp": "2.1.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/bn.js": "^5.2.0",
     "@types/node": "^20",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.2.10",
+    "hardhat": "^3.10.0",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.1",
     "typescript": "^5"
-  },
-  "overrides": {
-    "postcss": "8.5.19",
-    "uuid": "11.1.1",
-    "rpc-websockets": {
-      "uuid": "14.0.1"
-    }
   },
   "packageManager": "npm@11.13.0",
   "engines": {
-    "node": "24.x"
+    "node": ">=20.9.0"
   }
 }

@@ -2,37 +2,95 @@
 
 Updated: 2026-07-17
 
+## Planning
+
+TRUST_FEATURES_PLAN.md (internal, gitignored) specifies the trust-platform wave: SAS trust-tier attestations, a public trust API with an /unlocks calendar and webhook-driven lock status, and ricomaps-backed holder intelligence on token pages. The plan cleared two blocking Codex rounds (21 + 14 findings folded in). All four features are BUILT on feature branches and pushed, each through multiple independent Codex review rounds:
+
+- `feature/intel-api` (nullxnothing/ricomaps): Codex APPROVED, 2379 tests.
+- `feature/holder-intel` (rickzsol/lckd): review-clean, 78 tests.
+- `feature/trust-api` (rickzsol/lckd): 199 tests; 1 documented residual (backfill_complete MVCC race) in the branch KNOWN_ISSUES.md.
+- `feature/sas-attestations` (rickzsol/lckd): 134 tests, PG16-validated; 1 documented residual (reissue-vs-close race), SAS_ENABLED=false by default.
+
+None are merged. Migrations are written but unapplied (production Supabase offline). Merge order and per-branch operational prerequisites are in TASKS.md. Phases 2/3 still gate on the Supabase restore and migrations 002/003 under release gates.
+
+## Latest change
+
+Official-token production incident fixed (2026-07-17): the watcher captured the real Pump launch, but the generic mint route only queried Supabase and returned Token not found. The official mint is now pinned to a permanent `/token/lckd` redirect, the feed links to that page without a contradictory empty state, and the page uses the launched IPFS image. The Streamflow parser now accepts the current Token Lock `amountPerPeriod = amount` variant and includes the exact production transaction as a regression fixture. Railway backfilled the confirmed 10,182,164.997608-token lock (99.5%, unlocks 2026-07-27 06:00 UTC), and the homepage settles to 1 launched / 10.2M locked / 1 verified / 1 building.
+
+UI polish pass (2026-07-17): `/token/lckd` and `/token/[id]` widened to a 1360px shell with scaled header, stats, chart heights, and a 380/420px sidebar; chart and swap pending states redesigned (mascot empty state, no dead voids). `/launch` wizard now renders inside a surface card with a single refined stepper (duplicate progress bar removed), a step counter in the page header, a full-width image dropzone, and a structured preview row with replace/remove. The wizard UI was extracted to `src/app/launch/WizardPanel.tsx`. The GitHub step was redesigned: real avatar identity card, repo activity proof card with recent commits from the new authenticated `GET /api/v1/github/activity?repo=owner/name` endpoint (own-repo only, rate limited), and a four-tier profile ladder with next-step hints (`src/app/launch/githubProof.tsx`). A dev-only `/demo` route (404 in production) renders both token pages and the full wizard with fixture data, live DexScreener market data for a real mint, and a launch-outcome state switcher. A public GitHub contribution heatmap (`src/components/github/ContributionGraph.tsx` + `GET /api/v1/github/contributions`, rate limited, 1h cache) fills the wizard GitHub step and the token detail developer profile. The matched launches program page shipped at `/match`: program pitch, how it works, terms, and a GitHub-gated application form posting to `POST /api/v1/match/apply` (same-origin, `match` rate bucket 5/min, requireAuth, strict zod, repo owner must match session). Migration `supabase/migrations/006_match_applications.sql` (RLS, service role only) is NOT yet applied to any environment; the endpoint returns an honest 503 until it is. The official token header now uses the licensed DitherWave as a scrimmed ambient background (reduced-motion safe). Design docs in `.design/token-launch-polish/`. Typecheck and lint clean.
+
 ## Status
 
-Production release approved after independent security review and deployed at `https://lckd.tech` from commit `b125e42`. Production Supabase is migrated through `007_atomic_cleanup_races.sql`, required Vercel environment variables are configured, and the atomic launch path is live. No transaction has been signed or sent.
+The official launch monitor and token page are deployed to production. The broader authenticated launch flow is not approved for production use because its Supabase data plane remains offline. The user completed the official Pump launch and Streamflow lock; this agent sent no mainnet transaction and applied no database migration.
 
-## Launch invariants
+## Verified behavior
 
-- Approval one creates and extends one exact address lookup table.
-- Approval two atomically creates the Pump token, executes the reviewed exact-token buy, deposits the selected amount into an immutable Streamflow v13 cliff lock, and deactivates the lookup table.
-- The wallet, mint, and Streamflow metadata keypairs are the only signers; private keys remain in browser memory.
-- Finalized receipts, exact messages, blockhashes, signer vectors, accounts, instruction data, quote/spend bounds, lock amount, and unlock time are verified before recording.
-- Confirmed or finalized uncheckpointed transactions are reconciled before cleanup; still-processing transactions block cleanup.
-- Lookup-table close is wallet-authorized after SlotHashes cooldown and returns rent to the wallet.
+- Launch uses two explicit wallet approvals: pump.fun create and buy, then Streamflow lock.
+- The Streamflow v13 instruction is a cliff-based token lock. Unlockable amount is zero before the selected timestamp and the full locked amount at that timestamp.
+- The lock is non-cancelable, non-transferable, cannot be topped up, cannot be paused, cannot change rate, and does not auto-withdraw.
+- Browser construction, pre-sign instruction decoding, finalized chain verification, and persisted receipt checks enforce the same lock invariants.
+- Retry rebroadcasts the same signed lock transaction and checks the metadata account before permitting a rebuild.
+- GitHub identity, signed wallet ownership, selected wallet, launch receipt, mint configuration, and lock receipt must agree before persistence.
+- Public data is shown as unavailable or unverified when its source cannot be confirmed. No production mock fallback remains.
+- The official launch monitor watches wallet `3XyvG1HC1QvzHmNFejUzGgbj8YCLqDRKcoyrWZPuR7p8` from slot `433501410`, validates exact Pump create/create_v2 transactions, and publishes processed then confirmed CA state over SSE.
+- The same worker validates immutable Streamflow v13 manual locks for the detected mint, including legacy/create_v2 metadata, Token-2022, partner/remaining-account layouts, optional SDK padding, and Streamflow's one-base-unit cliff remainder; it publishes lock amount, percentage, contract, and unlock time.
+- Monitor state has atomic optional volume persistence, full backfill to the configured start slot, parsed/base64 Helius payload support, WebSocket and subscription liveness checks, finalized-fork reconciliation, and a 503 readiness endpoint.
+- `/feed` displays the official CA and lock state outside the database directory flow. Homepage launch, locked, and verified counters merge the confirmed official launch state even while Supabase is unavailable.
+- The permanent official-token route is `/token/lckd`; `/token/lckd-manual-launch` redirects permanently. The page reveals the CA, Pump/Orb/Jupiter links, DexScreener chart, 15-second market data, and Streamflow lock state from the same live monitor without a refresh.
+- Pump create/create_v2 and all four current buy variants use exact official account, PDA, ATA, program, payload, signer, and spend validation.
+- Finalized launch verification rejects extra outer programs and binds the Pump TradeEvent, actual token purchase, metadata document, and persisted SOL spend.
+- Wallet linking is immutable after the first verified link.
+- Robinhood Chain launches use the live Pons factory on chain 4663. The integration pins the factory, locker, WETH, Uniswap factory, position manager, router, ownership, fee split, launch configuration, and runtime bytecode hashes.
+- Pons launches create a fixed 1 billion token supply and transfer the Uniswap v3 LP NFT to the pinned locker in one transaction. The creator fee and initial-buy token recipient is explicit and post-verified.
+- Robinhood launch construction rechecks the pinned deployment before simulation and immediately before wallet write, then verifies the factory record, token state, LP NFT owner, fee redirect, and fee split after confirmation.
+- Robinhood recovery persists the canonical form and salt before wallet approval, validates candidate hashes against the exact sender/factory/value/calldata before binding, and reconciles replacements from indexed Pons events.
+- Unknown wallet outcomes enter a non-expiring ambiguous state that blocks further wallet requests. Submitted and ambiguous attempts cannot be reset; verified results require 20 sequencer confirmations.
+- Manual recovery that discovers an under-confirmed transaction continues through confirmation and final reconciliation in the same single-flight action, without opening another wallet request.
+- Robinhood mainnet sending is disabled unless `NEXT_PUBLIC_ENABLE_ROBINHOOD_LAUNCHES=true`. Public profile record persistence is not active.
 
-## Production infrastructure
+## Verification completed
 
-- Supabase production: `lzxdqxtsceizopjqqxdb`, migrations 001-007 applied, schema lint clean, performance advisor clean.
-- Supabase staging: `tmkrxqjaoarmjyyjlxqk`, migrations 001-007 applied and lint clean.
-- Vercel production env includes Supabase, Helius, Pinata, GitHub OAuth, NextAuth, `ALLOWED_ORIGIN`, and mainnet Streamflow configuration.
-- Public landing statistics use aggregate database data; production currently reports zero launches, locked tokens, verified developers, and active builders.
-- LCKD is listed separately as a manual token announcement with the user-supplied `pfp-3c.png`; its CA remains unset until launch.
+- LCKD Discord was reset and hardened: fresh gated channels, private security logs, Medium verification, full media filtering, four repaired AutoMod rules, expiring invites only, and Double Counter above `Verified`. The owner-authorized Double Counter panel is still pending.
+- Project-local `discord_admin` MCP is pinned to `@quadslab.io/discord-mcp@2.1.1`, scoped to guild `1519763437738135632`, and verified with an authenticated guild read.
+- `npm test`: 68 passed
+- `npm run test:robinhood`: 6 pinned-fork launch and idempotency tests passed
+- `npm run typecheck`: passed
+- `npm run lint`: passed
+- `npm run build`: passed with Next.js 16.2.10
+- Live Helius enhanced-WebSocket smoke passed with a transient clipboard credential: the exact dev-wallet subscription and Pump traffic subscription were accepted, and a real transaction notification normalized successfully. The key was not persisted or printed.
+- Playwright: desktop and mobile routes, responsive menu, reduced motion, no horizontal overflow, no page console warnings
+- Gitleaks: 26 commits plus the full local candidate scanned, no leaks
+- Independent authentication, on-chain, deployment, recovery-state, and final patch reviews completed with no critical or high Robinhood findings
+- Full mobile review of production lckd.tech (390px and 360px): all routes render without horizontal overflow or console errors; footer overlay on the coming-soon gate reproduced in production and confirmed fixed by the local SiteFooter refactor
+- Mobile wallet support added: `@solana-mobile/wallet-standard-mobile@0.5.3` registers MWA for Android Chrome (chain inferred from RPC endpoint); iOS uses the existing Phantom/Solflare universal-link redirects
+- The access gate and coming-soon route were removed from the public candidate; no shared access credential remains.
+- Docs mobile section navigator no longer overshoots anchors (dropdown collapses via flushSync before scroll; headings use scroll-mt-36 on mobile)
+- Live read-only Pons deployment verification and historical receipt verification passed
+- Public-repository audit completed: README uses the OG asset, stale launch claims were corrected, Canva metadata was stripped from public PNGs with no pixel changes, and internal state/audit files are ignored and staged for removal from the public tree.
+- The local deploy workflow now uses read-only permissions, SHA-pinned actions, an exact Vercel CLI version, quality gates, a production environment binding, and serialized deploys. Dependabot configuration is present.
+- The post-launch X plan now uses a gated 12-post launch-week sequence based on a 40-post ClawPump launch sample. Unsupported buyback, public API, team, and integration claims were removed; every metric and future claim requires public proof.
+- Railway deployment `63a513fc-6ae6-42e2-adf0-7dcc6d02024e` is healthy at `https://lckd-launch-monitor-production.up.railway.app`, with persistent `/data` state, the confirmed official launch and lock, and `/ready` reporting connected/ready/subscribed plus `subscriptionMode: transaction`.
+- Vercel production deployment `dpl_BCfqT2zT6zAahzYahFgY7YMmX39m` is Ready and aliased to `https://lckd.tech`. Production QA verified `/`, `/feed`, `/token/lckd`, the exact CA `308`, the launched image, live market/chart/swap shell, lock receipt, homepage counters, and desktop/mobile layout. Observed console errors are isolated to the third-party DexScreener iframe.
 
-## Verification
+## Known release gates
 
-- 62 tests passed.
-- TypeScript, ESLint, production build, and `git diff --check` passed.
-- Independent atomic SQL, recovery, on-chain receipt, UI lifecycle, and deployment reviews passed.
-- Production and staging aggregate RPC checks passed; anonymous atomic mutations are denied.
-- Live production home, feed, LCKD detail, image, stats, auth gates, and security headers passed.
-- Gitleaks found no committed or source/migration secrets.
-- `npm audit --omit=dev`: one underlying unpatched `bigint-buffer` advisory represented by 8 dependency nodes; 0 critical and 0 moderate.
-
-## Remaining operational check
-
-- Run one disposable-wallet mainnet launch only after the user supplies an explicit SOL spending cap. This is optional post-deploy validation and is the only step that spends funds.
+- Authorize the Double Counter dashboard, bind `#verify`, `@Verified`, and `#verification-logs`, then publish and test its verification panel.
+- Restore or provision the production Supabase project. The configured host no longer resolves; live stats/feed return `available: false` and cron cannot refresh data.
+- Configure and validate `PINATA_JWT`, `HELIUS_RPC_URL`, `ALLOWED_ORIGIN`, Supabase, OAuth, and cron production values. Do not reuse credentials from another project without an explicit rotation decision.
+- Review existing production rows, then apply `supabase/migrations/002_backend_hardening.sql`.
+- Accept or redesign the non-atomic Solana flow: Pump creation finalizes before a separate lock approval. Durable recovery reduces interruption risk but cannot roll back a finalized creation.
+- Apply `supabase/migrations/003_distributed_rate_limits.sql`; production throttling fails closed until the shared limiter exists.
+- Deploy this commit to a preview and verify OAuth, wallet linking, metadata upload, RPC, finalized persistence, and runtime logs.
+- Apply `supabase/migrations/005_robinhood_launch_recovery.sql` to a disposable database and run concurrent prepare/ambiguous/checkpoint/replacement transition tests before production.
+- Keep Robinhood mainnet sending disabled until migration 005 is applied, the authenticated preview flow passes, and a production-grade Robinhood RPC/archive provider replaces the rate-limited public endpoint.
+- Verify the full authenticated Robinhood wallet flow on a preview; local dev NextAuth remained in its loading state during browser QA.
+- Production dependency audit reports 8 high and 21 moderate transitive findings in the existing Solana/Pump/Streamflow dependency trees. Suggested automated fixes are unsafe downgrades or unavailable upstream fixes.
+- An owner must protect `main`, require review/checks, protect the Production environment, move deployment secrets to it, enable Dependabot/security scanning, and resolve the GitHub Actions billing lock.
+- Reconcile and delete the diverged public `codex/production-hardening` branch. History rewriting for old internal files, AI co-author trailers, and the exposed legacy email requires explicit coordinated approval.
+- Choose an explicit repository license before granting public reuse rights.
+- After every gate above is green, run a disposable-wallet mainnet launch and lock. This needs explicit approval because it spends funds.
+- Context7 documentation lookup is unavailable until its monthly quota resets; official primary documentation was used instead.
+- Railway uses verified Helius credential fingerprint `9f59184996`. The exact production `transactionSubscribe` payload passed again, deployment `acbb2415-6df2-41c9-8b60-a906587d2880` reached SUCCESS, `/ready` reports connected/ready/subscribed with `subscriptionMode: transaction`, and runtime logs show no fallback subscription error.
+- Add alerting for `/ready` degradation and repeated reconnects; the live subscription has passed launch and lock capture but still needs continuous operational monitoring.
+- The official Pump launch was created directly from the monitored wallet with the default non-Mayhem/non-cashback path. The Streamflow token lock used the dev wallet as recipient and immutable time-lock settings.
+- The live Helius subscription captured the mainnet launch within one second. The corrected backfill recovered and persisted the confirmed Streamflow lock from the same wallet.

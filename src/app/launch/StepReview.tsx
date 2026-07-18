@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Image from "next/image";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useConnection } from "@solana/wallet-adapter-react";
@@ -77,13 +76,13 @@ function ReviewForm({ w }: { w: WizardContext }) {
         {[
           {
             n: "1",
-            label: "Lookup Table Setup",
-            detail: "Create and fill the short-lived address lookup table used by the atomic launch",
+            label: "Create + Buy",
+            detail: `${w.config.name} ($${w.config.ticker}) on pump.fun, ${w.config.buyAmountSol} SOL buy`,
           },
           {
             n: "2",
-            label: "Atomic Create + Buy + Lock",
-            detail: `${w.config.buyAmountSol} SOL reviewed buy, then ${w.config.lockPercentage}% deposited into a ${w.config.lockDurationDays}-day Streamflow cliff lock`,
+            label: "Time Lock Tokens",
+            detail: `${w.config.lockPercentage}% locked for ${w.config.lockDurationDays} days via Streamflow`,
           },
         ].map((item) => (
           <div
@@ -122,10 +121,10 @@ function ReviewForm({ w }: { w: WizardContext }) {
 
       {/* Info box */}
       <div className="warning-box mb-4">
-        Two wallet approvals. The first only creates the lookup table. The second atomically
-        creates the token, executes the reviewed buy, deposits the locked amount into Streamflow,
-        and deactivates the lookup table. If it fails, no token or lock is created. Reclaiming
-        the lookup table rent later requires one optional close approval after cooldown.
+        <span className="callout-title">before you sign</span>
+        Two transactions and two wallet approvals. Create and buy confirms first. The
+        Streamflow time lock is built and submitted second. A failure in the second transaction
+        does not reverse token creation.
       </div>
 
       {/* Actions */}
@@ -200,7 +199,7 @@ function LaunchingView({ w }: { w: WizardContext }) {
       </div>
 
       {/* Wallet hint for signature phases */}
-      {(w.launchPhase === 2 || w.launchPhase === 5) && (
+      {(w.launchPhase === 2 || w.launchPhase === 6) && (
         <div className="mt-6 rounded-control border border-accent/20 bg-accent-dim px-4 py-2.5 font-mono text-[11px] text-accent">
           Check your wallet for a signature request
         </div>
@@ -233,7 +232,8 @@ function ErrorView({ w }: { w: WizardContext }) {
       </div>
 
       {w.errorMessage && (
-        <div className="error-box mb-6 max-w-[360px] text-center">
+        <div className="error-box mb-6 max-w-[360px]">
+          <span className="callout-title">error</span>
           {w.errorMessage}
         </div>
       )}
@@ -250,7 +250,7 @@ function ErrorView({ w }: { w: WizardContext }) {
   );
 }
 
-// Partial view (atomic workflow requires reconciliation)────────────────
+// Partial view (create succeeded, lock failed)───────────────────────────
 
 function PartialView({ w }: { w: WizardContext }) {
   const { publicKey, signTransaction } = useWallet();
@@ -273,8 +273,9 @@ function PartialView({ w }: { w: WizardContext }) {
         Launch needs attention
       </div>
       <div className="mb-4 max-w-[360px] text-center font-mono text-xs text-text-3">
-        This launch is paused until the issued transaction is reconciled or the lookup table
-        is safely closed. The app will not issue another launch while this recovery state exists.
+        A transaction signature was submitted. This page will not create another token or
+        lock while that signature is stored. Check the receipts before retrying, and do not
+        treat the tokens as locked until the Streamflow account verifies.
       </div>
 
       {w.launchResult?.createTxSignature && (
@@ -284,22 +285,30 @@ function PartialView({ w }: { w: WizardContext }) {
           rel="noopener noreferrer"
           className="mb-4 font-mono text-[10px] text-accent-400 underline underline-offset-2 hover:text-accent-300"
         >
-          View atomic launch receipt
+          View create tx on Solscan
+        </a>
+      )}
+
+      {w.launchResult?.lockTxSignature && (
+        <a
+          href={`${SOLSCAN_BASE}/tx/${w.launchResult.lockTxSignature}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mb-4 font-mono text-[10px] text-accent-400 underline underline-offset-2 hover:text-accent-300"
+        >
+          View lock tx on Solscan
         </a>
       )}
 
       {w.errorMessage && (
-        <div className="warning-box mb-5 max-w-[360px] text-center">
+        <div className="warning-box mb-5 max-w-[360px]">
+          <span className="callout-title">what happened</span>
           {w.errorMessage}
         </div>
       )}
 
       <button type="button" onClick={handleRetryLock} className="btn-launch w-full max-w-[320px]">
-        {w.recoveryStatus === "atomic_submitted"
-          ? "VERIFY ATOMIC LAUNCH"
-          : w.recoveryStatus === "cleanup_required"
-            ? "CLEAN UP LOOKUP TABLE"
-            : "RECHECK RECOVERY STATE"}
+        VERIFY / RETRY LOCK
       </button>
     </div>
   );
@@ -326,10 +335,6 @@ const CONFETTI = Array.from({ length: 20 }, (_, i) => {
 });
 
 function SuccessView({ w }: { w: WizardContext }) {
-  const { publicKey, signTransaction } = useWallet();
-  const { connection } = useConnection();
-  const [isCleaning, setIsCleaning] = useState(false);
-  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
   const mintAddr = w.launchResult?.mintAddress;
   const createSig = w.launchResult?.createTxSignature;
   const lockSig = w.launchResult?.lockTxSignature;
@@ -429,33 +434,6 @@ function SuccessView({ w }: { w: WizardContext }) {
             </a>
           )}
         </div>
-        {w.recoveryAltStatus && w.recoveryAltStatus !== "closed" && (
-          <button
-            type="button"
-            disabled={!publicKey || !signTransaction || isCleaning}
-            onClick={() => {
-              if (!publicKey || !signTransaction) return;
-              setIsCleaning(true);
-              setCleanupMessage(null);
-              void w.cleanupLookup({ publicKey, signTransaction, connection })
-                .then((isClosed) => setCleanupMessage(
-                  isClosed ? "Lookup table closed. Rent returned to your wallet." : null,
-                ))
-                .catch((error: unknown) => setCleanupMessage(
-                  error instanceof Error ? error.message : "Lookup table cleanup failed",
-                ))
-                .finally(() => setIsCleaning(false));
-            }}
-            className="btn-secondary w-full py-2.5 text-center text-[10px] disabled:opacity-50"
-          >
-            {isCleaning ? "CLEANING LOOKUP TABLE..." : "CLOSE LOOKUP TABLE"}
-          </button>
-        )}
-        {cleanupMessage && (
-          <p className="font-mono text-[10px] leading-[1.5] text-text-3" role="status">
-            {cleanupMessage}
-          </p>
-        )}
       </div>
 
       <button
