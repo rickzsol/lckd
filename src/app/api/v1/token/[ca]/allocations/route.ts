@@ -14,14 +14,12 @@ import {
   MAX_WALLETS_PER_BUCKET,
 } from "@/lib/allocations/declarationValidation";
 import { getOwnerMintBalance, BalanceReadError } from "@/lib/allocations/balances";
-import { buildAllocationSummary } from "@/lib/allocations/summary";
+import { loadAllocationData } from "@/lib/allocations/loadSummary";
 import { syncTrackedWallets } from "@/lib/helius/webhookAdmin";
 
 export { OPTIONS };
 
 const STREAMFLOW_PROGRAM_ID = "strmRqUCoQUgGUan5YhzUZa6KqdzwX5L6FpUxfmKg5m";
-const TRANSFER_FETCH_LIMIT = 5_000;
-const SNAPSHOT_FETCH_LIMIT = 500;
 
 const declareSchema = z.object({
   buckets: z.array(
@@ -78,44 +76,9 @@ export async function GET(
   if (!isValidSolanaAddress(ca)) return apiError("Invalid token address", 400);
 
   try {
-    const token = await loadVerifiedToken(ca);
-    if (!token) return apiError("Token not found", 404);
-
-    const supabase = getSupabase();
-    const [buckets, wallets, transfers, snapshots] = await Promise.all([
-      supabase
-        .from("allocation_buckets")
-        .select("*")
-        .eq("token_id", token.id)
-        .order("declared_at", { ascending: true }),
-      supabase
-        .from("allocation_wallets")
-        .select("*")
-        .eq("token_id", token.id),
-      supabase
-        .from("allocation_transfers")
-        .select("*")
-        .eq("token_id", token.id)
-        .order("block_time", { ascending: false })
-        .limit(TRANSFER_FETCH_LIMIT),
-      supabase
-        .from("allocation_snapshots")
-        .select("*")
-        .eq("token_id", token.id)
-        .order("captured_at", { ascending: false })
-        .limit(SNAPSHOT_FETCH_LIMIT),
-    ]);
-    const failed = [buckets, wallets, transfers, snapshots].find((result) => result.error);
-    if (failed?.error) throw new Error(failed.error.message);
-
-    return apiResponse(
-      buildAllocationSummary(
-        buckets.data ?? [],
-        wallets.data ?? [],
-        transfers.data ?? [],
-        snapshots.data ?? [],
-      ),
-    );
+    const data = await loadAllocationData(ca);
+    if (!data) return apiError("Token not found", 404);
+    return apiResponse(data.summary);
   } catch (error) {
     console.error("[allocations] Read failed:", error instanceof Error ? error.message : error);
     return apiError("Allocation data is unavailable", 503);

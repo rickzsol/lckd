@@ -8,15 +8,23 @@ import MarketChart from "@/components/token/MarketChart";
 import JupiterSwap from "@/components/token/JupiterSwap";
 import TokenLockCard from "@/components/token/TokenLockCard";
 import TokenMetadataCard from "@/components/token/TokenMetadataCard";
+import AllocationPanel from "@/components/token/AllocationPanel";
 import Badge, { getTrustBadgeLabel } from "@/components/ui/Badge";
 import TokenImage from "@/components/ui/TokenImage";
+import type { AllocationPageData } from "@/lib/allocations/loadSummary";
 import type { DisplayToken } from "@/types/display";
 
 function shortenAddress(address: string): string {
   return `${address.slice(0, 7)}…${address.slice(-7)}`;
 }
 
-export default function TokenDetailClient({ t }: { t: DisplayToken }) {
+export default function TokenDetailClient({
+  t,
+  allocations = null,
+}: {
+  t: DisplayToken;
+  allocations?: AllocationPageData | null;
+}) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const hasLockRecord =
     t.lock.amount !== "--" &&
@@ -162,6 +170,15 @@ export default function TokenDetailClient({ t }: { t: DisplayToken }) {
           <JupiterSwap mintAddress={t.mintAddress} ticker={t.ticker} />
         </div>
       </section>
+
+      {allocations && t.mintAddress && (
+        <AllocationPanel
+          summary={allocations.summary}
+          creatorWallet={allocations.creatorWallet}
+          lockedAmountRaw={allocations.lockedAmountRaw}
+          mintAddress={t.mintAddress}
+        />
+      )}
 
       <section className="grid min-w-0 items-start gap-4 lg:grid-cols-2 lg:gap-5">
         <TokenMetadataCard token={t} />

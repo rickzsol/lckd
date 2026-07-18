@@ -10,7 +10,7 @@ export class BalanceReadError extends Error {
   }
 }
 
-function getConnection(): Connection {
+export function getReadConnection(): Connection {
   const rpcUrl = process.env.HELIUS_RPC_URL ?? (
     process.env.NODE_ENV === "production"
       ? undefined
@@ -30,7 +30,7 @@ export async function getOwnerMintBalance(
   owner: string,
   mint: string,
 ): Promise<bigint> {
-  const rpc = getConnection();
+  const rpc = getReadConnection();
   const ownerKey = new PublicKey(owner);
   const mintKey = new PublicKey(mint);
 

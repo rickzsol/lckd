@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { getServerClient } from "@/lib/supabase";
 import { getOwnerMintBalance } from "@/lib/allocations/balances";
+import { backfillWalletHistory } from "@/lib/allocations/backfill";
 import { syncTrackedWallets } from "@/lib/helius/webhookAdmin";
 
 // Daily reconciliation: webhooks are the fast path, this cron is the
@@ -79,6 +80,7 @@ async function ledgerNetFlow(
 async function reconcileWallet(
   supabase: ReturnType<typeof getServerClient>,
   wallet: TrackedWallet,
+  trackedWallets: ReadonlySet<string>,
 ): Promise<boolean> {
   const [chainBalance, netFlow] = await Promise.all([
     getOwnerMintBalance(wallet.walletAddress, wallet.mint),
@@ -99,6 +101,21 @@ async function reconcileWallet(
     console.warn(
       `[cron/reconcile] Drift for ${wallet.walletAddress} on ${wallet.mint}: ${drift.toString()} (webhook gap; ledger is missing movements)`,
     );
+    try {
+      const repaired = await backfillWalletHistory({
+        tokenId: wallet.tokenId,
+        mint: wallet.mint,
+        wallet: wallet.walletAddress,
+        trackedWallets,
+      });
+      console.log(
+        `[cron/reconcile] Backfilled ${repaired} movements for ${wallet.walletAddress}`,
+      );
+    } catch (backfillError) {
+      // The snapshot already records the drift honestly; a failed repair
+      // attempt must not fail reconciliation for the wallet.
+      console.error("[cron/reconcile] Backfill failed:", backfillError);
+    }
   }
   return drift !== BigInt(0);
 }
@@ -128,13 +145,26 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Failed to load tracked wallets" }, { status: 500 });
   }
 
+  const walletsByToken = new Map<string, Set<string>>();
+  for (const wallet of wallets) {
+    const set = walletsByToken.get(wallet.tokenId) ?? new Set<string>();
+    set.add(wallet.walletAddress);
+    walletsByToken.set(wallet.tokenId, set);
+  }
+
   let reconciled = 0;
   let drifted = 0;
   let failed = 0;
   for (let i = 0; i < wallets.length; i += BATCH_CONCURRENCY) {
     const batch = wallets.slice(i, i + BATCH_CONCURRENCY);
     const results = await Promise.allSettled(
-      batch.map((wallet) => reconcileWallet(supabase, wallet)),
+      batch.map((wallet) =>
+        reconcileWallet(
+          supabase,
+          wallet,
+          walletsByToken.get(wallet.tokenId) ?? new Set(),
+        ),
+      ),
     );
     for (const result of results) {
       if (result.status === "fulfilled") {

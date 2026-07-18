@@ -1,4 +1,5 @@
 import type { AllocationClassification } from "@/types";
+import { readArray, readNumber, readString } from "./jsonRead";
 
 // Classifies enhanced Helius transactions against tracked allocation
 // wallets. Balances come from accountData.tokenBalanceChanges raw strings
@@ -44,24 +45,6 @@ const DEX_SOURCES = new Set([
   "OKX",
 ]);
 
-function readString(value: unknown, key: string): string | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = Reflect.get(value, key);
-  return typeof raw === "string" && raw.length > 0 ? raw : null;
-}
-
-function readNumber(value: unknown, key: string): number | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = Reflect.get(value, key);
-  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
-}
-
-function readArray(value: unknown, key: string): unknown[] {
-  if (!value || typeof value !== "object") return [];
-  const raw = Reflect.get(value, key);
-  return Array.isArray(raw) ? raw : [];
-}
-
 /** Net raw balance change per owner for one mint across the transaction. */
 function collectOwnerDeltas(transaction: unknown, mint: string): Map<string, bigint> {
   const deltas = new Map<string, bigint>();
@@ -78,7 +61,7 @@ function collectOwnerDeltas(transaction: unknown, mint: string): Map<string, big
   return deltas;
 }
 
-function findCounterparty(
+export function findCounterparty(
   deltas: Map<string, bigint>,
   wallet: string,
   walletDelta: bigint,
