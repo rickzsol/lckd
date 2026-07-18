@@ -31,18 +31,19 @@
 - [x] Make burn-ledger persistence atomic with launch completion, aggregate lifetime totals across all rows, and fail closed on Pump account rotation.
 - [x] Replace the placeholder program ID and independently audit the final compiled program before deployment.
 - [x] Define the temporary upgrade-authority policy, deploy and hash-verify the program, initialize PDA token accounts and Pump user-volume, create the reviewed protocol lookup table, and set `BUYBACK_BURN_LOOKUP_TABLE`.
-- [ ] QA a fee-enabled preview launch with simulation, wallet instruction review, finalized receipt persistence, burn-ledger row, and ALT cleanup.
+- [x] QA a fee-enabled preview launch with simulation, wallet instruction review, finalized receipt persistence, and the combined burn-ledger row.
 - [x] Simulate the complete fee-enabled mainnet-state transaction through the exact LCKD burn without broadcasting a launch.
 - [x] Review and apply `supabase/migrations/20260718020000_burn_ledger.sql` to production.
 - [x] Review and apply `supabase/migrations/20260718160439_buyback_completed_alt_cleanup.sql` to production.
 - [x] Set `LAUNCH_FEE_LAMPORTS=100000000` after deployment and simulation gates passed.
-- [ ] Transfer the temporary program upgrade authority to the planned 2-of-3 hardware-backed Squads multisig.
-- [ ] Commit the exact reviewed release source and record the production deployment-to-revision mapping.
+- [x] Transfer program upgrade authority to the verified 2-of-3 Squads multisig vault.
+- [x] Commit the exact reviewed release source and record the production deployment-to-revision mapping.
+- [ ] Close the deactivated successful-canary ALT from owner wallet `8A4i2yk8R9ivCGdtQeyo71JYyB6CjfSsMnWcYthisPwT` after switching Phantom back to that account.
 
 ## Production follow-up
 
 - [ ] Complete the TEST token verify step for mint `Aowscp3jNqDEutohPUNYdCNzobwi3wXnoUi5xqzDG2FH`.
-- [ ] Watch the first public atomic launches in Vercel runtime logs and reconcile any ambiguous receipt state.
+- [x] Reconcile the first fee-enabled public atomic launch through finalized receipt persistence and the public burn ledger.
 - [ ] Run a sustained no-spend launch-monitor subscription soak and alert on readiness degradation or repeated reconnects.
 - [ ] Configure a production-grade Robinhood archive RPC and verify the authenticated wallet, simulation, recovery, and receipt flow on preview.
 - [ ] Keep Robinhood mainnet wallet requests disabled until those checks pass.
