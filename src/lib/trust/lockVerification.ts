@@ -225,6 +225,16 @@ export function bindStreamToLock(
   if (stream.end - stream.cliff > MAX_CLIFF_END_GAP_SECONDS) {
     return "schedule has a post-cliff tail";
   }
+  // Period + per-period rate must be the single-unit residual the SDK's
+  // buildLockParams emits for a full cliff (period 1, amountPerPeriod 1), NOT an
+  // arbitrary vesting rate (finding: schedule residual). The gap and full-cliff
+  // amount checks above bound the tail's DURATION and the cliff's SIZE, but a
+  // vesting schedule can still satisfy both while streaming a nonzero linear rate
+  // per period; a large amountPerPeriod or a multi-second period is a genuine
+  // vesting tail, not a cliff lock, and must be rejected here.
+  if (stream.period !== 1 || stream.amountPerPeriod !== BigInt(1)) {
+    return "not a single-period cliff schedule";
+  }
   if (!isFullCliff(stream.cliffAmount, stream.depositedAmount)) {
     return "cliff does not release the full deposit";
   }

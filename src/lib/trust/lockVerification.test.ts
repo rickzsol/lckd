@@ -142,6 +142,32 @@ test("end === cliff (no tail) still binds", () => {
   assert.equal(bindStreamToLock(decoded({ end: CLIFF_RAW }), identity()), null);
 });
 
+// --- full-cliff vs vesting schedule (finding: schedule residual) -----------
+
+test("a vesting schedule (amountPerPeriod > 1) is rejected, not a full cliff", () => {
+  // A genuine vesting lock streams a nonzero linear amount each period. It can sit
+  // inside the 1s tail window and carry a full cliffAmount, so only the period/rate
+  // check catches it. buildLockParams emits amountPerPeriod 1 for a real cliff.
+  assert.match(
+    bindStreamToLock(decoded({ amountPerPeriod: BigInt(1000) }), identity())!,
+    /single-period cliff/,
+  );
+});
+
+test("a multi-second vesting period is rejected, not a full cliff", () => {
+  assert.match(
+    bindStreamToLock(decoded({ period: 86_400 }), identity())!,
+    /single-period cliff/,
+  );
+});
+
+test("the canonical single-unit residual (period 1, amountPerPeriod 1) still binds", () => {
+  assert.equal(
+    bindStreamToLock(decoded({ period: 1, amountPerPeriod: BigInt(1) }), identity()),
+    null,
+  );
+});
+
 // --- read-failure handling (finding 2) -------------------------------------
 
 test("an rpc error never becomes a withdrawal: it throws", () => {

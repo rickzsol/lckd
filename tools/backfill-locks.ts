@@ -97,6 +97,8 @@ interface StreamSchedule {
   end: number;
   cliffAmount: BN;
   depositedAmount: BN;
+  period: number;
+  amountPerPeriod: BN;
 }
 
 /**
@@ -109,12 +111,21 @@ interface StreamSchedule {
  *  - end >= cliff, rejecting inverted schedules (an inverted end < cliff would
  *    make (end - cliff) negative and slip past the tail bound),
  *  - end - cliff <= 1s, rejecting a post-cliff streaming tail,
+ *  - period === 1 and amountPerPeriod === 1, the single-unit residual the SDK's
+ *    buildLockParams emits, rejecting an arbitrary vesting rate that would stream
+ *    a nonzero linear amount per period (finding: schedule residual),
  *  - cliffAmount releases the full deposit.
  */
 export function fullCliffScheduleMismatch(s: StreamSchedule): string | null {
   if (s.start !== s.cliff) return "start does not equal cliff";
   if (s.end < s.cliff) return "inverted schedule (end before cliff)";
   if (s.end - s.cliff > MAX_CLIFF_END_GAP_SECONDS) return "schedule has a post-cliff tail";
+  // Reject a genuine vesting schedule: only the single-unit residual (period 1,
+  // amountPerPeriod 1) is a cliff lock; any larger rate or period is linear
+  // vesting, not a full cliff (finding: schedule residual).
+  if (s.period !== 1 || !s.amountPerPeriod.eqn(1)) {
+    return "not a single-period cliff schedule";
+  }
   if (!isFullCliffAmount(s.cliffAmount, s.depositedAmount)) {
     return "cliff does not release the full deposit";
   }

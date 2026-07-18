@@ -36,6 +36,8 @@ const validSchedule = {
   end: 1_001,
   cliffAmount: new BN(100),
   depositedAmount: new BN(100),
+  period: 1,
+  amountPerPeriod: new BN(1),
 };
 
 test("a canonical full-cliff schedule passes", () => {
@@ -69,6 +71,23 @@ test("cliff that does not release the full deposit is rejected", () => {
   assert.equal(
     fullCliffScheduleMismatch({ ...validSchedule, cliffAmount: new BN(50) }),
     "cliff does not release the full deposit",
+  );
+});
+
+test("a vesting schedule (amountPerPeriod > 1) is rejected as not a cliff (schedule residual)", () => {
+  // A real vesting lock streams a nonzero rate per period; it can still sit in the
+  // 1s tail window with a full cliffAmount, so only the period/rate check rejects
+  // it. The backfill must not credit an arbitrary vesting schedule as a full cliff.
+  assert.equal(
+    fullCliffScheduleMismatch({ ...validSchedule, amountPerPeriod: new BN(1000) }),
+    "not a single-period cliff schedule",
+  );
+});
+
+test("a multi-second vesting period is rejected as not a cliff", () => {
+  assert.equal(
+    fullCliffScheduleMismatch({ ...validSchedule, period: 86_400 }),
+    "not a single-period cliff schedule",
   );
 });
 
