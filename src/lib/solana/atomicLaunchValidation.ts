@@ -41,6 +41,7 @@ import {
   lockDaysToSeconds,
 } from "./streamflow";
 import { readU64LE } from "./u64";
+import { buildLaunchFeeInstruction, type LaunchFeeTerms } from "./launchFee";
 
 const ATOMIC_COMPUTE_UNIT_LIMIT = 400_000;
 const U64_MAX = BigInt("0xffffffffffffffff");
@@ -149,6 +150,7 @@ export interface AtomicTransactionExpectation {
   maxQuoteAmount: string;
   lockAmount: string;
   unlockTimestamp: number;
+  fee: LaunchFeeTerms;
 }
 
 function decodeBase64(value: string): Uint8Array {
@@ -355,6 +357,7 @@ export async function validateAtomicLaunchTransactionClient(
   const expectedPrice = ComputeBudgetProgram.setComputeUnitPrice({
     microLamports: DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
   });
+  const feeInstruction = buildLaunchFeeInstruction(expectation.wallet, expectation.fee);
   const expectedPrograms = [
     ComputeBudgetProgram.programId,
     ComputeBudgetProgram.programId,
@@ -362,6 +365,7 @@ export async function validateAtomicLaunchTransactionClient(
     ASSOCIATED_TOKEN_PROGRAM_ID,
     PUMPFUN_PROGRAM_ID,
     STREAMFLOW_V13_PROGRAM_ID,
+    ...(feeInstruction ? [feeInstruction.programId] : []),
     AddressLookupTableProgram.programId,
   ];
   if (
@@ -425,6 +429,7 @@ export async function validateAtomicLaunchTransactionClient(
       data: lockExpectation.data,
       keys: [...lockExpectation.keys],
     }),
+    ...(feeInstruction ? [feeInstruction] : []),
     deactivate,
   ];
   assertExactInstructions(instructions, expectedInstructions, expectation.wallet);
@@ -473,10 +478,11 @@ export async function validateAtomicLaunchTransactionClient(
     data: instructions[5].data,
     keys: [...lockExpectation.keys],
   }), lockExpectation);
+  const deactivateActual = instructions[instructions.length - 1];
   if (
-    !instructions[6].data.equals(deactivate.data) ||
-    instructions[6].keys.length !== deactivate.keys.length ||
-    instructions[6].keys.some((account, index) =>
+    !deactivateActual.data.equals(deactivate.data) ||
+    deactivateActual.keys.length !== deactivate.keys.length ||
+    deactivateActual.keys.some((account, index) =>
       !account.pubkey.equals(deactivate.keys[index].pubkey))
   ) {
     throw new Error("Atomic launch lookup cleanup instruction changed");

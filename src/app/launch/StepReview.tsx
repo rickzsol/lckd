@@ -211,6 +211,12 @@ function LaunchingView({ w }: { w: WizardContext }) {
         })}
       </div>
 
+      {w.resolvedFee && (
+        <div className="mt-5 font-mono text-[11px] text-text-3">
+          launch fee: <span className={w.resolvedFee === "waived" ? "text-text-2" : "text-accent-400"}>{w.resolvedFee}</span>
+        </div>
+      )}
+
       {/* Wallet hint for signature phases */}
       {(w.launchPhase === 2 || w.launchPhase === 5) && (
         <div className="mt-6 rounded-control border border-accent/20 bg-accent-dim px-4 py-2.5 font-mono text-[11px] text-accent">

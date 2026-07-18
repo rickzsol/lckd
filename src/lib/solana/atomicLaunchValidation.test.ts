@@ -78,6 +78,12 @@ async function fixture() {
     maxQuoteAmount: plan.maxQuoteAmount.toString(),
     lockAmount: plan.lockAmount.toString(),
     unlockTimestamp: plan.unlockTimestamp,
+    fee: {
+      feeMode: "waived" as const,
+      feeLamports: null,
+      feeLckdRaw: null,
+      feeTreasury: null,
+    },
   };
   return { wallet, metadata, lookupTable, instructions, blockhash, expectation };
 }
@@ -222,5 +228,108 @@ test("client rejects unlock timestamps outside the trusted cluster-time window",
   assert.throws(
     () => validateReviewedUnlockTimestamp(1_900_000_000 + 30 * 86_400, 1_900_000_000, 30),
     /reviewed duration/,
+  );
+});
+
+async function burnFeeFixture() {
+  const wallet = keypair(1).publicKey;
+  const mint = keypair(2).publicKey;
+  const metadata = keypair(3).publicKey;
+  const metadataUri = "https://example.com/metadata.json";
+  const fee = {
+    feeMode: "burnLckd" as const,
+    feeLamports: null,
+    feeLckdRaw: "123456789",
+    feeTreasury: null,
+  };
+  const config = freezeAtomicLaunchConfig({
+    name: "Atomic",
+    ticker: "ATM",
+    buyAmountSol: 0.1,
+    lockDurationDays: 30,
+    lockPercentage: 99,
+    ...fee,
+  });
+  const plan = await buildAtomicLaunchInstructions(
+    { config, walletPublicKey: wallet, mintPublicKey: mint, metadataPublicKey: metadata, metadataUri },
+    {
+      quotedTokenAmount: new BN("250000000000000"),
+      maxQuoteAmount: new BN("110000000"),
+      streamflowFeePercent: 0.19,
+      unlockTimestamp: 1_900_000_000,
+    },
+  );
+  const lookupAddresses = canonicalLookupAddresses(plan.instructions, [wallet, mint, metadata]);
+  const lookupTable = new AddressLookupTableAccount({
+    key: keypair(4).publicKey,
+    state: {
+      authority: wallet,
+      addresses: [...lookupAddresses],
+      deactivationSlot: BigInt("0xffffffffffffffff"),
+      lastExtendedSlot: 10,
+      lastExtendedSlotStartIndex: 0,
+    },
+  });
+  const instructions = [
+    ...plan.instructions,
+    AddressLookupTableProgram.deactivateLookupTable({
+      lookupTable: lookupTable.key,
+      authority: wallet,
+    }),
+  ];
+  const blockhash = keypair(5).publicKey.toBase58();
+  const expectation = {
+    wallet,
+    mint,
+    metadata,
+    lookupTable,
+    lookupAddresses,
+    blockhash,
+    name: config.name,
+    ticker: config.ticker,
+    metadataUri,
+    quotedTokenAmount: plan.quotedTokenAmount.toString(),
+    maxQuoteAmount: plan.maxQuoteAmount.toString(),
+    lockAmount: plan.lockAmount.toString(),
+    unlockTimestamp: plan.unlockTimestamp,
+    fee,
+  };
+  return { wallet, blockhash, instructions, lookupTable, expectation };
+}
+
+test("client accepts the atomic transaction with an LCKD burn fee", async () => {
+  const value = await burnFeeFixture();
+  const transaction = await validateAtomicLaunchTransactionClient(
+    transactionBase64(value.wallet, value.blockhash, value.instructions, value.lookupTable),
+    value.expectation,
+  );
+  assert.equal(transaction.message.compiledInstructions.length, 8);
+});
+
+test("client rejects a burn fee amount that differs from the reviewed terms", async () => {
+  const value = await burnFeeFixture();
+  await assert.rejects(
+    () => validateAtomicLaunchTransactionClient(
+      transactionBase64(value.wallet, value.blockhash, value.instructions, value.lookupTable),
+      {
+        ...value.expectation,
+        fee: { ...value.expectation.fee, feeLckdRaw: "987654321" },
+      },
+    ),
+    /instruction|sequence|changed/i,
+  );
+});
+
+test("client rejects a fee instruction when the reviewed launch is waived", async () => {
+  const value = await burnFeeFixture();
+  await assert.rejects(
+    () => validateAtomicLaunchTransactionClient(
+      transactionBase64(value.wallet, value.blockhash, value.instructions, value.lookupTable),
+      {
+        ...value.expectation,
+        fee: { feeMode: "waived" as const, feeLamports: null, feeLckdRaw: null, feeTreasury: null },
+      },
+    ),
+    /instruction|sequence|changed/i,
   );
 });

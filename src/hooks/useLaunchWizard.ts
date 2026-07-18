@@ -93,6 +93,7 @@ export function useLaunchWizard() {
     errorMessage,
     launch,
     retryLock,
+    resolvedFee,
     resetLaunch,
   } = useTokenLaunch(config);
 
@@ -270,6 +271,7 @@ export function useLaunchWizard() {
     launchResult,
     recoveryStatus,
     errorMessage,
+    resolvedFee,
     computedTier,
     tierLabel,
     updateConfig,

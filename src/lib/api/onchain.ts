@@ -2,6 +2,11 @@ import "server-only";
 
 import { isValidSolanaAddress } from "@/lib/api/validation";
 import {
+  assertLaunchFeeTerms,
+  LCKD_MINT_ADDRESS,
+  type LaunchFeeTerms,
+} from "@/lib/solana/launchFee";
+import {
   AddressLookupTableProgram,
   ComputeBudgetProgram,
   Connection,
@@ -102,6 +107,7 @@ export interface AtomicLaunchExpectation {
   unlockTimestamp: number;
   lockDurationDays: number;
   lockPercentage: number;
+  fee: LaunchFeeTerms;
 }
 
 export interface VerifiedAtomicLaunch extends VerifiedLaunch {
@@ -738,6 +744,42 @@ function assertAtomicAtaInstruction(
   }
 }
 
+function assertAtomicFeeInstruction(
+  instruction: RawInstruction | undefined,
+  wallet: PublicKey,
+  fee: LaunchFeeTerms,
+): void {
+  const info = instruction?.parsed?.info ?? {};
+  if (fee.feeMode === "burnLckd") {
+    const walletLckdAta = getAssociatedTokenAddressSync(
+      new PublicKey(LCKD_MINT_ADDRESS),
+      wallet,
+      false,
+      TOKEN_PROGRAM_ID,
+    );
+    if (
+      !instruction?.programId.equals(TOKEN_PROGRAM_ID) ||
+      instruction.parsed?.type !== "burn" ||
+      info.account !== walletLckdAta.toBase58() ||
+      info.mint !== LCKD_MINT_ADDRESS ||
+      info.authority !== wallet.toBase58() ||
+      info.amount !== fee.feeLckdRaw
+    ) {
+      throw new OnChainVerificationError("Atomic launch LCKD burn fee is invalid", 422);
+    }
+    return;
+  }
+  if (
+    !instruction?.programId.equals(SystemProgram.programId) ||
+    instruction.parsed?.type !== "transfer" ||
+    info.source !== wallet.toBase58() ||
+    info.destination !== fee.feeTreasury ||
+    info.lamports !== fee.feeLamports
+  ) {
+    throw new OnChainVerificationError("Atomic launch SOL fee transfer is invalid", 422);
+  }
+}
+
 function assertAtomicLookupDeactivation(
   instruction: RawInstruction,
   wallet: PublicKey,
@@ -944,8 +986,12 @@ export async function verifyFinalizedAtomicLaunchTransaction(
   const expectedPrice = ComputeBudgetProgram.setComputeUnitPrice({
     microLamports: ATOMIC_COMPUTE_UNIT_PRICE,
   }).data;
+  assertLaunchFeeTerms(expectation.fee);
+  const expectedInstructionCount = expectation.fee.feeMode === "waived"
+    ? ATOMIC_OUTER_INSTRUCTION_COUNT
+    : ATOMIC_OUTER_INSTRUCTION_COUNT + 1;
   if (
-    instructions.length !== ATOMIC_OUTER_INSTRUCTION_COUNT ||
+    instructions.length !== expectedInstructionCount ||
     !instructions[0]?.programId.equals(ComputeBudgetProgram.programId) ||
     !instructionHasData(instructions[0], expectedLimit) ||
     !instructions[1]?.programId.equals(ComputeBudgetProgram.programId) ||
@@ -1023,7 +1069,10 @@ export async function verifyFinalizedAtomicLaunchTransaction(
   ) {
     throw new OnChainVerificationError("Atomic Streamflow schedule does not match the intent", 422);
   }
-  assertAtomicLookupDeactivation(instructions[6], wallet, lookupTable);
+  if (expectation.fee.feeMode !== "waived") {
+    assertAtomicFeeInstruction(instructions[6], wallet, expectation.fee);
+  }
+  assertAtomicLookupDeactivation(instructions[instructions.length - 1], wallet, lookupTable);
 
   let tradeEvent: VerifiedPumpTradeEvent | null = null;
   try {

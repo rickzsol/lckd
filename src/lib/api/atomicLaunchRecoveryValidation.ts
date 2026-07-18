@@ -65,6 +65,13 @@ const serializedTransaction = z.string().min(100).max(2_000).regex(
   "Invalid serialized transaction",
 );
 
+export const launchFeeConfigFields = {
+  feeMode: z.enum(["waived", "burnLckd", "sol"]).optional(),
+  feeLamports: z.number().int().positive().safe().nullable().optional(),
+  feeLckdRaw: z.string().regex(/^\d+$/).nullable().optional(),
+  feeTreasury: address.nullable().optional(),
+} as const;
+
 export const atomicLaunchConfigSchema = z.object({
   name: z.string().trim().min(1).max(32),
   ticker: z.string().trim().min(1).max(13),
@@ -78,6 +85,7 @@ export const atomicLaunchConfigSchema = z.object({
   twitterUrl: nullableHttpsUrl,
   telegramUrl: nullableHttpsUrl,
   websiteUrl: nullableHttpsUrl,
+  ...launchFeeConfigFields,
 }).strict();
 
 export const atomicLaunchMetadataSchema = z.object({

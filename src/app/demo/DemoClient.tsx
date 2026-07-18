@@ -173,6 +173,7 @@ function useDemoWizard(): WizardContext {
       launchPhase: 2,
       launchPhases: [...LAUNCH_PHASES_WITH_LOCK],
       recoveryStatus: status === "partial" ? "atomic_submitted" : null,
+      resolvedFee: status === "launching" ? "burn 4,938.27 LCKD" : null,
       launchResult:
         status === "success"
           ? DEMO_RESULT

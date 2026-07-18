@@ -24,6 +24,7 @@ import {
   restoreLocalVersionedSignatures,
 } from "@/lib/solana";
 import { validateLookupCleanupTransaction } from "@/lib/solana/atomicLookupCleanup";
+import { formatLaunchFee, type LaunchFeeTerms } from "@/lib/solana/launchFee";
 import {
   metadataDraftMatchesConfig,
   parseLaunchMetadataDraft,
@@ -91,6 +92,10 @@ interface SetupResponse extends AtomicState {
   lockAmount: string;
   unlockTimestamp: number;
   streamflowFeePercent: number;
+  feeMode: LaunchFeeTerms["feeMode"];
+  feeLamports: number | null;
+  feeLckdRaw: string | null;
+  feeTreasury: string | null;
 }
 
 interface AtomicResponse {
@@ -108,6 +113,10 @@ interface AtomicResponse {
   maxQuoteAmount: string;
   lockAmount: string;
   unlockTimestamp: number;
+  feeMode: LaunchFeeTerms["feeMode"];
+  feeLamports: number | null;
+  feeLckdRaw: string | null;
+  feeTreasury: string | null;
 }
 
 export const LAUNCH_PHASES_WITH_LOCK = [
@@ -267,6 +276,7 @@ export function useTokenLaunch(config: LaunchConfig) {
   const [, setRecoveryAltStateVersion] = useState<number | null>(null);
   const [recoveryStatus, setRecoveryStatus] = useState<string | null>(null);
   const [recoveryAltStatus, setRecoveryAltStatus] = useState<string | null>(null);
+  const [resolvedFee, setResolvedFee] = useState<string | null>(null);
   const [metadataDraft, setMetadataDraft] = useState<LaunchMetadataDraft | null>(
     readLaunchMetadataDraft,
   );
@@ -432,6 +442,12 @@ export function useTokenLaunch(config: LaunchConfig) {
         }),
       });
       assertSetupResponse(setup, publicKey);
+      setResolvedFee(formatLaunchFee({
+        feeMode: setup.feeMode ?? "waived",
+        feeLamports: setup.feeLamports ?? null,
+        feeLckdRaw: setup.feeLckdRaw ?? null,
+        feeTreasury: setup.feeTreasury ?? null,
+      }));
       if (
         setup.quotedTokenAmount !== setupEconomics.quotedTokenAmount ||
         setup.maxQuoteAmount !== setupEconomics.maxQuoteAmount ||
@@ -535,7 +551,11 @@ export function useTokenLaunch(config: LaunchConfig) {
         atomic.quotedTokenAmount !== setup.quotedTokenAmount ||
         atomic.maxQuoteAmount !== setup.maxQuoteAmount ||
         atomic.lockAmount !== setup.lockAmount ||
-        atomic.unlockTimestamp !== setup.unlockTimestamp
+        atomic.unlockTimestamp !== setup.unlockTimestamp ||
+        atomic.feeMode !== setup.feeMode ||
+        atomic.feeLamports !== setup.feeLamports ||
+        atomic.feeLckdRaw !== setup.feeLckdRaw ||
+        atomic.feeTreasury !== setup.feeTreasury
       ) {
         throw new Error("Atomic launch economics changed after setup approval");
       }
@@ -565,6 +585,12 @@ export function useTokenLaunch(config: LaunchConfig) {
         maxQuoteAmount: atomic.maxQuoteAmount,
         lockAmount: atomic.lockAmount,
         unlockTimestamp: atomic.unlockTimestamp,
+        fee: {
+          feeMode: setup.feeMode ?? "waived",
+          feeLamports: setup.feeLamports ?? null,
+          feeLckdRaw: setup.feeLckdRaw ?? null,
+          feeTreasury: setup.feeTreasury ?? null,
+        },
       });
       atomicTransaction.sign([mintKeypair, metadataKeypair]);
       const issuedAtomicMessage = atomicTransaction.message.serialize();
@@ -886,6 +912,7 @@ export function useTokenLaunch(config: LaunchConfig) {
     cleanupLookup,
     recoveryStatus,
     recoveryAltStatus,
+    resolvedFee,
     resetLaunch,
   };
 }

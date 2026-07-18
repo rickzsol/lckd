@@ -51,6 +51,12 @@ import {
   createStreamflowInstructionExpectation,
   validateStreamflowCreateInstruction,
 } from "./streamflowInstruction";
+import {
+  assertLaunchFeeTerms,
+  buildLaunchFeeInstruction,
+  launchFeeTermsFromConfig,
+  type LaunchFeeTerms,
+} from "./launchFee";
 
 const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 const ATOMIC_COMPUTE_UNIT_LIMIT = 400_000;
@@ -63,9 +69,13 @@ const CONFIG_KEYS = [
   "buyAmountSol",
   "lockDurationDays",
   "lockPercentage",
+  "feeMode",
+  "feeLamports",
+  "feeLckdRaw",
+  "feeTreasury",
 ] as const;
 
-export interface FrozenAtomicLaunchConfig {
+export interface FrozenAtomicLaunchConfig extends LaunchFeeTerms {
   readonly name: string;
   readonly ticker: string;
   readonly buyAmountSol: number;
@@ -173,14 +183,20 @@ async function getConnection(): Promise<Connection> {
 }
 
 export function freezeAtomicLaunchConfig(
-  config: Pick<LaunchConfig, (typeof CONFIG_KEYS)[number]>,
+  config: Pick<LaunchConfig, "name" | "ticker" | "buyAmountSol" | "lockDurationDays" | "lockPercentage"> &
+    Partial<LaunchFeeTerms>,
 ): FrozenAtomicLaunchConfig {
+  const feeTerms = launchFeeTermsFromConfig(config as Record<string, unknown>);
   const frozen = Object.freeze({
     name: config.name,
     ticker: config.ticker,
     buyAmountSol: config.buyAmountSol,
     lockDurationDays: config.lockDurationDays,
     lockPercentage: config.lockPercentage,
+    feeMode: feeTerms.feeMode,
+    feeLamports: feeTerms.feeLamports,
+    feeLckdRaw: feeTerms.feeLckdRaw,
+    feeTreasury: feeTerms.feeTreasury,
   });
   assertFrozenAtomicLaunchConfig(frozen);
   return frozen;
@@ -216,6 +232,7 @@ export function assertFrozenAtomicLaunchConfig(
   if (!Number.isInteger(config.lockPercentage) || config.lockPercentage < 51 || config.lockPercentage > 99) {
     throw new Error("Atomic launch lock percentage is invalid");
   }
+  assertLaunchFeeTerms(config);
 }
 
 function assertIdentity(identity: AtomicLaunchIdentity): void {
@@ -335,6 +352,8 @@ export async function buildAtomicLaunchInstructions(
       name: identity.config.name,
     }),
   ];
+  const feeInstruction = buildLaunchFeeInstruction(identity.walletPublicKey, identity.config);
+  if (feeInstruction) instructions.push(feeInstruction);
   return Object.freeze({
     instructions: Object.freeze(instructions),
     quotedTokenAmount: quote.quotedTokenAmount.clone(),
@@ -595,14 +614,15 @@ export function validateAtomicLaunchTransaction(
     expectation.mintPublicKey,
     expectation.metadataPublicKey,
   ];
+  const expectedInstructionCount = expectation.config.feeMode === "waived" ? 7 : 8;
   if (
     message.addressTableLookups.length !== 1 ||
     !message.addressTableLookups[0]?.accountKey.equals(expectation.lookupTable.key) ||
     message.recentBlockhash !== expectation.blockhash ||
     signers.length !== expectedSigners.length ||
     signers.some((signer, index) => !signer.equals(expectedSigners[index])) ||
-    expectation.instructions.length !== 7 ||
-    message.compiledInstructions.length !== 7
+    expectation.instructions.length !== expectedInstructionCount ||
+    message.compiledInstructions.length !== expectedInstructionCount
   ) {
     throw new Error("Atomic launch transaction envelope mismatch");
   }

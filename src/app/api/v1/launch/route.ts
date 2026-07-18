@@ -19,6 +19,8 @@ import {
   type AtomicLaunchIdentity,
 } from "@/lib/solana/atomicLaunchBuilder.server";
 import type { AtomicIntentSnapshot } from "@/lib/api/atomicLaunchRecoveryValidation";
+import { LaunchFeeError, resolveLaunchFeeTerms } from "@/lib/api/launchFee.server";
+import { launchFeeTermsFromConfig } from "@/lib/solana/launchFee";
 
 export { OPTIONS };
 
@@ -46,6 +48,7 @@ const launchSchema = z.object({
   twitterUrl: nullableHttpsUrl,
   telegramUrl: nullableHttpsUrl,
   websiteUrl: nullableHttpsUrl,
+  feePreference: z.enum(["burnLckd", "sol"]).optional(),
 }).strict();
 
 async function restorePersistedSetup(
@@ -114,7 +117,20 @@ export async function POST(request: NextRequest) {
     const walletPublicKey = new PublicKey(body.walletPublicKey);
     const mintPublicKey = new PublicKey(body.mintPublicKey);
     const metadataPublicKey = new PublicKey(body.metadataPublicKey);
-    const frozenConfig = freezeAtomicLaunchConfig(body);
+    const existing = await getOwnedAtomicLaunchIntent({
+      githubId: session.github_id,
+      creatorWallet: session.wallet_address,
+      mintAddress: body.mintPublicKey,
+    });
+    if (existing && existing.status !== "prepared") {
+      throw new AtomicLaunchRecoveryError("Atomic launch setup is already past preparation", 409);
+    }
+    // Replays must reuse the reviewed fee terms; re-quoting would change the
+    // config hash and orphan the prepared intent.
+    const feeTerms = existing
+      ? launchFeeTermsFromConfig(existing.config as Record<string, unknown>)
+      : await resolveLaunchFeeTerms(walletPublicKey, body.feePreference);
+    const frozenConfig = freezeAtomicLaunchConfig({ ...body, ...feeTerms });
     const identity = {
       walletPublicKey,
       mintPublicKey,
@@ -135,15 +151,11 @@ export async function POST(request: NextRequest) {
       twitterUrl: body.twitterUrl ?? null,
       telegramUrl: body.telegramUrl ?? null,
       websiteUrl: body.websiteUrl ?? null,
+      feeMode: feeTerms.feeMode,
+      feeLamports: feeTerms.feeLamports,
+      feeLckdRaw: feeTerms.feeLckdRaw,
+      feeTreasury: feeTerms.feeTreasury,
     };
-    const existing = await getOwnedAtomicLaunchIntent({
-      githubId: session.github_id,
-      creatorWallet: session.wallet_address,
-      mintAddress: body.mintPublicKey,
-    });
-    if (existing && existing.status !== "prepared") {
-      throw new AtomicLaunchRecoveryError("Atomic launch setup is already past preparation", 409);
-    }
     const setup = existing
       ? await restorePersistedSetup(identity, existing)
       : await buildAtomicLookupPreparation(identity);
@@ -203,13 +215,17 @@ export async function POST(request: NextRequest) {
       lockAmount: responseSetup.lockAmount,
       unlockTimestamp: responseSetup.unlockTimestamp,
       streamflowFeePercent: responseSetup.streamflowFeePercent,
+      feeMode: feeTerms.feeMode,
+      feeLamports: feeTerms.feeLamports,
+      feeLckdRaw: feeTerms.feeLckdRaw,
+      feeTreasury: feeTerms.feeTreasury,
       status: intent.status,
       stateVersion: intent.stateVersion,
       altStatus: intent.altStatus,
       altStateVersion: intent.altStateVersion,
     }, intent.replayed ? 200 : 201);
   } catch (error) {
-    if (error instanceof AtomicLaunchRecoveryError) {
+    if (error instanceof AtomicLaunchRecoveryError || error instanceof LaunchFeeError) {
       return apiError(error.message, error.status);
     }
     console.error("[launch/atomic-setup] Failed:", error);

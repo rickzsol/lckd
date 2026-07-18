@@ -11,6 +11,8 @@ import {
   verifyFinalizedAtomicLaunchTransaction,
 } from "@/lib/api/onchain";
 import { fetchApprovedMetadata } from "@/lib/api/finalizedMetadata";
+import { launchFeeConfigFields } from "@/lib/api/atomicLaunchRecoveryValidation";
+import { LCKD_DECIMALS, launchFeeTermsFromConfig } from "@/lib/solana/launchFee";
 
 export { OPTIONS };
 
@@ -42,6 +44,7 @@ const storedConfigSchema = z.object({
   twitterUrl: nullableUrl,
   telegramUrl: nullableUrl,
   websiteUrl: nullableUrl,
+  ...launchFeeConfigFields,
 }).passthrough();
 
 const atomicIntentSchema = z.object({
@@ -144,6 +147,7 @@ async function recordAtomicLaunch(
         unlockTimestamp: intent.unlockTimestamp,
         lockDurationDays: config.lockDurationDays,
         lockPercentage: config.lockPercentage,
+        fee: launchFeeTermsFromConfig(config as Record<string, unknown>),
       },
     );
     metadata = await fetchApprovedMetadata(verified.metadataUri);
@@ -198,6 +202,21 @@ async function recordAtomicLaunch(
   if (error) return persistenceError(error);
   const result = atomicRecordResultSchema.safeParse(wasUpdated);
   if (!result.success) return apiError("Atomic launch persistence returned an invalid state", 503);
+  const feeTerms = launchFeeTermsFromConfig(config as Record<string, unknown>);
+  if (feeTerms.feeMode === "burnLckd" && !result.data.replayed) {
+    // Ledger row is best-effort: the launch itself is the on-chain source of
+    // truth and a missing row must never fail an otherwise recorded launch.
+    const { error: burnError } = await serverClient.from("burn_events").insert({
+      kind: "burn",
+      signature: verified.signature,
+      sol_amount: null,
+      lckd_amount: Number(BigInt(feeTerms.feeLckdRaw!)) / 10 ** LCKD_DECIMALS,
+      executed_at: verifiedAt,
+    });
+    if (burnError && burnError.code !== "23505") {
+      console.error("[token/record] Burn ledger insert failed:", burnError.message);
+    }
+  }
   const responseStatus = result.data.replayed || result.data.updated ? 200 : 201;
   return apiResponse(
     {

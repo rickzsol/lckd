@@ -11,7 +11,10 @@ import {
   getOwnedAtomicLaunchIntent,
   issueAtomicTransaction,
 } from "@/lib/api/atomicLaunchRecovery";
-import { hashOrderedAddresses } from "@/lib/api/atomicLaunchRecoveryValidation";
+import {
+  hashOrderedAddresses,
+  launchFeeConfigFields,
+} from "@/lib/api/atomicLaunchRecoveryValidation";
 import {
   buildAtomicLaunchTransaction,
   freezeAtomicLaunchConfig,
@@ -19,6 +22,7 @@ import {
   type IssuedAtomicLaunchTransaction,
 } from "@/lib/solana/atomicLaunchBuilder.server";
 import { hashLookupAddresses } from "@/lib/solana/lookupTable";
+import { launchFeeTermsFromConfig } from "@/lib/solana/launchFee";
 
 export { OPTIONS };
 
@@ -44,6 +48,7 @@ const configSchema = z.object({
   twitterUrl: nullableHttpsUrl,
   telegramUrl: nullableHttpsUrl,
   websiteUrl: nullableHttpsUrl,
+  ...launchFeeConfigFields,
 }).strict();
 const intentSchema = z.object({
   status: z.string(),
@@ -203,6 +208,7 @@ export async function POST(request: NextRequest) {
       lockAmount: responseBundle.lockAmount,
       unlockTimestamp: responseBundle.unlockTimestamp,
       streamflowFeePercent: responseBundle.streamflowFeePercent,
+      ...launchFeeTermsFromConfig(intent.config as Record<string, unknown>),
       stateVersion: persisted.stateVersion,
       altStateVersion: persisted.altStateVersion,
     });
