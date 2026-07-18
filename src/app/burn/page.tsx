@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { getBurnLedger, LCKD_MINT, type BurnEvent } from "@/lib/burnLedger";
+import { ProofRegistry } from "./ProofRegistry";
 
 export const revalidate = 300;
 
@@ -151,7 +152,7 @@ export default async function BurnPage() {
               {
                 n: 3,
                 label: "Burn",
-                sub: "The exact purchased LCKD amount is burned before the launch transaction can finalize. If any instruction fails, the full transaction reverts.",
+                sub: "Token-2022 reduces the LCKD mint supply by the exact purchased amount before the launch can finalize. It is a native burn, not a transfer to a dead wallet.",
               },
             ].map((step) => (
               <div key={step.n} className="flex gap-4">
@@ -164,11 +165,14 @@ export default async function BurnPage() {
             ))}
           </div>
           <div className="warning-box !block leading-[1.6]">
-            This ledger includes finalized transactions only. Each combined entry links
-            the launch, 0.1 SOL buyback, and exact LCKD burn to one signature. Solana is
-            the source of truth if this index is delayed or unavailable.
+            The program can burn only LCKD bought into its own PDA account during that
+            launch. It never receives authority over LCKD already held in the launching
+            wallet. Each finalized fee-enabled launch burn entry links the launch,
+            buyback, and burn to one signature.
           </div>
         </section>
+
+        <ProofRegistry />
 
         <section className="space-y-5">
           <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-text-2">
