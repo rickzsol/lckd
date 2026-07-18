@@ -20,13 +20,22 @@ function formatChange(pct: number): string {
   return `${sign}${pct.toFixed(1)}%`;
 }
 
+// DexScreener sits behind Cloudflare, which closes idle keepalive sockets;
+// a reused connection then fails with "other side closed" on the first try.
+async function fetchDexScreener(url: string): Promise<Response> {
+  try {
+    return await fetch(url, { next: { revalidate: 60 } });
+  } catch {
+    return fetch(url, { next: { revalidate: 60 } });
+  }
+}
+
 export async function fetchMarketData(
   mintAddress: string,
 ): Promise<DexMarketData | null> {
   try {
-    const res = await fetch(
+    const res = await fetchDexScreener(
       `https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`,
-      { next: { revalidate: 60 } },
     );
     if (!res.ok) return null;
 
@@ -71,9 +80,8 @@ export async function fetchMarketDataBatch(
   await Promise.all(
     chunks.map(async (chunk) => {
       try {
-        const res = await fetch(
+        const res = await fetchDexScreener(
           `https://api.dexscreener.com/latest/dex/tokens/${chunk.join(",")}`,
-          { next: { revalidate: 60 } },
         );
         if (!res.ok) return;
 
