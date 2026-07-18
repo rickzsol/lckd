@@ -48,7 +48,7 @@ test("verifies the finalized buyback transfer, Pump execution, transfer, burn, a
 
 test("rejects a burn that does not equal the purchased LCKD transfer", () => {
   const fixture = receiptFixture();
-  const burn = fixture.params.innerInstructionGroups[0].instructions[3] as ReturnType<typeof parsed>;
+  const burn = fixture.params.innerInstructionGroups[0].instructions[4] as ReturnType<typeof parsed>;
   burn.parsed.info.amount = (BURNED_AMOUNT - BigInt(1)).toString();
   assert.throws(() => verifyBuybackBurnReceipt(fixture.params), /amounts are invalid/);
 });
@@ -71,6 +71,47 @@ test("accepts an exact pre-funding sweep of donated WSOL", () => {
 
   const incomplete = receiptFixture({ preWsol: "2", sweepAmount: "1" });
   assert.throws(() => verifyBuybackBurnReceipt(incomplete.params), /donated WSOL sweep is invalid/);
+});
+
+test("requires one Pump buy and one canonical event CPI", () => {
+  const duplicateBuy = receiptFixture();
+  duplicateBuy.params.innerInstructionGroups[0].instructions.push(
+    duplicateBuy.params.innerInstructionGroups[0].instructions[1],
+  );
+  assert.throws(() => verifyBuybackBurnReceipt(duplicateBuy.params), /invocation set is invalid/);
+
+  const missingEvent = receiptFixture();
+  missingEvent.params.innerInstructionGroups[0].instructions.splice(3, 1);
+  assert.throws(() => verifyBuybackBurnReceipt(missingEvent.params), /invocation set is invalid/);
+
+  const duplicateEvent = receiptFixture();
+  duplicateEvent.params.innerInstructionGroups[0].instructions.push(
+    duplicateEvent.params.innerInstructionGroups[0].instructions[3],
+  );
+  assert.throws(() => verifyBuybackBurnReceipt(duplicateEvent.params), /invocation set is invalid/);
+
+  const wrongEvent = receiptFixture();
+  const eventInstruction = wrongEvent.params.innerInstructionGroups[0].instructions[3];
+  assert("accounts" in eventInstruction);
+  eventInstruction.accounts = [key(99)];
+  assert.throws(() => verifyBuybackBurnReceipt(wrongEvent.params), /invocation set is invalid/);
+
+  const wrongEventData = receiptFixture();
+  const eventWithWrongData = wrongEventData.params.innerInstructionGroups[0].instructions[3];
+  assert("data" in eventWithWrongData);
+  eventWithWrongData.data = bs58.encode(Buffer.from([1]));
+  assert.throws(() => verifyBuybackBurnReceipt(wrongEventData.params), /invocation set is invalid/);
+
+  const wrongStack = receiptFixture();
+  const eventWithWrongStack = wrongStack.params.innerInstructionGroups[0].instructions[3];
+  assert("stackHeight" in eventWithWrongStack);
+  eventWithWrongStack.stackHeight = 2;
+  assert.throws(() => verifyBuybackBurnReceipt(wrongStack.params), /invocation set is invalid/);
+
+  const reorderedEvent = receiptFixture();
+  const [eventBeforeTransfer] = reorderedEvent.params.innerInstructionGroups[0].instructions.splice(3, 1);
+  reorderedEvent.params.innerInstructionGroups[0].instructions.splice(2, 0, eventBeforeTransfer);
+  assert.throws(() => verifyBuybackBurnReceipt(reorderedEvent.params), /amounts are invalid/);
 });
 
 function receiptFixture(options: { preWsol?: string; sweepAmount?: string } = {}) {
@@ -101,7 +142,7 @@ function receiptFixture(options: { preWsol?: string; sweepAmount?: string } = {}
       destination: atas.wsol.toBase58(),
       lamports: BUYBACK_BURN_LAMPORTS,
     }),
-    raw(pumpInstruction),
+    raw(pumpInstruction, 2),
     parsed(TOKEN_2022_PROGRAM_ID, "transferChecked", {
       source: pumpInstruction.keys[7].pubkey.toBase58(),
       destination: atas.lckd.toBase58(),
@@ -109,6 +150,12 @@ function receiptFixture(options: { preWsol?: string; sweepAmount?: string } = {}
       mint: LCKD_MINT.toBase58(),
       tokenAmount: { amount: BURNED_AMOUNT.toString() },
     }),
+    {
+      programId: PUMP_AMM_PROGRAM_ID,
+      accounts: [PUMP_AMM_EVENT_AUTHORITY_PDA],
+      data: bs58.encode(Buffer.from("e445a52e51cb9a1d67f4521f2cf5777701", "hex")),
+      stackHeight: 3,
+    },
     parsed(TOKEN_2022_PROGRAM_ID, "burn", {
       account: atas.lckd.toBase58(),
       mint: LCKD_MINT.toBase58(),
@@ -184,11 +231,12 @@ function transactionAccountKeys(instruction: TransactionInstruction) {
   return [...accounts.values()];
 }
 
-function raw(instruction: TransactionInstruction) {
+function raw(instruction: TransactionInstruction, stackHeight?: number) {
   return {
     programId: instruction.programId,
     accounts: instruction.keys.map((account) => account.pubkey),
     data: bs58.encode(instruction.data),
+    stackHeight,
   };
 }
 

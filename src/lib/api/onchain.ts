@@ -27,7 +27,10 @@ import {
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
-import { PUMP_AMM_PROGRAM_ID } from "@pump-fun/pump-swap-sdk";
+import {
+  PUMP_AMM_EVENT_AUTHORITY_PDA,
+  PUMP_AMM_PROGRAM_ID,
+} from "@pump-fun/pump-swap-sdk";
 import {
   ICluster,
   SolanaStreamClient,
@@ -48,6 +51,7 @@ import {
   BUYBACK_BURN_LAMPORTS,
   BUYBACK_BURN_PROGRAM_ID,
   LCKD_MINT,
+  PUMP_BUY_EXACT_QUOTE_IN_ACCOUNT_COUNT,
   deriveBuybackBurnAtas,
   deriveBuybackBurnAuthority,
   validatePumpBuyExactQuoteInInstruction,
@@ -74,6 +78,10 @@ const PUMP_EXACT_TOKEN_BUY_DISCRIMINATOR = "66063d1201daebea";
 const LOCK_COVERAGE_TOLERANCE = BigInt(10);
 const BUYBACK_BURN_FEE_INSTRUCTION_INDEX = 6;
 const PUMP_BUY_EXACT_QUOTE_IN_WRITABLE_INDEXES = new Set([0, 1, 5, 6, 7, 8, 10, 17, 20, 25]);
+const PUMP_BUY_EVENT_CPI_PREFIX = Buffer.from(
+  "e445a52e51cb9a1d67f4521f2cf57777",
+  "hex",
+);
 const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 const SAFE_TOKEN_2022_EXTENSIONS = new Set([
   ExtensionType.MetadataPointer,
@@ -935,6 +943,24 @@ function matchingInnerInstructions(
     predicate(instruction) ? [{ instruction, index }] : []);
 }
 
+function isCanonicalPumpBuyEventInstruction(instruction: RawInstruction): boolean {
+  if (
+    instruction.accounts?.length !== 1 ||
+    !instruction.accounts[0].equals(PUMP_AMM_EVENT_AUTHORITY_PDA) ||
+    instruction.stackHeight !== 3 ||
+    !instruction.data
+  ) {
+    return false;
+  }
+  try {
+    const data = decodeBase58(instruction.data);
+    return data.length > PUMP_BUY_EVENT_CPI_PREFIX.length &&
+      data.subarray(0, PUMP_BUY_EVENT_CPI_PREFIX.length).equals(PUMP_BUY_EVENT_CPI_PREFIX);
+  } catch {
+    return false;
+  }
+}
+
 function assertBuybackTokenBalances(params: {
   accountKeys: readonly AtomicAccountKey[];
   preTokenBalances: TransactionTokenBalance[] | null | undefined;
@@ -1054,10 +1080,15 @@ export function verifyBuybackBurnReceipt(params: {
     throw new OnChainVerificationError("Atomic buyback inner instructions are missing", 422);
   }
   const instructions = groups[0].instructions;
-  const pumpMatches = matchingInnerInstructions(instructions, (instruction) =>
+  const pumpInvocations = matchingInnerInstructions(instructions, (instruction) =>
     instruction.programId.equals(PUMP_AMM_PROGRAM_ID));
-  if (pumpMatches.length !== 1) {
-    throw new OnChainVerificationError("Atomic buyback must execute Pump AMM exactly once", 422);
+  const pumpMatches = pumpInvocations.filter(({ instruction }) =>
+    instruction.accounts?.length === PUMP_BUY_EXACT_QUOTE_IN_ACCOUNT_COUNT &&
+    instruction.stackHeight === 2);
+  const eventMatches = pumpInvocations.filter(({ instruction }) =>
+    isCanonicalPumpBuyEventInstruction(instruction));
+  if (pumpInvocations.length !== 2 || pumpMatches.length !== 1 || eventMatches.length !== 1) {
+    throw new OnChainVerificationError("Atomic buyback Pump AMM invocation set is invalid", 422);
   }
   const pumpInstruction = buildVerifiedInnerPumpInstruction({
     instruction: pumpMatches[0].instruction,
@@ -1072,6 +1103,7 @@ export function verifyBuybackBurnReceipt(params: {
     authority,
     pumpInstruction,
     pumpIndex: pumpMatches[0].index,
+    eventIndex: eventMatches[0].index,
     minimumBaseAmountOut,
   });
 }
@@ -1085,6 +1117,7 @@ function verifyBuybackInnerEffects(params: {
   authority: PublicKey;
   pumpInstruction: TransactionInstruction;
   pumpIndex: number;
+  eventIndex: number;
   minimumBaseAmountOut: bigint;
 }): VerifiedBuybackBurnReceipt {
   const atas = deriveBuybackBurnAtas(params.authority);
@@ -1122,7 +1155,7 @@ function verifyBuybackInnerEffects(params: {
     transferred === null || burned === null || transferred !== burned ||
     burned < params.minimumBaseAmountOut ||
     !(systemTransfers[0].index < params.pumpIndex && params.pumpIndex < tokenTransfers[0].index &&
-      tokenTransfers[0].index < burns[0].index)
+      tokenTransfers[0].index < params.eventIndex && params.eventIndex < burns[0].index)
   ) {
     throw new OnChainVerificationError("Atomic buyback-and-burn amounts are invalid", 422);
   }
