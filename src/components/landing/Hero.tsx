@@ -58,9 +58,9 @@ export default function Hero({ launchMonitorUrl, officialLaunch }: Props) {
         className="mb-[52px] flex flex-wrap justify-center gap-3"
         style={{ animation: RISE, animationDelay: "240ms" }}
       >
-        <button type="button" disabled className="shiny-btn cursor-not-allowed opacity-70">
-          <span className="shiny-btn__content">public launches soon</span>
-        </button>
+        <Link href="/launch" className="shiny-btn">
+          <span className="shiny-btn__content">launch token</span>
+        </Link>
         <Link
           href="/feed"
           className="h-12 rounded-control border border-white/10 bg-surface-2 px-[26px] font-mono text-[13px] font-semibold text-text-1 inline-flex items-center gap-2 transition-[border-color,transform] duration-[180ms] ease-[ease] hover:border-[rgba(43,209,126,0.4)] active:translate-y-px"

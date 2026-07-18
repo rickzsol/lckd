@@ -106,14 +106,9 @@ export default function Navbar() {
               </Link>
             )}
           </div>
-          <button
-            type="button"
-            disabled
-            className="btn-primary hidden cursor-not-allowed opacity-70 md:inline-flex"
-            title="Public launches are temporarily paused"
-          >
-            public launches soon
-          </button>
+          <Link href="/launch" className="btn-primary hidden md:inline-flex">
+            launch token
+          </Link>
           <div className="hidden md:block">
             <WalletMultiButton />
           </div>
@@ -150,13 +145,13 @@ export default function Navbar() {
             id="mobile-navigation"
             className="relative z-50 mx-auto mt-2 w-full max-w-[1400px] rounded-[14px] border border-white/6 bg-[rgba(9,11,10,0.92)] px-4 pb-4 backdrop-blur-[14px] md:hidden"
           >
-            <button
-              type="button"
-              disabled
-              className="btn-primary mt-4 w-full cursor-not-allowed opacity-70"
+            <Link
+              href="/launch"
+              onClick={() => setIsMobileOpen(false)}
+              className="btn-primary mt-4 flex w-full justify-center"
             >
-              public launches soon
-            </button>
+              launch token
+            </Link>
             {NAV_LINKS.map((link) => {
               const isActive = pathname === link.href || pathname.startsWith(link.href + "/");
               return (

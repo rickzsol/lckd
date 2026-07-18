@@ -27,13 +27,12 @@ export default function ClosingCta({ showMascot = true }: ClosingCtaProps) {
           Verify both finalized receipts.
         </p>
         <div className="mb-11 flex flex-wrap justify-center gap-3">
-          <button
-            type="button"
-            disabled
-            className="inline-flex h-12 cursor-not-allowed items-center gap-2 rounded-control bg-accent px-7 font-mono text-[14px] font-bold text-accent-ink opacity-70"
+          <Link
+            href="/launch"
+            className="inline-flex h-12 items-center gap-2 rounded-control bg-accent px-7 font-mono text-[14px] font-bold text-accent-ink transition-transform duration-[120ms] active:translate-y-px"
           >
-            public launches soon
-          </button>
+            launch token
+          </Link>
           <Link
             href="/feed"
             className="h-12 rounded-control border border-white/10 bg-surface-2 px-[26px] font-mono text-[13px] font-semibold text-text-1 inline-flex items-center gap-2 transition-[border-color,transform] duration-[180ms] ease-[ease] hover:border-[rgba(43,209,126,0.4)] active:translate-y-px"
