@@ -33,6 +33,20 @@ function formatRelativeAge(iso: string): string {
   return `${Math.floor(elapsedHours / 24)}d`;
 }
 
+export function calculateLockProgress(
+  lockedAt: string,
+  unlockAt: string | null,
+  nowMs = Date.now(),
+): number {
+  const lockedAtMs = new Date(lockedAt).getTime();
+  const unlockAtMs = new Date(unlockAt ?? "").getTime();
+  if (!Number.isFinite(lockedAtMs) || !Number.isFinite(unlockAtMs) || unlockAtMs <= lockedAtMs) {
+    return 0;
+  }
+  const elapsedRatio = (nowMs - lockedAtMs) / (unlockAtMs - lockedAtMs);
+  return Math.floor(Math.min(1, Math.max(0, elapsedRatio)) * 100);
+}
+
 async function loadRepoCard(t: Token): Promise<DisplayRepo | undefined> {
   const [owner, name, extra] = (t.github_repo ?? "").split("/");
   // Launch validation binds the repo owner to the submitting GitHub account,
@@ -70,7 +84,10 @@ export function tokenToDisplay(
   const lockStartDate = new Date(t.lock_verified_at ?? t.created_at);
   const lockEndDate = new Date(t.lock_unlock_at ?? "");
   const isUnlocked = Number.isFinite(lockEndDate.getTime()) && Date.now() >= lockEndDate.getTime();
-  const lockPct = isUnlocked ? 100 : 0;
+  const lockPct = calculateLockProgress(
+    t.lock_verified_at ?? t.created_at,
+    t.lock_unlock_at,
+  );
   const displayTier = isUnlocked ? TrustTier.LOCKED : t.trust_tier;
 
   const fmtDate = (d: Date) =>
@@ -123,7 +140,7 @@ export function tokenToDisplay(
   };
 }
 
-export async function getTokens(): Promise<DisplayToken[]> {
+export async function getTokens(pinnedMintAddress?: string): Promise<DisplayToken[]> {
   if (!hasSupabaseConfig()) {
     return [];
   }
@@ -140,11 +157,22 @@ export async function getTokens(): Promise<DisplayToken[]> {
       .order("created_at", { ascending: false })
       .limit(50);
 
-    if (error || !data || data.length === 0) {
-      return [];
-    }
+    if (error) return [];
 
-    const tokens = data as Token[];
+    let tokens = (data ?? []) as Token[];
+    if (pinnedMintAddress && !tokens.some((token) => token.mint_address === pinnedMintAddress)) {
+      const { data: pinnedToken, error: pinnedError } = await supabase
+        .from("tokens")
+        .select(TOKEN_COLUMNS)
+        .eq("mint_address", pinnedMintAddress)
+        .not("launch_verified_at", "is", null)
+        .not("lock_verified_at", "is", null)
+        .maybeSingle();
+      if (!pinnedError && pinnedToken) {
+        tokens = [pinnedToken as Token, ...tokens.slice(0, 49)];
+      }
+    }
+    if (tokens.length === 0) return [];
     const mintAddresses = tokens.map((t) => t.mint_address);
 
     const marketMap = await import("./dexscreener").then((module) =>

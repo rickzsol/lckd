@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
+import { LCKD_MINT } from "@/lib/burnLedger";
+import { getPublicLaunchMonitorUrl } from "@/lib/launchMonitorClient.server";
 import { getTokens } from "@/lib/queries";
-import {
-  getOfficialLaunch,
-  getPublicLaunchMonitorUrl,
-} from "@/lib/launchMonitorClient.server";
 import FeedClient from "./FeedClient";
 
 export const metadata: Metadata = {
@@ -24,16 +22,13 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function FeedPage() {
-  const [tokens, officialLaunch] = await Promise.all([
-    getTokens(),
-    getOfficialLaunch(),
-  ]);
+  const tokens = await getTokens(LCKD_MINT);
 
   return (
     <FeedClient
-      tokens={tokens}
-      officialLaunch={officialLaunch}
       launchMonitorUrl={getPublicLaunchMonitorUrl()}
+      tokens={tokens}
+      officialMintAddress={LCKD_MINT}
     />
   );
 }

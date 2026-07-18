@@ -1,6 +1,7 @@
 import Link from "next/link";
 import DitherWave from "./DitherWave";
 import HeroStats from "./HeroStats";
+import MatchPromoBanner from "./MatchPromoBanner";
 import type { OfficialLaunchEvent } from "@/lib/launchMonitor";
 
 const RISE = "rise 600ms cubic-bezier(0.16,1,0.3,1) both";
@@ -12,7 +13,7 @@ interface Props {
 
 export default function Hero({ launchMonitorUrl, officialLaunch }: Props) {
   return (
-    <section className="relative flex min-h-screen flex-col items-center justify-center px-[clamp(16px,5vw,32px)] pb-12 pt-[150px] text-center">
+    <section className="relative flex min-h-screen flex-col items-center px-[clamp(16px,5vw,32px)] pb-12 pt-[94px] text-center">
       {/* Background: dither canvas + vignette overlays (behind the fixed navbar) */}
       <div className="pointer-events-none absolute inset-0 z-[-1]" aria-hidden="true">
         <DitherWave
@@ -37,6 +38,9 @@ export default function Hero({ launchMonitorUrl, officialLaunch }: Props) {
         }}
       />
 
+      <MatchPromoBanner />
+
+      <div className="flex w-full flex-1 flex-col items-center justify-center py-10">
       <h1
         className="m-0 mb-5 font-sans text-[clamp(34px,7.5vw,76px)] font-bold leading-[1.02] tracking-[-0.03em] text-text-1"
         style={{ animation: RISE, animationDelay: "80ms" }}
@@ -77,6 +81,7 @@ export default function Hero({ launchMonitorUrl, officialLaunch }: Props) {
           initialLaunch={officialLaunch}
           monitorUrl={launchMonitorUrl}
         />
+      </div>
       </div>
 
       <div className="absolute bottom-[22px] left-1/2 hidden -translate-x-1/2 flex-col items-center gap-1.5 md:flex">

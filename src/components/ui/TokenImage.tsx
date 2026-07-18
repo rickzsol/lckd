@@ -36,23 +36,42 @@ function canOptimize(src: string): boolean {
   }
 }
 
+function preferredImageSource(src: string): string {
+  try {
+    const url = new URL(src);
+    if (url.hostname !== "gateway.pinata.cloud" || !url.pathname.startsWith("/ipfs/")) {
+      return src;
+    }
+    return `https://ipfs.io${url.pathname}${url.search}`;
+  } catch {
+    return src;
+  }
+}
+
 export default function TokenImage({
   src,
   alt,
   size = 48,
+  quality = 75,
   isEager = false,
 }: {
   src: string;
   alt: string;
   size?: number;
+  quality?: 60 | 75;
   isEager?: boolean;
 }) {
-  const [hasError, setHasError] = useState(false);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const [fallbackSrc, setFallbackSrc] = useState<string | null>(null);
   const isUrl = src.startsWith("http") || src.startsWith("/");
+  const hasError = failedSrc === src;
+  const isUsingFallback = fallbackSrc === src;
+  const preferredSrc = preferredImageSource(src);
+  const imageSrc = isUsingFallback ? src : preferredSrc;
 
   if (!isUrl || hasError) {
     return (
-      <span className="flex h-full w-full items-center justify-center rounded-[10px] border border-[rgba(43,209,126,0.25)] bg-accent-dim font-mono text-xs font-bold text-accent-400">
+      <span className="flex h-full w-full items-center justify-center rounded-[10px] border border-accent/25 bg-accent-dim font-mono text-xs font-bold text-accent-400">
         {hasError ? alt.slice(0, 2).toUpperCase() : src}
       </span>
     );
@@ -60,17 +79,22 @@ export default function TokenImage({
 
   return (
     <Image
-      src={src}
+      src={imageSrc}
       alt={alt}
       width={size}
       height={size}
-      sizes={`${size}px`}
-      quality={75}
+      quality={quality}
       loading={isEager ? "eager" : "lazy"}
       fetchPriority={isEager ? "high" : "auto"}
       className="h-full w-full object-cover"
-      unoptimized={!canOptimize(src)}
-      onError={() => setHasError(true)}
+      unoptimized={!canOptimize(imageSrc)}
+      onError={() => {
+        if (!isUsingFallback && preferredSrc !== src) {
+          setFallbackSrc(src);
+          return;
+        }
+        setFailedSrc(src);
+      }}
     />
   );
 }

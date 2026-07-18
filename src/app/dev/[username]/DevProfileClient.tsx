@@ -7,6 +7,7 @@ import Image from "next/image";
 import Link from "next/link";
 import Badge, { getTrustBadgeLabel, getTrustTierBadgeLabel } from "@/components/ui/Badge";
 import Bar from "@/components/ui/Bar";
+import TokenImage from "@/components/ui/TokenImage";
 import { getAccountAge } from "@/lib/accountAge";
 import { TrustTier } from "@/types/index";
 import type { GitHubProfile, ContributionDay } from "@/types/index";
@@ -70,6 +71,8 @@ export default function DevProfileClient({
               alt={profile.github_username}
               width={64}
               height={64}
+              loading="eager"
+              fetchPriority="high"
               className="h-full w-full object-cover"
             />
           ) : (
@@ -159,13 +162,10 @@ function LaunchesTab({ tokens }: { tokens: DisplayToken[] }) {
 
   return (
     <div className="flex flex-col gap-2">
-      {tokens.map((t) => {
+      {tokens.map((t, index) => {
         const href = t.mintAddress
           ? `/token/${t.mintAddress}`
           : `/token/${t.id}`;
-        const isImageUrl =
-          typeof t.image === "string" &&
-          (t.image.startsWith("http") || t.image.startsWith("/"));
         const hasLockRecord =
           t.lock.amount !== "--" &&
           t.lock.amount !== "0" &&
@@ -173,51 +173,61 @@ function LaunchesTab({ tokens }: { tokens: DisplayToken[] }) {
 
         return (
           <Link key={t.id} href={href} className="token-card block">
-            <div className="mb-2 flex items-center gap-2.5">
+            <div className="grid grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-3">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-control border border-accent/20 bg-accent-dim">
-                {isImageUrl ? (
-                  <Image
-                    src={t.image}
-                    alt={t.name}
-                    width={48}
-                    height={48}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span className="font-mono text-xs font-bold text-accent">
-                    {t.image}
-                  </span>
-                )}
+                <TokenImage
+                  src={t.image}
+                  alt={t.name}
+                  size={48}
+                  quality={60}
+                  isEager={index < 4}
+                />
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-sans text-sm font-bold text-text-1">
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-baseline gap-2">
+                  <span className="truncate font-sans text-[15px] font-bold text-text-1">
                     {t.name}
                   </span>
-                  <span className="font-mono text-[11px] text-text-3">
+                  <span className="shrink-0 font-mono text-[11px] text-text-3">
                     {t.ticker}
                   </span>
-                  <Badge tier={t.tier} label={getTrustBadgeLabel(t.tierLabel)} />
                 </div>
-                <div className="font-mono text-[10px] text-text-4">
-                  {hasLockRecord
-                    ? `Recorded lock ${t.lock.amount} · ${t.lock.duration}`
-                    : "Lock verification unavailable"}
+                <div className="mt-1">
+                  <Badge tier={t.tier} label={getTrustBadgeLabel(t.tierLabel)} />
                 </div>
               </div>
               <div className="shrink-0 text-right">
-                <div className="font-mono text-[13px] font-bold tabular-nums text-text-1">
+                <div className="font-mono text-[8px] font-semibold uppercase tracking-[0.12em] text-text-4">
+                  Market cap
+                </div>
+                <div className="font-mono text-sm font-bold tabular-nums text-text-1">
                   {t.mcap}
                 </div>
               </div>
             </div>
-            {hasLockRecord && (
-              <div className="flex items-center font-mono text-[10px] text-text-2">
-                <span className="mr-1.5 tabular-nums">{t.lock.start} {"\u2192"} {t.lock.end}</span>
-                <div className="min-w-[40px] flex-1"><Bar pct={t.lock.pct} /></div>
-                <span className="ml-1.5 tabular-nums text-text-3">{t.lock.pct}% elapsed · {100 - t.lock.pct}% locked</span>
+
+            <div className="mt-3 border-t border-line pt-3">
+              <div className="flex items-center justify-between gap-3 font-mono text-[10px]">
+                <span className="font-semibold uppercase tracking-[0.12em] text-text-4">
+                  Lock receipt
+                </span>
+                <span className="text-right font-semibold text-text-2 tabular-nums">
+                  {hasLockRecord ? `${t.lock.amount} · ${t.lock.duration}` : "Unavailable"}
+                </span>
               </div>
-            )}
+              {hasLockRecord && (
+                <>
+                  <div className="mt-2">
+                    <Bar pct={t.lock.pct} />
+                  </div>
+                  <div className="mt-2 text-right font-mono text-[9px] text-text-3 tabular-nums">
+                    {t.lock.pct >= 100
+                      ? `Lock term complete · unlocked ${t.lock.end}`
+                      : `${t.lock.pct}% of lock term elapsed · unlocks ${t.lock.end}`}
+                  </div>
+                </>
+              )}
+            </div>
           </Link>
         );
       })}

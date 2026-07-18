@@ -10,6 +10,7 @@
 - [x] Run lint, typecheck, tests, build, and desktop/mobile E2E against the stabilization diff.
 - [x] Fix the audited desktop/mobile UI issues and verify the local dev artifact at 1440px and 390px.
 - [x] Restore the token market chart, expose copyable CA and recorded metadata, and optimize token images through Next Image.
+- [x] Pin the official feed launch, replace false lock percentages with timestamp-derived progress, polish feed and developer cards on mobile, and add the matched-launch banner.
 - [x] Verify the pull-request quality workflow in hosted CI.
 - [ ] Verify the full workflow, including the secret-backed Robinhood fork job, in hosted CI.
 - [ ] Normalize mixed CRLF/LF endings in a separate mechanical commit.
