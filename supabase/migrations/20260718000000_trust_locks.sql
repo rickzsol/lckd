@@ -22,7 +22,16 @@ alter table public.tokens
   -- trust_tier. The projection floors trust_tier to LOCKED for an expired lock;
   -- if we re-read trust_tier as GitHub evidence we would permanently lose the
   -- original GitHub tier (finding 5). github_tier is the durable GitHub input.
-  add column if not exists github_tier int;
+  add column if not exists github_tier int,
+  -- Monotonic evidence revision, NOT a wall-clock stamp (finding 5 residual). A
+  -- snapshot projected from OLD evidence but written later still carries a newer
+  -- tier_computed_at, so a timestamp cannot serialize freshness: a stale snapshot
+  -- would win the wall-clock comparison and overwrite fresher evidence. This
+  -- integer is bumped by commit_token_tier itself (stored + 1) ONLY when the
+  -- evidence actually changes, and every tier write is a compare-and-swap on the
+  -- revision the caller read. A caller whose snapshot predates a committed change
+  -- carries a stale prev revision and is rejected, regardless of its wall-clock.
+  add column if not exists evidence_seq int not null default 0;
 
 -- ---------------------------------------------------------------------------
 -- locks: canonical on-chain lock evidence per token.
@@ -420,16 +429,33 @@ $$;
 -- untouched) while the GitHub refresh passes true and writes exactly what it
 -- computed, including a cleared NULL.
 --
--- Monotonic, atomic commit under concurrency (finding 5): both the GitHub
--- refresh and the lock reconciliation compute a projection from a snapshot read
--- and then write. Two racing writers whose reads interleave would otherwise be
--- last-writer-wins, so a slow OLD recompute could clobber a newer tier. This
--- function now (a) locks the token row FOR UPDATE, serializing concurrent
--- commits on the same token, and (b) gates the write on p_tier_computed_at being
--- strictly newer than the stored tier_computed_at. An incoming evidence stamp
--- that is not newer than what is stored is a no-op: a racing older recompute
--- cannot overwrite a fresher tier. A first write (stored tier_computed_at NULL)
--- always applies.
+-- Monotonic, atomic commit under concurrency (finding 5, and its round-4/5
+-- residual): both the GitHub refresh and the lock reconciliation compute a
+-- projection from a snapshot read and then write. Two racing writers whose reads
+-- interleave would otherwise be last-writer-wins, so a slow OLD recompute could
+-- clobber a newer tier.
+--
+-- A wall-clock stamp is NOT a valid freshness token (finding 5 residual). A
+-- snapshot projected from OLD evidence that merely happens to be WRITTEN later
+-- carries a newer tier_computed_at and would win a timestamp comparison, letting
+-- a stale projection overwrite fresher evidence. Freshness is instead gated on a
+-- monotonic per-token evidence revision (tokens.evidence_seq) that this function
+-- owns:
+--   (a) the token row is locked FOR UPDATE, serializing concurrent commits;
+--   (b) the caller passes p_prev_evidence_seq: the evidence_seq it read WITH the
+--       snapshot it projected from. The write applies only when that prev value
+--       still equals the stored evidence_seq (a compare-and-swap). A caller whose
+--       snapshot predates a committed change carries a stale prev and is a no-op,
+--       no matter how new its wall-clock is;
+--   (c) on a successful apply the function bumps evidence_seq to stored + 1, so
+--       the revision increases ONLY when evidence actually changes, and the next
+--       stale writer's CAS necessarily fails.
+--
+-- NULL guards (finding: round-4 new defect). p_tier_computed_at and
+-- p_prev_evidence_seq must both be non-null. A NULL tier_computed_at previously
+-- made the comparison NULL, which bypassed the guard and could clear the stored
+-- stamp; a NULL prev revision would defeat the CAS. Both raise instead of ever
+-- being allowed to overwrite or bypass the monotonic guard.
 -- ---------------------------------------------------------------------------
 create or replace function public.commit_token_tier(
   p_token_id uuid,
@@ -437,6 +463,7 @@ create or replace function public.commit_token_tier(
   p_github_tier int,
   p_tier_computed_at timestamptz,
   p_policy_version int,
+  p_prev_evidence_seq int,
   p_set_github_tier boolean default false
 )
 returns void
@@ -445,13 +472,22 @@ security definer
 set search_path = pg_catalog, public
 as $$
 declare
-  stored_computed_at timestamptz;
+  stored_seq int;
   is_verified boolean;
 begin
+  -- Never let a NULL freshness input bypass the monotonic guard or clear a stored
+  -- value (finding: round-4 new defect). Reject both explicitly.
+  if p_tier_computed_at is null then
+    raise exception 'p_tier_computed_at must not be null' using errcode = '22004';
+  end if;
+  if p_prev_evidence_seq is null then
+    raise exception 'p_prev_evidence_seq must not be null' using errcode = '22004';
+  end if;
+
   -- Lock the token row so two concurrent tier commits serialize instead of
   -- racing between their snapshot read and their write (finding 5).
-  select tier_computed_at, (lock_verified_at is not null)
-    into stored_computed_at, is_verified
+  select evidence_seq, (lock_verified_at is not null)
+    into stored_seq, is_verified
   from public.tokens
   where id = p_token_id
   for update;
@@ -460,9 +496,11 @@ begin
     return;
   end if;
 
-  -- Freshness gate: only overwrite when this evidence is strictly newer than
-  -- what is stored. A racing older recompute (stale snapshot) is a no-op.
-  if stored_computed_at is not null and p_tier_computed_at <= stored_computed_at then
+  -- Compare-and-swap on the monotonic revision. The caller's snapshot is fresh
+  -- only if the revision it read still matches what is stored. A stale snapshot
+  -- (prev < stored, because another writer already advanced it) is a no-op even
+  -- when its wall-clock is newer, closing the stale-snapshot-wins hole.
+  if p_prev_evidence_seq <> stored_seq then
     return;
   end if;
 
@@ -470,7 +508,10 @@ begin
   set trust_tier = p_trust_tier,
       github_tier = case when p_set_github_tier then p_github_tier else github_tier end,
       tier_computed_at = p_tier_computed_at,
-      policy_version = p_policy_version
+      policy_version = p_policy_version,
+      -- Bump only on a real apply, so the revision increases only when evidence
+      -- changes and the next stale writer's CAS fails.
+      evidence_seq = stored_seq + 1
   where id = p_token_id;
 end;
 $$;
@@ -504,7 +545,8 @@ create or replace function public.commit_lock_reconciliation(
   p_policy_version int,
   p_inbox_id uuid default null,
   p_lease_id uuid default null,
-  p_github_tier int default null
+  p_github_tier int default null,
+  p_prev_evidence_seq int default null
 )
 returns boolean
 language plpgsql
@@ -550,12 +592,15 @@ begin
   -- and must NOT move tokens.trust_tier (finding 5). Delegate the tier write to
   -- commit_token_tier, the single trust_tier writer. Reconciliation does not
   -- recompute GitHub evidence, so it passes p_set_github_tier => false and the
-  -- stored github_tier is left untouched. The tier write is monotonic on
-  -- p_verified_at inside commit_token_tier, so a slow stale reconcile cannot
-  -- clobber a newer tier (finding 5).
+  -- stored github_tier is left untouched. The tier write is gated by the
+  -- monotonic evidence-revision CAS inside commit_token_tier (p_prev_evidence_seq
+  -- is the revision the caller read with the snapshot it projected from), so a
+  -- slow stale reconcile whose snapshot predates a committed change cannot
+  -- clobber a newer tier even though its wall-clock is newer (finding 5).
   if p_token_id is not null then
     perform public.commit_token_tier(
-      p_token_id, p_trust_tier, p_github_tier, p_verified_at, p_policy_version, false
+      p_token_id, p_trust_tier, p_github_tier, p_verified_at, p_policy_version,
+      p_prev_evidence_seq, false
     );
   end if;
 
@@ -596,9 +641,9 @@ revoke all on function public.complete_inbox_row(uuid, uuid, timestamptz)
 revoke all on function public.fail_inbox_row(uuid, uuid, boolean, timestamptz)
   from public, anon, authenticated;
 revoke all on function public.commit_lock_reconciliation(
-  uuid, uuid, text, numeric, timestamptz, text, bigint, int, int, uuid, uuid, int
+  uuid, uuid, text, numeric, timestamptz, text, bigint, int, int, uuid, uuid, int, int
 ) from public, anon, authenticated;
-revoke all on function public.commit_token_tier(uuid, int, int, timestamptz, int, boolean)
+revoke all on function public.commit_token_tier(uuid, int, int, timestamptz, int, int, boolean)
   from public, anon, authenticated;
 revoke all on function public.mark_lock_attempt(uuid, timestamptz)
   from public, anon, authenticated;
@@ -610,9 +655,9 @@ grant execute on function public.complete_inbox_row(uuid, uuid, timestamptz)
 grant execute on function public.fail_inbox_row(uuid, uuid, boolean, timestamptz)
   to service_role;
 grant execute on function public.commit_lock_reconciliation(
-  uuid, uuid, text, numeric, timestamptz, text, bigint, int, int, uuid, uuid, int
+  uuid, uuid, text, numeric, timestamptz, text, bigint, int, int, uuid, uuid, int, int
 ) to service_role;
-grant execute on function public.commit_token_tier(uuid, int, int, timestamptz, int, boolean)
+grant execute on function public.commit_token_tier(uuid, int, int, timestamptz, int, int, boolean)
   to service_role;
 grant execute on function public.mark_lock_attempt(uuid, timestamptz)
   to service_role;

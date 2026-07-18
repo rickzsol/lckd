@@ -107,6 +107,10 @@ export async function reconcileLock(
     p_policy_version: TRUST_POLICY_VERSION,
     p_inbox_id: lease?.inboxId ?? null,
     p_lease_id: lease?.leaseId ?? null,
+    // The evidence revision this projection was computed against. commit_token_tier
+    // compare-and-swaps on it, so a stale reconcile whose snapshot predates a newer
+    // committed tier is a no-op even with a newer wall-clock (finding 5 residual).
+    p_prev_evidence_seq: projection?.evidenceSeq ?? null,
   });
   if (error) throw new Error(`reconciliation commit failed: ${error.message}`);
 
@@ -127,6 +131,10 @@ function identityFromLock(lock: LockRow): LockIdentity {
 interface ProjectionOutcome {
   tier: TrustTier;
   previousTier: TrustTier;
+  /** The monotonic evidence revision read alongside the snapshot this projection
+   * was computed from. Passed back to the commit as the compare-and-swap prev, so
+   * a stale reconcile cannot overwrite a fresher tier (finding 5 residual). */
+  evidenceSeq: number;
 }
 
 /**
@@ -144,7 +152,7 @@ async function projectFromCanonicalLock(
 ): Promise<ProjectionOutcome | null> {
   const { data: token, error } = await supabase
     .from("tokens")
-    .select("trust_tier, github_tier")
+    .select("trust_tier, github_tier, evidence_seq")
     .eq("id", lock.token_id)
     .maybeSingle();
   if (error) throw new Error(`token lookup failed: ${error.message}`);
@@ -152,6 +160,8 @@ async function projectFromCanonicalLock(
 
   const previousTier = (token.trust_tier as TrustTier) ?? TrustTier.LOCKED;
   const githubTier = (token.github_tier as TrustTier | null) ?? previousTier;
+  // The revision read WITH this snapshot; the commit CAS-gates on it (finding 5).
+  const evidenceSeq = (token.evidence_seq as number | null) ?? 0;
 
   const projection = projectTrust(
     { status: lockStatus, cliffTs: lock.cliff_ts, lastVerifiedAt: nowIso },
@@ -159,5 +169,5 @@ async function projectFromCanonicalLock(
     now,
     nowIso,
   );
-  return { tier: projection.tier, previousTier };
+  return { tier: projection.tier, previousTier, evidenceSeq };
 }

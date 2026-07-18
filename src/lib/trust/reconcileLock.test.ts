@@ -76,7 +76,7 @@ interface Captured {
 /** Minimal supabase mock: tokens.select().eq().maybeSingle() returns a canned
  * token; rpc() captures the commit_lock_reconciliation payload. */
 function supabaseMock(
-  token: { trust_tier: TrustTier; github_tier: TrustTier | null },
+  token: { trust_tier: TrustTier; github_tier: TrustTier | null; evidence_seq?: number },
   rpcResult: unknown = true,
 ): {
   client: SupabaseClient;
@@ -228,6 +228,27 @@ test("the canonical lock passes its token id so the tier IS projected (finding 5
   const { client, captured } = supabaseMock({ trust_tier: TrustTier.BUILDER, github_tier: TrustTier.BUILDER });
   await reconcileLock(client, conn, lockRow(), BEFORE, null, null, reader({ kind: "ok", stream: decoded() }));
   assert.equal(captured.rpc?.args.p_token_id, "tok-1");
+});
+
+test("the canonical commit carries the evidence revision it read for the CAS (finding 5 residual)", async () => {
+  // The token's evidence_seq at read time must be threaded into the commit as
+  // p_prev_evidence_seq so the DB can compare-and-swap; a stale snapshot (older
+  // seq) then loses regardless of wall-clock.
+  const { client, captured } = supabaseMock({
+    trust_tier: TrustTier.BUILDER,
+    github_tier: TrustTier.BUILDER,
+    evidence_seq: 7,
+  });
+  await reconcileLock(client, conn, lockRow(), BEFORE, null, null, reader({ kind: "ok", stream: decoded() }));
+  assert.equal(captured.rpc?.args.p_prev_evidence_seq, 7);
+});
+
+test("a canonical commit with no prior revision defaults the CAS prev to 0", async () => {
+  // A never-tiered token reads evidence_seq undefined/null; the reconcile passes 0
+  // so the first write CAS-matches the column default.
+  const { client, captured } = supabaseMock({ trust_tier: TrustTier.BUILDER, github_tier: TrustTier.BUILDER });
+  await reconcileLock(client, conn, lockRow(), BEFORE, null, null, reader({ kind: "ok", stream: decoded() }));
+  assert.equal(captured.rpc?.args.p_prev_evidence_seq, 0);
 });
 
 test("a lost inbox lease rejects the commit and reports committed=false (finding 8)", async () => {

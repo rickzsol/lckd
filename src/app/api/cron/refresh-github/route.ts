@@ -39,7 +39,7 @@ export async function GET(req: Request) {
   while (true) {
     const { data: tokens, error } = await supabase
       .from("tokens")
-      .select("id, mint_address, name, ticker, trust_tier, github_username, github_repo, live_url, lock_tx, lock_duration_days, lock_percentage, lock_amount, lock_verified_at, lock_unlock_at, created_at")
+      .select("id, mint_address, name, ticker, trust_tier, evidence_seq, github_username, github_repo, live_url, lock_tx, lock_duration_days, lock_percentage, lock_amount, lock_verified_at, lock_unlock_at, created_at")
       .not("launch_verified_at", "is", null)
       .not("lock_verified_at", "is", null)
       .order("id", { ascending: true })
@@ -57,7 +57,11 @@ export async function GET(req: Request) {
     // expired tokens would leave a stale high tier standing (finding 5). The
     // canonical lock row (read per token) is the authority for withdrawn/anomalous.
     const activeTokens = tokens as Array<
-      Token & { lock_verified_at: string | null; lock_unlock_at: string | null }
+      Token & {
+        lock_verified_at: string | null;
+        lock_unlock_at: string | null;
+        evidence_seq: number | null;
+      }
     >;
 
     // Process in batches of BATCH_CONCURRENCY
@@ -186,6 +190,14 @@ async function refreshToken(
 
   const isChanged = projection.tier !== token.trust_tier;
 
+  // The monotonic evidence revision read WITH the snapshot this projection was
+  // computed from. commit_token_tier compare-and-swaps on it, so a slow refresh
+  // whose snapshot predates a newer committed tier is a no-op instead of clobbering
+  // it with a stale value (finding 5 residual). Wall-clock is no longer trusted as
+  // the freshness token.
+  const prevEvidenceSeq =
+    (token as Token & { evidence_seq: number | null }).evidence_seq ?? 0;
+
   // Route the tier write through commit_token_tier, the SINGLE writer of
   // tokens.trust_tier, instead of a direct update here. That keeps this refresh
   // from being a second racing tier writer alongside the lock reconciliation
@@ -198,6 +210,7 @@ async function refreshToken(
     p_github_tier: githubTier,
     p_tier_computed_at: projection.tierComputedAt,
     p_policy_version: TRUST_POLICY_VERSION,
+    p_prev_evidence_seq: prevEvidenceSeq,
     // The refresh IS the github-evidence writer: persist exactly what it computed,
     // including a cleared null when the repo was unlinked/deleted, rather than
     // coalescing to the stale stored value (finding: github clear).

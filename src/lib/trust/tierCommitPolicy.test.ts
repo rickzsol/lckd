@@ -6,35 +6,45 @@ import {
   type TokenCoverage,
 } from "./tierCommitPolicy";
 
-// --- monotonic tier commit under concurrency (finding 5) -------------------
+// --- monotonic tier commit under concurrency (finding 5 + round-5 residual) --
 
-test("a first write (no stored stamp) always applies", () => {
-  assert.equal(shouldApplyTierCommit(null, "2026-07-17T00:00:00.000Z"), true);
+const TS = "2026-07-17T00:00:00.000Z";
+const NEWER = "2026-07-17T00:00:05.000Z";
+
+test("a matching revision applies (fresh snapshot)", () => {
+  assert.equal(shouldApplyTierCommit(3, 3, TS), true);
 });
 
-test("newer evidence applies", () => {
-  assert.equal(
-    shouldApplyTierCommit("2026-07-17T00:00:00.000Z", "2026-07-17T00:00:01.000Z"),
-    true,
-  );
+test("a stale snapshot loses even with a NEWER wall-clock (round-5 residual)", () => {
+  // The core defect: a snapshot projected from OLD evidence (it read revision 2)
+  // but written later carries a newer timestamp. It must NOT win. The CAS on the
+  // revision rejects it because the store already advanced to 3, regardless of
+  // how new NEWER is.
+  assert.equal(shouldApplyTierCommit(3, 2, NEWER), false);
 });
 
-test("a racing OLDER recompute is a no-op, not last-writer-wins", () => {
-  // The stale worker computed at T0 but commits after a T1 write already landed.
-  // It must NOT overwrite the fresher tier.
-  assert.equal(
-    shouldApplyTierCommit("2026-07-17T00:00:01.000Z", "2026-07-17T00:00:00.000Z"),
-    false,
-  );
+test("a snapshot that read a newer revision than stored cannot apply either", () => {
+  // prev != stored in either direction is a no-op; only an exact match is fresh.
+  assert.equal(shouldApplyTierCommit(3, 4, TS), false);
 });
 
-test("an equal stamp is a no-op (strictly newer required)", () => {
-  const ts = "2026-07-17T00:00:00.000Z";
-  assert.equal(shouldApplyTierCommit(ts, ts), false);
+test("a null tier_computed_at never applies (round-4 new defect)", () => {
+  // NULL must not bypass the guard or clear the stored stamp. SQL raises; the
+  // mirror returns false so a null-stamp write is rejected, never silently applied.
+  assert.equal(shouldApplyTierCommit(3, 3, null), false);
+});
+
+test("a null prev revision never applies (round-4 new defect)", () => {
+  assert.equal(shouldApplyTierCommit(3, null, TS), false);
 });
 
 test("an unparseable incoming stamp never applies", () => {
-  assert.equal(shouldApplyTierCommit("2026-07-17T00:00:00.000Z", "not-a-date"), false);
+  assert.equal(shouldApplyTierCommit(3, 3, "not-a-date"), false);
+});
+
+test("a first write against the default revision 0 applies", () => {
+  // A never-written token has evidence_seq 0; a caller that read 0 CAS-matches.
+  assert.equal(shouldApplyTierCommit(0, 0, TS), true);
 });
 
 // --- NOT EXISTS completeness (finding 10) ----------------------------------
