@@ -1,8 +1,9 @@
 import "server-only";
 
 import { getSupabase, hasSupabaseConfig } from "@/lib/supabase";
-import { loadSasConfig, SasConfigError } from "./config";
+import { loadSasConfig, SasConfigError, type SasConfig } from "./config";
 import { SAS_PROGRAM_ID } from "./verify";
+import { SCHEMA_VERSION } from "./schema";
 
 /**
  * Public-facing attestation read for surfacing. Reads the RLS-scoped
@@ -95,10 +96,42 @@ export interface TrustAnchorDescriptor {
 }
 
 /**
+ * Build the anchor descriptor from a stored attestation and the current SAS
+ * config, but ONLY when the stored attestation was issued for the config's ACTIVE
+ * environment. The stored row carries its own cluster and schema_version; the
+ * config carries the current-environment PDAs (credential, schema) and cluster.
+ * Combining them blindly would emit a false descriptor after a cluster switch or
+ * a schema bump: e.g. a devnet/schema-v1 attestation paired with mainnet/schema-v2
+ * PDAs, which a third party could not verify. So a mismatch returns null (a typed
+ * "no anchor") rather than a mixed descriptor. Pure, so it is unit-testable.
+ */
+export function buildTrustAnchorDescriptor(
+  attestation: PublicAttestation,
+  config: SasConfig,
+  currentSchemaVersion: number = SCHEMA_VERSION,
+): TrustAnchorDescriptor | null {
+  // The stored cluster and schema version MUST match the current environment, or
+  // the config PDAs describe a different chain/schema than the attestation.
+  if (attestation.cluster !== config.cluster) return null;
+  if (attestation.schemaVersion !== currentSchemaVersion) return null;
+  return {
+    programId: SAS_PROGRAM_ID.toString(),
+    credentialPda: config.credentialPda.toString(),
+    schemaPda: config.schemaPda.toString(),
+    attestationPda: attestation.attestationPda,
+    cluster: attestation.cluster,
+    expiryTs: attestation.expiryTs,
+    schemaVersion: attestation.schemaVersion,
+    policyVersion: attestation.policyVersion,
+  };
+}
+
+/**
  * Assemble the trust anchor descriptor for a mint from the finalized attestation
  * row plus the pinned SAS config. Returns null when there is no finalized
- * attestation or SAS is not configured, so a caller renders "no anchor" rather
- * than a partial descriptor.
+ * attestation, SAS is not configured, OR the stored attestation's cluster/schema
+ * version do not match the current environment, so a caller renders "no anchor"
+ * rather than a partial or cross-environment descriptor.
  *
  * TODO(trust-api): the trust API (on feature/trust-api, not merged here) wires
  * this descriptor into its `anchor` response field. This branch owns the
@@ -116,14 +149,5 @@ export async function getTrustAnchorDescriptor(mint: string): Promise<TrustAncho
     if (error instanceof SasConfigError) return null;
     throw error;
   }
-  return {
-    programId: SAS_PROGRAM_ID.toString(),
-    credentialPda: config.credentialPda.toString(),
-    schemaPda: config.schemaPda.toString(),
-    attestationPda: attestation.attestationPda,
-    cluster: attestation.cluster,
-    expiryTs: attestation.expiryTs,
-    schemaVersion: attestation.schemaVersion,
-    policyVersion: attestation.policyVersion,
-  };
+  return buildTrustAnchorDescriptor(attestation, config);
 }

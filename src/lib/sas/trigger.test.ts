@@ -78,6 +78,77 @@ test("returns unchanged when the current evidence hash already matches", async (
   );
 });
 
+// Item 1: a schema/policy version bump is an evidence transition even when the
+// evidence hash is unchanged (schema_version is pinned by the schema PDA, separate
+// from the claim). When the caller supplies the live attestation's stored versions
+// and one differs from the current constant, the short-circuit must NOT fire; the
+// trigger proceeds to enqueue. Here Supabase is unconfigured, so a non-short-
+// circuit reaches enqueue and throws, while a short-circuit returns "unchanged".
+const VALID_SAS_ENV = {
+  SAS_ENABLED: "true",
+  SAS_CLUSTER: "devnet",
+  SAS_CREDENTIAL_PDA: "11111111111111111111111111111112",
+  SAS_SCHEMA_PDA: "SysvarC1ock11111111111111111111111111111111",
+  // Ensure enqueue has no DB to hit, so proceeding past the guard throws.
+  NEXT_PUBLIC_SUPABASE_URL: undefined,
+  SUPABASE_URL: undefined,
+  SUPABASE_SERVICE_ROLE_KEY: undefined,
+};
+
+test("does not short-circuit on a stale schema_version even when the hash matches", async () => {
+  const evidence = assembleTrustEvidence(FACTS, TRUST_TIER.LOCKED, "octocat");
+  const currentEvidenceHash = hashEvidence(evidence);
+  await withEnv(VALID_SAS_ENV, async () => {
+    // schema_version stale (current is 1): must proceed to enqueue, not "unchanged".
+    await assert.rejects(
+      triggerAttestation({
+        tokenId: "t1",
+        facts: FACTS,
+        tier: TRUST_TIER.LOCKED,
+        github: "octocat",
+        currentEvidenceHash,
+        currentPolicyVersion: 1,
+        currentSchemaVersion: 0,
+      }),
+    );
+  });
+});
+
+test("does not short-circuit on a stale policy_version even when the hash matches", async () => {
+  const evidence = assembleTrustEvidence(FACTS, TRUST_TIER.LOCKED, "octocat");
+  const currentEvidenceHash = hashEvidence(evidence);
+  await withEnv(VALID_SAS_ENV, async () => {
+    await assert.rejects(
+      triggerAttestation({
+        tokenId: "t1",
+        facts: FACTS,
+        tier: TRUST_TIER.LOCKED,
+        github: "octocat",
+        currentEvidenceHash,
+        currentPolicyVersion: 0,
+        currentSchemaVersion: 1,
+      }),
+    );
+  });
+});
+
+test("still short-circuits when hash AND both supplied versions match current", async () => {
+  const evidence = assembleTrustEvidence(FACTS, TRUST_TIER.LOCKED, "octocat");
+  const currentEvidenceHash = hashEvidence(evidence);
+  await withEnv(VALID_SAS_ENV, async () => {
+    const outcome = await triggerAttestation({
+      tokenId: "t1",
+      facts: FACTS,
+      tier: TRUST_TIER.LOCKED,
+      github: "octocat",
+      currentEvidenceHash,
+      currentPolicyVersion: 1,
+      currentSchemaVersion: 1,
+    });
+    assert.deepEqual(outcome, { enqueued: false, reason: "unchanged" });
+  });
+});
+
 // NEW finding: an expired-lock/downgrade transition must enqueue a CLOSE-ONLY job,
 // never a reissue. triggerCloseAttestation is that path; these assert its guards
 // short-circuit before any DB call, mirroring the "unchanged" test above.

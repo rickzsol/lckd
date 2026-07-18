@@ -45,9 +45,14 @@ export async function GET(req: Request) {
   }
   const githubToken = process.env.GITHUB_PAT;
   const now = new Date();
+  // Downgrade AND set the durable revocation marker in the SAME statement, so the
+  // on-chain close can never be lost to a transient failure or an in-flight
+  // issuance: the marker persists until the close is durably enqueued (or there is
+  // provably nothing to revoke). A best-effort close after the commit swallowed
+  // failures and permanently missed revocation.
   const { data: downgradedTokens, error: downgradeError } = await supabase
     .from("tokens")
-    .update({ trust_tier: 1 })
+    .update({ trust_tier: 1, sas_close_pending: true })
     .not("lock_verified_at", "is", null)
     .lte("lock_unlock_at", now.toISOString())
     .gt("trust_tier", 1)
@@ -58,13 +63,15 @@ export async function GET(req: Request) {
   }
   const expiredDowngrades = downgradedTokens?.length ?? 0;
 
-  // An expired lock ends the finalized claim: CLOSE the on-chain attestation, do
-  // NOT reissue. The cliff is already in the past, so a reissue would close the old
-  // account and then dead-letter an impossible past-expiry create. (SAS_ENABLED
-  // gated, non-blocking.)
-  for (const row of (downgradedTokens as Array<{ id: string }> | null) ?? []) {
-    await triggerExpiredLockClose({ tokenId: row.id });
-  }
+  // Drive the durable close for EVERY token still marked for revocation, not just
+  // this pass's downgrades: a prior pass may have set the marker and failed to
+  // enqueue (transient error or in-flight issuance). The marker is cleared only on
+  // a terminal outcome (enqueued, or provably nothing to revoke); a "retry" leaves
+  // it set for the next pass. An expired lock ends the finalized claim, so we CLOSE
+  // the on-chain attestation, never reissue (a past-cliff reissue would close the
+  // old account and dead-letter the impossible create). (SAS_ENABLED gated,
+  // non-blocking on the request path.)
+  const revocations = await driveExpiredCloseMarkers(supabase);
 
   let refreshed = 0;
   let tierChanges = 0;
@@ -113,9 +120,50 @@ export async function GET(req: Request) {
     page++;
   }
 
-  const message = `Refreshed ${refreshed} tokens, ${tierChanges} tier changes, ${expiredDowngrades} expired lock downgrades`;
+  const message = `Refreshed ${refreshed} tokens, ${tierChanges} tier changes, ${expiredDowngrades} expired lock downgrades, ${revocations} revocations cleared`;
   console.log(message);
-  return NextResponse.json({ message, refreshed, tierChanges, expiredDowngrades });
+  return NextResponse.json({ message, refreshed, tierChanges, expiredDowngrades, revocations });
+}
+
+/**
+ * Drive the durable expired-lock close for every token still carrying the
+ * sas_close_pending marker, clearing the marker only on a terminal outcome so a
+ * transient failure or an in-flight issuance is retried on the next cron pass
+ * rather than lost. Bounded per run so it never scans the whole table at once.
+ * Returns the number of markers cleared this pass.
+ */
+async function driveExpiredCloseMarkers(
+  supabase: ReturnType<typeof getServerClient>,
+): Promise<number> {
+  const MARKER_BATCH = 200;
+  const { data, error } = await supabase
+    .from("tokens")
+    .select("id")
+    .eq("sas_close_pending", true)
+    .limit(MARKER_BATCH);
+  if (error) {
+    console.error("[cron] Expired-close marker fetch failed:", error.message);
+    return 0;
+  }
+  const marked = (data as Array<{ id: string }> | null) ?? [];
+  let cleared = 0;
+  for (const row of marked) {
+    const outcome = await triggerExpiredLockClose({ tokenId: row.id });
+    if (outcome === "retry") continue;
+    // Terminal: the close is durably enqueued or there is nothing to revoke. Clear
+    // the marker, guarded on it still being set so a concurrent set is not lost.
+    const { error: clearError } = await supabase
+      .from("tokens")
+      .update({ sas_close_pending: false })
+      .eq("id", row.id)
+      .eq("sas_close_pending", true);
+    if (clearError) {
+      console.error(`[cron] Failed to clear revocation marker for ${row.id}:`, clearError.message);
+      continue;
+    }
+    cleared++;
+  }
+  return cleared;
 }
 
 async function refreshToken(
@@ -195,9 +243,14 @@ async function refreshToken(
   // schema_version, so a live attestation issued under an older version must be
   // reissued even when the tier is unchanged. Reissue when the tier changed OR the
   // live attestation carries a stale version. triggerTierTransitionAttestation
-  // re-derives evidence under the CURRENT versions and its evidence-hash guard
-  // no-ops if nothing actually differs, so an unnecessary call is safe.
-  // (SAS_ENABLED gated, non-blocking.)
+  // re-derives evidence under the CURRENT versions and passes the live
+  // attestation's stored policy/schema versions into the trigger, whose
+  // short-circuit forces a reissue on a version bump even when the evidence hash is
+  // unchanged (schema_version is separate from the hash claim), and no-ops if
+  // nothing differs, so an unnecessary call is safe. (SAS_ENABLED gated,
+  // non-blocking.) The trust API `anchor` response field that surfaces the
+  // resulting descriptor stays a documented TODO(trust-api) seam on
+  // feature/trust-api; getTrustAnchorDescriptor is that seam here.
   const needsVersionReissue = isChanged
     ? false
     : await hasStaleAttestationVersion(supabase, token.mint_address);

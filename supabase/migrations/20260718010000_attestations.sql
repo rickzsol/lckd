@@ -27,6 +27,20 @@ begin;
 alter table public.tokens
   add column if not exists sas_supply_basis text;
 
+-- Durable revocation marker. Set atomically with an expired-lock downgrade so the
+-- on-chain close is never lost to a transient enqueue failure OR an in-flight
+-- issuance whose attestation row does not exist yet: the cron re-drives every
+-- token still carrying the marker until the close is durably enqueued (or there is
+-- provably nothing to revoke), then clears it. Without this, a downgrade committed
+-- before a best-effort close swallowed the failure and permanently missed
+-- revocation.
+alter table public.tokens
+  add column if not exists sas_close_pending boolean not null default false;
+
+create index if not exists tokens_sas_close_pending_idx
+  on public.tokens (id)
+  where sas_close_pending;
+
 create table if not exists public.attestations (
   id uuid primary key default gen_random_uuid(),
   token_id uuid not null references public.tokens(id) on delete cascade,
@@ -193,6 +207,7 @@ as $$
 declare
   v_existing public.attestation_outbox%rowtype;
   v_id uuid;
+  v_found boolean;
 begin
   -- Lock the open row for this token, if any, so the leased/broadcast branch
   -- observes a stable status and the successor write is race-free.
@@ -207,40 +222,47 @@ begin
     if v_existing.status = 'pending' then
       -- Safe to mutate in place: no worker holds a pending job. Updating the live
       -- desired columns makes THEM the latest desired state, so any previously
-      -- parked successor is now stale and MUST be cleared: otherwise a reissue
-      -- that parked an older successor, advanced its create phase to pending, then
-      -- had the create phase's desired columns overwritten here, would still
-      -- promote that stale successor on completion. The live columns always hold
-      -- the newest snapshot; the successor slot only ever holds something newer.
-      if v_existing.evidence_hash <> p_evidence_hash then
-        update public.attestation_outbox
-        set desired_tier = p_tier,
-            desired_lock_bps = p_lock_bps,
-            desired_cliff_ts = p_cliff_ts,
-            desired_policy_version = p_policy_version,
-            desired_schema_version = p_schema_version,
-            evidence_hash = p_evidence_hash,
-            operation = p_operation,
-            successor_evidence_hash = null,
-            successor_tier = null,
-            successor_lock_bps = null,
-            successor_cliff_ts = null,
-            successor_policy_version = null,
-            successor_schema_version = null,
-            successor_operation = null,
-            updated_at = now()
-        where id = v_existing.id;
-      end if;
+      -- parked successor is now stale and MUST be cleared UNCONDITIONALLY: even
+      -- when the evidence hash is unchanged, a stale successor left behind would be
+      -- promoted on completion. Concretely: a reissue parks an older successor B,
+      -- advances its create phase to pending, then a same-hash re-enqueue A must
+      -- still drop B. So the successor is cleared whenever a job is (re)enqueued to
+      -- a pending open row, independent of hash equality. The live columns refresh
+      -- when the hash OR the operation differs (a same-hash close after a prior
+      -- issue changes the operation but not the hash, and must still take effect).
+      update public.attestation_outbox
+      set desired_tier = p_tier,
+          desired_lock_bps = p_lock_bps,
+          desired_cliff_ts = p_cliff_ts,
+          desired_policy_version = p_policy_version,
+          desired_schema_version = p_schema_version,
+          evidence_hash = p_evidence_hash,
+          operation = p_operation,
+          successor_evidence_hash = null,
+          successor_tier = null,
+          successor_lock_bps = null,
+          successor_cliff_ts = null,
+          successor_policy_version = null,
+          successor_schema_version = null,
+          successor_operation = null,
+          updated_at = now()
+      where id = v_existing.id;
       return v_existing.id;
     end if;
 
     -- Leased or broadcast: the in-flight job holds the current desired state; the
     -- successor slot must hold the LATEST desired state that differs from it.
-    --   * differs from in-flight  -> overwrite successor with this newest snapshot
+    -- Equality must include the OPERATION, not just the hash: a same-hash close
+    -- after a prior issue leaves the hash unchanged but changes the operation, and
+    -- must NOT be discarded as "returned to in-flight".
+    --   * differs from in-flight (hash OR operation)
+    --                             -> overwrite successor with this newest snapshot
     --     (a prior successor is stale and is replaced, not merged).
-    --   * equals in-flight        -> the desired state returned to what is already
+    --   * equals in-flight (hash AND operation)
+    --                             -> the desired state returned to what is already
     --     being emitted, so any parked successor is stale: clear it.
-    if v_existing.evidence_hash <> p_evidence_hash then
+    if v_existing.evidence_hash <> p_evidence_hash
+       or v_existing.operation <> p_operation then
       update public.attestation_outbox
       set successor_evidence_hash = p_evidence_hash,
           successor_tier = p_tier,
@@ -266,40 +288,22 @@ begin
     return v_existing.id;
   end if;
 
-  -- No open job: create one. ON CONFLICT on the partial open-job unique index
-  -- makes concurrent first enqueues idempotent instead of one hitting a 23505.
-  insert into public.attestation_outbox (
-    token_id, cluster, mint, operation,
-    desired_tier, desired_lock_bps, desired_cliff_ts,
-    desired_policy_version, desired_schema_version, evidence_hash
-  ) values (
-    p_token_id, p_cluster, p_mint, p_operation,
-    p_tier, p_lock_bps, p_cliff_ts,
-    p_policy_version, p_schema_version, p_evidence_hash
-  )
-  on conflict (token_id) where (status in ('pending', 'leased', 'broadcast'))
-  do nothing
-  returning id into v_id;
-
-  if v_id is not null then
-    return v_id;
-  end if;
-
-  -- Lost the insert race: the winner's open job now exists. Return its id and,
-  -- if it is a pending job that predates this evidence, refresh it in place.
-  select * into v_existing
-  from public.attestation_outbox
-  where token_id = p_token_id
-    and status in ('pending', 'leased', 'broadcast')
-  for update
-  limit 1;
-
-  if not found then
-    -- The winner already advanced past the open states; re-enqueue fresh. Guard
-    -- with ON CONFLICT on the partial open-job index: yet another concurrent
-    -- enqueue could have opened a job between the select above and this insert, so
-    -- a bare insert would 23505. On conflict, fall through and return the id of
-    -- whatever open job now exists rather than raising.
+  -- No open job: create one. This is a bounded INSERT/SELECT retry loop rather
+  -- than a fixed two-attempt sequence, because the two operations race a concurrent
+  -- worker independently:
+  --   * INSERT ... ON CONFLICT DO NOTHING inserts our fresh job, OR does nothing
+  --     because a concurrent enqueue already opened one (index conflict).
+  --   * On do-nothing we SELECT the open job FOR UPDATE to refresh/park it. But the
+  --     winning job can COMPLETE (leave the open states) between our failed insert
+  --     and this select, so the select finds nothing.
+  -- The two can leapfrog: insert loses to a winner, winner completes before the
+  -- select, so neither an insert nor a found row results on a single pass. A fixed
+  -- two-attempt sequence RAISED here and dropped the enqueue. Instead we loop:
+  -- re-attempt the insert; if it still does nothing, re-select; keep going until we
+  -- either insert a fresh job or lock an existing open one. Bounded so a pathological
+  -- livelock cannot spin forever; the bound is far above any real contention.
+  v_found := false;
+  for v_attempt in 1..50 loop
     insert into public.attestation_outbox (
       token_id, cluster, mint, operation,
       desired_tier, desired_lock_bps, desired_cliff_ts,
@@ -314,11 +318,11 @@ begin
     returning id into v_id;
 
     if v_id is not null then
+      -- Inserted a fresh open job: nothing to refresh or park.
       return v_id;
     end if;
 
-    -- Lost this race too: the concurrent winner's open job exists now. Re-read it
-    -- and fall through to the shared refresh/park logic below.
+    -- Insert did nothing: a concurrent enqueue holds the open slot. Try to lock it.
     select * into v_existing
     from public.attestation_outbox
     where token_id = p_token_id
@@ -326,14 +330,23 @@ begin
     for update
     limit 1;
 
-    if not found then
-      raise exception 'enqueue_attestation_job: open job vanished after conflict for token %', p_token_id;
+    if found then
+      v_found := true;
+      exit;
     end if;
+    -- The winner completed between our insert and this select: no open row and no
+    -- insert. Loop and retry the insert rather than raising and dropping the enqueue.
+  end loop;
+
+  if not v_found then
+    raise exception 'enqueue_attestation_job: could not open or lock a job for token % after retries', p_token_id;
   end if;
 
-  if v_existing.status = 'pending' and v_existing.evidence_hash <> p_evidence_hash then
+  if v_existing.status = 'pending' then
     -- See the pending branch above: refreshing the live desired columns makes them
-    -- the latest snapshot, so a stale parked successor must be cleared here too.
+    -- the latest snapshot, so any stale parked successor is cleared here too, and
+    -- UNCONDITIONALLY (independent of hash equality) so a same-hash re-enqueue that
+    -- returns the job to pending still drops a parked successor.
     update public.attestation_outbox
     set desired_tier = p_tier,
         desired_lock_bps = p_lock_bps,
@@ -351,7 +364,10 @@ begin
         successor_operation = null,
         updated_at = now()
     where id = v_existing.id;
-  elsif v_existing.status in ('leased', 'broadcast') and v_existing.evidence_hash <> p_evidence_hash then
+  elsif v_existing.status in ('leased', 'broadcast')
+    and (v_existing.evidence_hash <> p_evidence_hash
+         or v_existing.operation <> p_operation) then
+    -- Differs from the in-flight job by hash OR operation: park as successor.
     update public.attestation_outbox
     set successor_evidence_hash = p_evidence_hash,
         successor_tier = p_tier,
@@ -364,6 +380,7 @@ begin
     where id = v_existing.id;
   elsif v_existing.status in ('leased', 'broadcast')
     and v_existing.evidence_hash = p_evidence_hash
+    and v_existing.operation = p_operation
     and v_existing.successor_evidence_hash is not null then
     -- Desired state returned to what the in-flight job already emits: drop the
     -- now-stale parked successor so completion does not promote it.
@@ -917,6 +934,42 @@ begin
 end;
 $$;
 
+-- Back off a broadcast job that has landed but not yet finalized. A confirmed
+-- (not finalized) signature has NOT failed: the effect is on chain and the job
+-- must reconcile the SAME signature once it finalizes. Routing this through
+-- fail_attestation_job would flip the row to 'failed', and the next claim would
+-- then move it 'failed' -> 'leased', so the finalized-reconciliation completion
+-- RPCs (which require status='broadcast') would raise. So this KEEPS status
+-- 'broadcast', retains both pending signatures, releases the lease, and pushes
+-- locked_until / next_retry_at out by a bounded backoff. attempts is NOT
+-- incremented: waiting for finalization must never burn the dead-letter budget.
+-- Lease-guarded; a stale worker whose lease no longer matches is a no-op.
+create or replace function public.backoff_attestation_broadcast(
+  p_id uuid,
+  p_lease_token uuid,
+  p_backoff_seconds integer default 5
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_updated integer;
+begin
+  update public.attestation_outbox
+  set locked_until = now() + make_interval(secs => p_backoff_seconds),
+      next_retry_at = now() + make_interval(secs => p_backoff_seconds),
+      lease_token = null,
+      updated_at = now()
+  where id = p_id
+    and lease_token = p_lease_token
+    and status = 'broadcast';
+  get diagnostics v_updated = row_count;
+  return v_updated = 1;
+end;
+$$;
+
 -- Sweep finalized attestations past their expiry into 'expired', freeing the
 -- active slot. Bounded per call so it never scans the whole table at once.
 create or replace function public.expire_attestations(p_limit integer default 500)
@@ -965,6 +1018,8 @@ revoke all on function public.finish_attestation_job_noop(uuid, uuid, text, text
 grant execute on function public.finish_attestation_job_noop(uuid, uuid, text, text, integer, text, boolean) to service_role;
 revoke all on function public.fail_attestation_job(uuid, uuid, text, boolean) from public, anon, authenticated;
 grant execute on function public.fail_attestation_job(uuid, uuid, text, boolean) to service_role;
+revoke all on function public.backoff_attestation_broadcast(uuid, uuid, integer) from public, anon, authenticated;
+grant execute on function public.backoff_attestation_broadcast(uuid, uuid, integer) to service_role;
 revoke all on function public.expire_attestations(integer) from public, anon, authenticated;
 grant execute on function public.expire_attestations(integer) to service_role;
 

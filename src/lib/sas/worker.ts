@@ -16,6 +16,7 @@ import {
 } from "./issuer";
 import {
   advanceReissueToCreate,
+  backoffBroadcastJob,
   claimAttestationJob,
   completeAttestationJob,
   completeCloseAttestationJob,
@@ -315,8 +316,9 @@ async function processJob(
     if (outcome === "advanced") return "advanced";
     // The signature landed but is not yet finalized: back off and reconcile the
     // SAME signature on a later claim. Do NOT fall through to re-drive, which would
-    // resend a landed effect. failAttestationJob (retryable) retains the persisted
-    // signature and sets a backoff, so the next claim reconciles it again.
+    // resend a landed effect. The caller backs the row off via backoffBroadcastJob,
+    // which keeps status='broadcast' and retains the signature so the next claim
+    // reconciles it again once it finalizes.
     if (outcome === "wait") return "waiting";
   }
 
@@ -461,15 +463,15 @@ export async function runOutboxWorker(maxJobs = 5): Promise<WorkerResult> {
       else if (outcome === "advanced") result.advanced++;
       else if (outcome === "skipped") result.skipped++;
       else if (outcome === "waiting") {
-        // Landed-but-not-finalized: back off (retryable) so a later claim
-        // reconciles the SAME persisted signature. Not a failure of the job.
+        // Landed-but-not-finalized: back off WITHOUT leaving 'broadcast'. Routing
+        // this through failAttestationJob would flip the row to 'failed'; the next
+        // claim would then move it 'failed' -> 'leased', and the finalized-
+        // reconciliation completion RPCs (which require status='broadcast') would
+        // raise. backoffBroadcastJob keeps status='broadcast' with the signature
+        // intact and only bumps the backoff, so finalized reconciliation still
+        // applies on a later claim. Not a failure of the job.
         result.waiting++;
-        await failAttestationJob(
-          job.id,
-          job.lease_token as string,
-          "Signature confirmed but not finalized; awaiting finalization",
-          false,
-        );
+        await backoffBroadcastJob(job.id, job.lease_token as string);
       } else result.completed++;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown worker error";

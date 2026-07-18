@@ -257,6 +257,27 @@ export async function failAttestationJob(
   return data as FailOutcome;
 }
 
+/**
+ * Back off a broadcast job that landed but has not yet finalized. Unlike
+ * failAttestationJob this KEEPS the row in 'broadcast' with both pending
+ * signatures intact and does not increment attempts, so the finalized-
+ * reconciliation path (which requires status='broadcast') still applies on the
+ * next claim. Returns false if the lease was lost (a stale worker no-ops).
+ */
+export async function backoffBroadcastJob(
+  id: string,
+  leaseToken: string,
+  backoffSeconds = 5,
+): Promise<boolean> {
+  const { data, error } = await getServerClient().rpc("backoff_attestation_broadcast", {
+    p_id: id,
+    p_lease_token: leaseToken,
+    p_backoff_seconds: backoffSeconds,
+  });
+  if (error) fail(`Failed to back off broadcast job: ${error.message}`);
+  return data === true;
+}
+
 export async function expireAttestations(limit = 500): Promise<number> {
   const { data, error } = await getServerClient().rpc("expire_attestations", {
     p_limit: limit,

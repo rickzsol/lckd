@@ -29,6 +29,16 @@ export interface TriggerInput {
   github: string;
   /** The evidence hash of the currently-live attestation, if any. */
   currentEvidenceHash?: string | null;
+  /**
+   * The policy/schema version the currently-live attestation was ISSUED under, if
+   * any. The short-circuit compares these to the CURRENT versions so a schema or
+   * policy bump re-enqueues even when the evidence hash is unchanged. Callers that
+   * already fold the versions into currentEvidenceHash may omit these; when
+   * supplied they are an explicit, defensive check that does not rely on the hash
+   * happening to embed the versions.
+   */
+  currentPolicyVersion?: number | null;
+  currentSchemaVersion?: number | null;
 }
 
 export type TriggerOutcome =
@@ -54,8 +64,17 @@ export async function triggerAttestation(input: TriggerInput): Promise<TriggerOu
   const evidence = assembleTrustEvidence(input.facts, input.tier, input.github);
   const evidenceHash = hashEvidence(evidence);
 
-  // Idempotency: an unchanged claim never reissues.
-  if (input.currentEvidenceHash && input.currentEvidenceHash === evidenceHash) {
+  // A schema or policy bump is an evidence transition even when the hash is
+  // unchanged: the on-chain payload embeds policy_version and the schema PDA pins
+  // schema_version, so a live attestation issued under an older version must be
+  // reissued. When the caller supplies the live attestation's versions and either
+  // differs from the current constant, force a reissue regardless of the hash.
+  const versionBumped =
+    (input.currentPolicyVersion != null && input.currentPolicyVersion !== POLICY_VERSION) ||
+    (input.currentSchemaVersion != null && input.currentSchemaVersion !== SCHEMA_VERSION);
+
+  // Idempotency: an unchanged claim never reissues, UNLESS a version bumped.
+  if (input.currentEvidenceHash && input.currentEvidenceHash === evidenceHash && !versionBumped) {
     return { enqueued: false, reason: "unchanged" };
   }
 

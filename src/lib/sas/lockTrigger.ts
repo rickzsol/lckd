@@ -123,16 +123,22 @@ export async function triggerTierTransitionAttestation(input: TierTransitionInpu
     }
 
     // The live attestation's evidence hash decides issue-vs-reissue and provides
-    // the idempotency guard (an unchanged claim never reissues).
+    // the idempotency guard (an unchanged claim never reissues). Its stored
+    // policy/schema versions travel with it so a version bump reissues even when
+    // the hash is unchanged (schema_version is pinned by the schema PDA, separate
+    // from the evidence claim).
     const { data: liveRow } = await client
       .from("attestations")
-      .select("evidence_hash")
+      .select("evidence_hash, policy_version, schema_version")
       .eq("mint", row.mint_address)
       .in("status", ["pending", "submitted", "finalized"])
       .order("generation", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const currentEvidenceHash = (liveRow as { evidence_hash: string } | null)?.evidence_hash ?? null;
+    const live = liveRow as
+      | { evidence_hash: string; policy_version: number; schema_version: number }
+      | null;
+    const currentEvidenceHash = live?.evidence_hash ?? null;
 
     const facts: LockChainFacts = {
       mint: row.mint_address,
@@ -149,6 +155,8 @@ export async function triggerTierTransitionAttestation(input: TierTransitionInpu
       tier: input.newTier,
       github: row.github_username ?? "",
       currentEvidenceHash,
+      currentPolicyVersion: live?.policy_version ?? null,
+      currentSchemaVersion: live?.schema_version ?? null,
     });
   } catch (err) {
     console.error("[sas] tier-transition attestation trigger failed:", err);
@@ -166,8 +174,23 @@ export interface ExpiredLockInput {
   tokenId: string;
 }
 
-export async function triggerExpiredLockClose(input: ExpiredLockInput): Promise<void> {
-  if (!isSasEnabled()) return;
+/**
+ * The result of driving an expired-lock close, used by the cron to decide whether
+ * the durable `sas_close_pending` marker can be cleared:
+ *   * "enqueued"           -> a close-only job is durably queued; clear the marker.
+ *   * "nothing_to_revoke"  -> there is provably no live attestation to close (and
+ *                             SAS is disabled/unconfigured is folded in here too);
+ *                             clear the marker, the revocation is a no-op.
+ *   * "retry"              -> a transient failure (or an in-flight issuance whose
+ *                             attestation row does not exist yet); KEEP the marker
+ *                             so the next cron pass re-drives the close.
+ */
+export type ExpiredCloseOutcome = "enqueued" | "nothing_to_revoke" | "retry";
+
+export async function triggerExpiredLockClose(input: ExpiredLockInput): Promise<ExpiredCloseOutcome> {
+  // SAS disabled: there is nothing this deployment can revoke on chain, so the
+  // marker is safe to clear rather than accumulate forever.
+  if (!isSasEnabled()) return "nothing_to_revoke";
   try {
     const client = getServerClient();
     const { data, error } = await client
@@ -175,7 +198,9 @@ export async function triggerExpiredLockClose(input: ExpiredLockInput): Promise<
       .select("mint_address, creator_wallet, lock_metadata_id, github_username, lock_amount, sas_supply_basis, lock_unlock_at")
       .eq("id", input.tokenId)
       .maybeSingle();
-    if (error || !data) return;
+    // A transient read failure must retry, not silently clear the marker.
+    if (error) return "retry";
+    if (!data) return "nothing_to_revoke";
     const row = data as {
       mint_address: string;
       creator_wallet: string;
@@ -187,7 +212,7 @@ export async function triggerExpiredLockClose(input: ExpiredLockInput): Promise<
     };
 
     // Only close a live attestation; if there is none there is nothing to revoke.
-    const { data: liveRow } = await client
+    const { data: liveRow, error: liveErr } = await client
       .from("attestations")
       .select("evidence_hash")
       .eq("mint", row.mint_address)
@@ -195,8 +220,26 @@ export async function triggerExpiredLockClose(input: ExpiredLockInput): Promise<
       .order("generation", { ascending: false })
       .limit(1)
       .maybeSingle();
+    // A transient read failure must retry, not clear the marker.
+    if (liveErr) return "retry";
     const currentEvidenceHash = (liveRow as { evidence_hash: string } | null)?.evidence_hash ?? null;
-    if (!currentEvidenceHash) return;
+    if (!currentEvidenceHash) {
+      // No live attestation yet. If an issuance is still IN FLIGHT (an open outbox
+      // issue/reissue job for this token), the attestation row simply does not
+      // exist yet: keep the marker and retry once issuance lands, so an in-flight
+      // issuance is never permanently missed. Only when nothing is open AND nothing
+      // is live is there provably nothing to revoke.
+      const { data: openJob, error: openErr } = await client
+        .from("attestation_outbox")
+        .select("id")
+        .eq("token_id", input.tokenId)
+        .in("operation", ["issue", "reissue"])
+        .in("status", ["pending", "leased", "broadcast"])
+        .limit(1)
+        .maybeSingle();
+      if (openErr) return "retry";
+      return openJob ? "retry" : "nothing_to_revoke";
+    }
 
     // The facts only satisfy the outbox payload constraints; the worker's close
     // path never issues from them. Fall back to safe placeholders when the lock
@@ -218,7 +261,7 @@ export async function triggerExpiredLockClose(input: ExpiredLockInput): Promise<
       cliffTs: cliffTs > BigInt(0) ? cliffTs : BigInt(1),
     };
 
-    await triggerCloseAttestation({
+    const outcome = await triggerCloseAttestation({
       tokenId: input.tokenId,
       mint: row.mint_address,
       facts,
@@ -226,7 +269,15 @@ export async function triggerExpiredLockClose(input: ExpiredLockInput): Promise<
       github: row.github_username ?? "",
       currentEvidenceHash,
     });
+    if (outcome.enqueued) return "enqueued";
+    // The close trigger declined: unconfigured/disabled is a genuine no-op, but a
+    // no_live_attestation here means the row disappeared between our read and the
+    // enqueue, so nothing remains to revoke.
+    return "nothing_to_revoke";
   } catch (err) {
+    // A throw is transient (enqueue RPC failure, etc.): retry on the next pass
+    // rather than dropping the revocation.
     console.error("[sas] expired-lock close trigger failed:", err);
+    return "retry";
   }
 }
