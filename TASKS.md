@@ -2,6 +2,11 @@
 
 ## Now
 
+- [ ] QA the launch fee system on preview `trudev-3lbf7zh6m` (fees enabled there: 0.1 SOL, burn discount 20%, waiver 10M LCKD): run a burn-to-launch on /launch-test with a small buy, confirm the burn instruction in the wallet prompt, the finalized receipt recording, and the /burn ledger row. Production keeps fees OFF until these envs are set there deliberately.
+- [ ] Decide production fee numbers before enabling: LAUNCH_FEE_LAMPORTS, LAUNCH_FEE_WAIVER_LCKD_RAW (must stay well above typical burn amounts or the burn path is unreachable), LAUNCH_FEE_BURN_DISCOUNT_BPS, and LAUNCH_FEE_TREASURY for the SOL path.
+- [ ] Apply supabase/migrations/20260718020000_burn_ledger.sql to production so burn-to-launch rows land in /burn (needs DB password or a fresh management token).
+- [ ] Independent review of commit 05f0604 (money path) before enabling fees in production.
+
 - [ ] Complete the TEST token verify step in the wizard so `Aowscp3jNqDEutohPUNYdCNzobwi3wXnoUi5xqzDG2FH` records to the directory (owner action).
 - [x] Map `github_repo` into `tokenToDisplay` so the Submitted repository card renders on token pages (live 2026-07-18, cached repo details + 30-day commit count, hidden on owner mismatch).
 - [ ] Resolve the GitHub Actions billing lock so CI deploys work again (owner action); until then deploy via `vercel deploy --prod` from the launch-fix-dev worktree.
