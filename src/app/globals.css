@@ -12,6 +12,7 @@
   --color-surface: #101312;
   --color-surface-2: #161a18;
   --color-surface-deep: #0f1211;
+  --color-surface-banner: #0e1110;
   --color-cta-inner: #0c0f0d;
   --color-line: rgba(255, 255, 255, 0.05);
   --color-line-default: rgba(255, 255, 255, 0.08);
@@ -25,12 +26,15 @@
   --color-accent-700: #178a52;
   --color-accent-ink: #041710; /* text on green */
   --color-accent-dim: rgba(43, 209, 126, 0.08);
+  --color-accent-banner-wash: rgba(43, 209, 126, 0.055);
+  --color-accent-banner-shadow: rgba(43, 209, 126, 0.06);
 
   /* text */
   --color-text-1: #f2f5f3;
   --color-text-2: #a8b2ac;
   --color-text-3: #8f9994;
   --color-text-4: #69736e;
+  --color-text-faint: #5a625e;
 
   /* semantic */
   --color-warn: #e0a73e;
@@ -44,6 +48,10 @@
   --radius-control: 8px;
   --radius-card: 12px;
   --radius-modal: 16px;
+  --radius-banner: 14px;
+
+  /* elevation */
+  --shadow-banner: 0 14px 40px rgba(0, 0, 0, 0.45);
 
   /* motion */
   --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
@@ -51,6 +59,8 @@
   --duration-press: 120ms;
   --duration-hover: 180ms;
   --duration-enter: 320ms;
+  --duration-banner-transition: 450ms;
+  --duration-banner-cycle: 5500ms;
 }
 
 @layer base {
@@ -702,6 +712,30 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes banner-glide {
+  0% {
+    transform: translateX(-140px);
+    opacity: 0;
+  }
+  8%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(1160px);
+    opacity: 0;
+  }
+}
+
+@keyframes banner-progress {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
   }
 }
 
