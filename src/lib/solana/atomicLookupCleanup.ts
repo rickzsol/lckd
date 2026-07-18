@@ -11,6 +11,7 @@ import {
 } from "@solana/web3.js";
 import nacl from "tweetnacl";
 import { DEFAULT_PRIORITY_FEE_MICROLAMPORTS } from "./constants";
+import { readU64LE } from "./u64";
 
 export const LOOKUP_TABLE_ACTIVE_SLOT = BigInt("0xffffffffffffffff");
 const LOOKUP_CLEANUP_COMPUTE_UNIT_LIMIT = 25_000;
@@ -314,13 +315,13 @@ export function assertExactLookupTableForCleanup(
 
 export function parseSlotHashes(data: Buffer): readonly bigint[] {
   if (data.length < 8) throw new Error("SlotHashes account is truncated");
-  const count = data.readBigUInt64LE(0);
+  const count = readU64LE(data, 0);
   if (count > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("SlotHashes count is unsafe");
   const expectedLength = 8 + Number(count) * 40;
   if (data.length !== expectedLength) throw new Error("SlotHashes account length is invalid");
   const slots: bigint[] = [];
   for (let offset = 8; offset < data.length; offset += 40) {
-    slots.push(data.readBigUInt64LE(offset));
+    slots.push(readU64LE(data, offset));
   }
   return slots;
 }

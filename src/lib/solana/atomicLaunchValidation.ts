@@ -40,6 +40,7 @@ import {
   getStreamflowTotalFeePercent,
   lockDaysToSeconds,
 } from "./streamflow";
+import { readU64LE } from "./u64";
 
 const ATOMIC_COMPUTE_UNIT_LIMIT = 400_000;
 const U64_MAX = BigInt("0xffffffffffffffff");
@@ -447,7 +448,7 @@ export async function validateAtomicLaunchTransactionClient(
     create,
   );
   if (
-    instructions[4].data.readBigUInt64LE(8) !== BigInt(expectation.quotedTokenAmount) ||
+    readU64LE(instructions[4].data, 8) !== BigInt(expectation.quotedTokenAmount) ||
     maxQuoteAmount !== BigInt(expectation.maxQuoteAmount)
   ) {
     throw new Error("Atomic launch buy quote changed");

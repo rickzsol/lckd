@@ -25,6 +25,7 @@ import {
 } from "./pumpCreateValidation";
 import { validatePumpBuyInstruction } from "./pumpBuyValidation";
 import { ICluster } from "@streamflow/stream";
+import { readU64LE } from "./u64";
 
 const STREAMFLOW_PROGRAM_IDS: Record<ICluster, PublicKey> = {
   [ICluster.Mainnet]: new PublicKey("strmRqUCoQUgGUan5YhzUZa6KqdzwX5L6FpUxfmKg5m"),
@@ -67,7 +68,7 @@ function parseComputeBudget(data: Buffer): { unitLimit?: number; unitPrice?: big
     return { unitLimit };
   }
   if (discriminator === 3 && data.length === 9) {
-    return { unitPrice: data.readBigUInt64LE(1) };
+    return { unitPrice: readU64LE(data, 1) };
   }
   throw new Error("PumpPortal transaction contains an unsupported compute instruction");
 }
@@ -337,13 +338,13 @@ export function validateStreamflowLockTransaction(
     throw new Error("Lock transaction account layout does not match the requested time lock");
   }
 
-  const start = data.readBigUInt64LE(8);
-  const encodedAmount = data.readBigUInt64LE(16);
-  const period = data.readBigUInt64LE(24);
-  const amountPerPeriod = data.readBigUInt64LE(32);
-  const cliff = data.readBigUInt64LE(40);
-  const cliffAmount = data.readBigUInt64LE(48);
-  const withdrawalFrequency = data.readBigUInt64LE(126);
+  const start = readU64LE(data, 8);
+  const encodedAmount = readU64LE(data, 16);
+  const period = readU64LE(data, 24);
+  const amountPerPeriod = readU64LE(data, 32);
+  const cliff = readU64LE(data, 40);
+  const cliffAmount = readU64LE(data, 48);
+  const withdrawalFrequency = readU64LE(data, 126);
   const hasDisabledPermissions = [56, 57, 58, 59, 60, 61].every(
     (offset) => data[offset] === 0,
   );

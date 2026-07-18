@@ -8,6 +8,7 @@ import {
 } from "@solana/spl-token";
 import { PUMPFUN_PROGRAM_ID } from "./constants";
 import type { PumpCreateData } from "./pumpCreateValidation";
+import { readU64LE } from "./u64";
 
 const PUMP_BUY_DISCRIMINATOR = "66063d1201daebea";
 const PUMP_BUY_EXACT_SOL_DISCRIMINATOR = "38fc74089edfcd5f";
@@ -209,5 +210,5 @@ export function validatePumpBuyInstruction(
   } else {
     validateV2Accounts(accounts, wallet, mint, create);
   }
-  return data.readBigUInt64LE(layout.spendOffset);
+  return readU64LE(data, layout.spendOffset);
 }

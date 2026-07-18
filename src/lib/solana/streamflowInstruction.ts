@@ -20,6 +20,7 @@ import {
   WITHDRAWOR_PUBLIC_KEY,
 } from "@streamflow/stream";
 import BN from "bn.js";
+import { writeU64LE } from "./u64";
 
 export const STREAMFLOW_CREATE_DATA_LENGTH = 148;
 export const STREAMFLOW_CREATE_ACCOUNT_COUNT = 18;
@@ -73,14 +74,14 @@ function buildExpectedData(
 ): Buffer {
   const data = Buffer.alloc(STREAMFLOW_CREATE_DATA_LENGTH);
   STREAMFLOW_CREATE_DISCRIMINATOR.copy(data, 0);
-  data.writeBigUInt64LE(BigInt(params.unlockTimestamp), 8);
-  data.writeBigUInt64LE(BigInt(params.amount.toString()), 16);
-  data.writeBigUInt64LE(BigInt(1), 24);
-  data.writeBigUInt64LE(BigInt(1), 32);
-  data.writeBigUInt64LE(BigInt(params.unlockTimestamp), 40);
-  data.writeBigUInt64LE(BigInt(params.amount.toString()), 48);
+  writeU64LE(data, BigInt(params.unlockTimestamp), 8);
+  writeU64LE(data, BigInt(params.amount.toString()), 16);
+  writeU64LE(data, BigInt(1), 24);
+  writeU64LE(data, BigInt(1), 32);
+  writeU64LE(data, BigInt(params.unlockTimestamp), 40);
+  writeU64LE(data, BigInt(params.amount.toString()), 48);
   nameBytes.copy(data, STREAM_NAME_OFFSET);
-  data.writeBigUInt64LE(BigInt(1), 126);
+  writeU64LE(data, BigInt(1), 126);
   data[134] = 1;
   data[136] = 1;
   return data;
