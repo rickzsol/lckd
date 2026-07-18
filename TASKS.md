@@ -8,12 +8,13 @@
 - [x] Pin Node.js 24.16.0 and npm 11.13.0 across local development and CI.
 - [x] Add the Robinhood fork suite and Chromium desktop/mobile Playwright smoke tests to CI.
 - [x] Run lint, typecheck, tests, build, and desktop/mobile E2E against the stabilization diff.
+- [x] Verify the pull-request quality workflow in hosted CI.
 - [ ] Verify the full workflow, including the secret-backed Robinhood fork job, in hosted CI.
 - [ ] Normalize mixed CRLF/LF endings in a separate mechanical commit.
 
 ## Repository controls
 
-- [ ] Resolve the GitHub Actions billing lock so checks and deploys can run.
+- [x] Resolve the GitHub Actions billing lock so checks and deploys can run.
 - [ ] Protect `main`, require review and passing checks, and prevent direct production deployment from non-main workflow dispatches.
 - [ ] Protect the Production environment and move Vercel deployment secrets to environment scope.
 - [ ] Enable Dependabot alerts and security updates, secret scanning and push protection, CodeQL, and private vulnerability reporting.

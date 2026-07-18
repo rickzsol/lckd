@@ -7,7 +7,7 @@ Updated: 2026-07-18
 - `origin/main` is `e4a7e2e` and is the baseline for the repository stabilization branch.
 - Public atomic Solana launches are live on [lckd.tech](https://lckd.tech). Production uses Node.js 24.x and the provisioned Supabase data plane; the core atomic-launch and shared-rate-limit paths are active.
 - The Railway launch monitor is deployed with persistent state. Its readiness endpoint reports connected, ready, and subscribed, and the official token page and feed consume its verified state.
-- GitHub Actions cannot currently start because of an account billing lock. Repository protections remain pending until hosted checks can run.
+- The GitHub Actions billing lock is cleared. Pull request #9 passed the hosted quality workflow; repository protections remain pending owner authorization.
 - The requested `trudev` snapshot is preserved on `rescue/trudev-worktree-20260718` at `bb509a3`. Subsequent token-page preview edits remain local for separate review.
 - Production launch fees remain disabled. The fee preview, burn-ledger migration, production values, and independent money-path review are still gates.
 
@@ -25,13 +25,13 @@ Updated: 2026-07-18
 
 - The main baseline passed lint, typecheck, unit/integration tests, the six-test pinned Robinhood fork suite, and the production build before stabilization began.
 - Desktop and mobile production behavior has been checked manually with Playwright, including responsive navigation, overflow, console errors, and reduced motion.
-- The stabilization change passes automated Chromium desktop/mobile smoke coverage locally; hosted CI verification is still pending.
+- The stabilization change passed the hosted Node.js 24.16.0/npm 11.13.0 quality workflow, including lint, typecheck, 124 unit/integration tests, a production build, and eight Chromium desktop/mobile smoke checks.
 - The latest production dependency audit reported 8 high and 21 moderate transitive runtime findings in the Solana, Pump, and Streamflow trees. Automated forced fixes are not considered safe.
 
 ## Open release gates
 
-- Resolve the GitHub Actions billing lock, require CI and review on `main`, protect the Production environment, and scope deployment secrets to that environment.
-- Verify the pinned Node.js 24.16.0/npm 11.13.0 runtime, Robinhood fork suite, and desktop/mobile Playwright smoke tests in hosted CI.
+- Require CI and review on `main`, protect the Production environment, and scope deployment secrets to that environment.
+- Verify the secret-backed Robinhood fork job after the stabilization change reaches `main`; pull requests intentionally skip that job.
 - Review and apply `supabase/migrations/20260718020000_burn_ledger.sql`, complete fee-path preview QA, choose production fee values, and independently review the money path before enabling fees.
 - Verify the first public launches in runtime logs and complete the pending TEST token directory verification.
 - Keep Robinhood mainnet sending disabled until a production-grade archive RPC is configured and the authenticated preview flow passes.
