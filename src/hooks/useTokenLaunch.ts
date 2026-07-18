@@ -17,6 +17,7 @@ import {
   LOCK_TX_SOL_OVERHEAD,
   parseTransactionError,
   simulateVersionedTransactionOrThrow,
+  simulateUnsignedVersionedTransactionOrThrow,
   validateAtomicLaunchTransactionClient,
   deriveReviewedAtomicEconomics,
   validateReviewedUnlockTimestamp,
@@ -513,8 +514,16 @@ export function useTokenLaunch(config: LaunchConfig) {
         lastValidBlockHeight: setup.lastValidBlockHeight,
       });
       assertLookupSetupCoSigner(setupTransaction, metadataKeypair.publicKey);
-      setupTransaction.sign([metadataKeypair]);
       const issuedSetupMessage = setupTransaction.message.serialize();
+      await simulateUnsignedVersionedTransactionOrThrow(
+        connection,
+        setupTransaction,
+        "Lookup setup preview",
+        {
+          wallet: publicKey,
+          maxLamports: Math.ceil(0.02 * LAMPORTS_PER_SOL),
+        },
+      );
       setupTransaction = await signTransaction(setupTransaction);
       setupTransaction = restoreLocalVersionedSignatures(
         issuedSetupMessage,
@@ -636,8 +645,16 @@ export function useTokenLaunch(config: LaunchConfig) {
           feeTreasury: setup.feeTreasury ?? null,
         },
       });
-      atomicTransaction.sign([mintKeypair, metadataKeypair]);
       const issuedAtomicMessage = atomicTransaction.message.serialize();
+      await simulateUnsignedVersionedTransactionOrThrow(
+        connection,
+        atomicTransaction,
+        "Atomic launch preview",
+        {
+          wallet: publicKey,
+          maxLamports: Math.ceil(requiredSol * LAMPORTS_PER_SOL),
+        },
+      );
       atomicTransaction = await signTransaction(atomicTransaction);
       atomicTransaction = restoreLocalVersionedSignatures(
         issuedAtomicMessage,
@@ -777,6 +794,15 @@ export function useTokenLaunch(config: LaunchConfig) {
       lookupTable: new PublicKey(action.lookupTableAddress),
       blockhash: action.blockhash,
     });
+    await simulateUnsignedVersionedTransactionOrThrow(
+      connection,
+      transaction,
+      "Lookup cleanup preview",
+      {
+        wallet: publicKey,
+        maxLamports: Math.ceil(0.005 * LAMPORTS_PER_SOL),
+      },
+    );
     transaction = await signTransaction(transaction);
     validateLookupCleanupTransaction(transactionBase64(transaction), {
       phase: action.action,

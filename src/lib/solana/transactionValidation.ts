@@ -375,18 +375,24 @@ function simulationError(label: string, error: unknown, logs?: string[] | null):
   return new Error(`${label} simulation failed: ${detail}${logTail ? ` (${logTail})` : ""}`);
 }
 
-export async function simulateVersionedTransactionOrThrow(
+interface SimulationSpendLimit {
+  wallet: PublicKey;
+  maxLamports: number;
+}
+
+async function simulateVersionedTransaction(
   connection: Connection,
   transaction: VersionedTransaction,
   label: string,
-  spendLimit?: { wallet: PublicKey; maxLamports: number },
+  shouldVerifySignatures: boolean,
+  spendLimit?: SimulationSpendLimit,
 ): Promise<void> {
   const preBalance = spendLimit
     ? await connection.getBalance(spendLimit.wallet, "confirmed")
     : null;
   const simulation = await connection.simulateTransaction(transaction, {
     commitment: "confirmed",
-    sigVerify: true,
+    sigVerify: shouldVerifySignatures,
     ...(spendLimit
       ? {
           accounts: {
@@ -408,6 +414,24 @@ export async function simulateVersionedTransactionOrThrow(
       throw new Error(`${label} would spend more SOL than approved`);
     }
   }
+}
+
+export async function simulateUnsignedVersionedTransactionOrThrow(
+  connection: Connection,
+  transaction: VersionedTransaction,
+  label: string,
+  spendLimit?: SimulationSpendLimit,
+): Promise<void> {
+  await simulateVersionedTransaction(connection, transaction, label, false, spendLimit);
+}
+
+export async function simulateVersionedTransactionOrThrow(
+  connection: Connection,
+  transaction: VersionedTransaction,
+  label: string,
+  spendLimit?: SimulationSpendLimit,
+): Promise<void> {
+  await simulateVersionedTransaction(connection, transaction, label, true, spendLimit);
 }
 
 export async function simulateLegacyTransactionOrThrow(

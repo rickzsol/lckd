@@ -39,6 +39,8 @@
 - [x] Transfer program upgrade authority to the verified 2-of-3 Squads multisig vault.
 - [x] Commit the exact reviewed release source and record the production deployment-to-revision mapping.
 - [ ] Close the deactivated successful-canary ALT from owner wallet `8A4i2yk8R9ivCGdtQeyo71JYyB6CjfSsMnWcYthisPwT` after switching Phantom back to that account.
+- [x] Align setup, atomic launch, and cleanup with Phantom's pre-sign simulation and wallet-first co-signing guidance.
+- [ ] Submit Phantom's dApp review form if the verified cleanup transaction still shows a warning after deployment.
 
 ## Production follow-up
 

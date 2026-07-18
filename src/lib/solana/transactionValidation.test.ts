@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ComputeBudgetProgram,
+  type Connection,
   Keypair,
   PublicKey,
   SYSVAR_RENT_PUBKEY,
@@ -24,9 +25,39 @@ import {
   PUMPFUN_PROGRAM_ID,
 } from "./constants";
 import {
+  simulateUnsignedVersionedTransactionOrThrow,
+  simulateVersionedTransactionOrThrow,
   validatePumpPortalCreateTransaction,
   validateStreamflowLockTransaction,
 } from "./transactionValidation";
+
+function buildSimulationFixture() {
+  const wallet = Keypair.generate();
+  const message = new TransactionMessage({
+    payerKey: wallet.publicKey,
+    recentBlockhash: Keypair.generate().publicKey.toBase58(),
+    instructions: [],
+  }).compileToV0Message();
+  return { transaction: new VersionedTransaction(message), wallet };
+}
+
+function simulationConnection(walletLamports = 1_000_000) {
+  let config: unknown;
+  const connection = {
+    getBalance: async () => walletLamports,
+    simulateTransaction: async (_transaction: VersionedTransaction, nextConfig: unknown) => {
+      config = nextConfig;
+      return {
+        value: {
+          err: null,
+          logs: [],
+          accounts: [{ lamports: walletLamports - 1_000 }],
+        },
+      };
+    },
+  } as unknown as Connection;
+  return { connection, config: () => config };
+}
 
 const CREATE_DISCRIMINATOR = Buffer.from("181ec828051c0777", "hex");
 const CREATE_V2_DISCRIMINATOR = Buffer.from("d6904cec5f8b31b4", "hex");
@@ -218,6 +249,44 @@ function buildPortalV2Transaction(isMayhemMode = 0, isCashbackEnabled = 0) {
   transaction.sign([wallet, mint]);
   return { bytes: transaction.serialize(), wallet, mint, metadata };
 }
+
+test("simulates an unsigned preview without signature verification", async () => {
+  const fixture = buildSimulationFixture();
+  const rpc = simulationConnection();
+
+  await simulateUnsignedVersionedTransactionOrThrow(
+    rpc.connection,
+    fixture.transaction,
+    "Preview",
+    { wallet: fixture.wallet.publicKey, maxLamports: 5_000 },
+  );
+
+  assert.deepEqual(rpc.config(), {
+    commitment: "confirmed",
+    sigVerify: false,
+    accounts: {
+      encoding: "base64",
+      addresses: [fixture.wallet.publicKey.toBase58()],
+    },
+  });
+});
+
+test("keeps signature verification enabled after wallet signing", async () => {
+  const fixture = buildSimulationFixture();
+  fixture.transaction.sign([fixture.wallet]);
+  const rpc = simulationConnection();
+
+  await simulateVersionedTransactionOrThrow(
+    rpc.connection,
+    fixture.transaction,
+    "Signed transaction",
+  );
+
+  assert.deepEqual(rpc.config(), {
+    commitment: "confirmed",
+    sigVerify: true,
+  });
+});
 
 test("accepts one exact pump create and bounded buy", () => {
   const fixture = buildPortalTransaction();

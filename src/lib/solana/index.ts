@@ -22,6 +22,7 @@ export {
 
 export {
   simulateLegacyTransactionOrThrow,
+  simulateUnsignedVersionedTransactionOrThrow,
   simulateVersionedTransactionOrThrow,
   validatePumpPortalCreateTransaction,
 } from "./transactionValidation";
