@@ -7,7 +7,7 @@ Updated: 2026-07-18
 - `main` is the stabilization baseline `e4a7e2e` plus `f1c335b`: wide-screen token page layout (full-width chart, balanced card grid, fluid contribution graph), the public `/developers` directory, and optimized token/avatar images.
 - Public atomic Solana launches are live on [lckd.tech](https://lckd.tech). Production uses Node.js 24.x and the provisioned Supabase data plane; the core atomic-launch and shared-rate-limit paths are active.
 - The Railway launch monitor is deployed with persistent state. Its readiness endpoint reports connected, ready, and subscribed, and the official token page and feed consume its verified state.
-- The GitHub Actions billing lock is cleared. Pull request #9 passed the hosted quality workflow; repository protections remain pending owner authorization.
+- The GitHub Actions billing lock is cleared and PR #9 is merged (`9b16e15`). On main pushes the quality job passes end to end (lint, typecheck, 124 tests, build, Chromium smoke), but the `robinhood-fork` job fails closed because the `ROBINHOOD_RPC_URL` repository secret is not configured, and the production deploy job is gated behind it. Until the owner sets that secret, no CI deploy reaches production; lckd.tech still serves the pre-`f1c335b` build.
 - The requested `trudev` snapshot is preserved on `rescue/trudev-worktree-20260718` at `bb509a3` (pushed to origin). Its token-page and directory work was re-applied onto current `main` as `f1c335b`; local `trudev/.env.local` now points at lckd-production via Supabase CLI keys.
 - Production launch fees remain disabled. The fee preview, burn-ledger migration, production values, and independent money-path review are still gates.
 
@@ -31,7 +31,7 @@ Updated: 2026-07-18
 ## Open release gates
 
 - Require CI and review on `main`, protect the Production environment, and scope deployment secrets to that environment.
-- Verify the secret-backed Robinhood fork job after the stabilization change reaches `main`; pull requests intentionally skip that job.
+- Set the `ROBINHOOD_RPC_URL` repository secret (owner action; no value exists in any local env) so the fail-closed `robinhood-fork` job and the gated production deploy can run on main pushes. Verified 2026-07-18: runs 29649840661/29649986918 pass quality and fail only this job.
 - Review and apply `supabase/migrations/20260718020000_burn_ledger.sql`, complete fee-path preview QA, choose production fee values, and independently review the money path before enabling fees.
 - Verify the first public launches in runtime logs and complete the pending TEST token directory verification.
 - Keep Robinhood mainnet sending disabled until a production-grade archive RPC is configured and the authenticated preview flow passes.
