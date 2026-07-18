@@ -43,7 +43,36 @@ Built the public trust API, unlock calendar, and live lock pipeline per plan sec
 - `/unlocks` page (date-grouped, mono countdowns, warn under 7d, unlockable danger + pulse dot, mascot empty state), navbar link, sitemap, OG image, feed next-unlock strip. Trust + unlocks sections added to `/api-docs`.
 - Tools: `tools/backfill-locks.ts` (staged, nullable-first, finalized RPC denominator, NOT NULL follow-up stub) and `tools/register-helius-webhook.ts` (tracked-address batched edits, never auto-run).
 
-Verification: 190 tests pass. typecheck + lint + production build clean.
+Verification: 199 tests pass. typecheck + lint + production build clean. The
+migration + new/changed SQL functions were also applied and exercised against an
+ephemeral Postgres 16 (Docker) to prove the plpgsql behavior directly.
+
+Round-5 (final surgical) closed four residuals from round-4 on this branch:
+- 5 (residual): a wall-clock tier_computed_at is not a valid freshness token — a
+  snapshot projected from OLD evidence but WRITTEN later carries a newer timestamp
+  and won the comparison, overwriting fresher evidence. Freshness is now a
+  compare-and-swap on a monotonic tokens.evidence_seq that commit_token_tier owns:
+  callers pass the revision they read (p_prev_evidence_seq), the write applies only
+  when it still equals the stored revision, and evidence_seq bumps to stored+1 only
+  on a real apply. A stale snapshot loses regardless of wall-clock. Verified in
+  Postgres: prev=stale + timestamp +1h => no-op; fresh prev => applies, seq bumps.
+- Round-4 new defect: a NULL p_tier_computed_at made the freshness comparison NULL
+  and bypassed the guard (could clear the stored stamp). commit_token_tier now
+  RAISES on NULL p_tier_computed_at and NULL p_prev_evidence_seq. Verified both
+  raise in Postgres.
+- 10 (residual): backfill_coverage_complete() and the trust_kv write were separate
+  transactions (TOCTOU — coverage could drift between check and set). New
+  set_backfill_complete_if_covered() evaluates the NOT EXISTS predicate INSIDE the
+  same INSERT ... ON CONFLICT that writes backfill_complete, so the flag can never
+  be set from a stale coverage read. backfill-locks.ts calls it instead of the
+  two-round-trip read+upsert. Verified: coverage flips drive the flag in one call.
+- Schedule residual: the dropped period/rate check was restored in bindStreamToLock
+  and the backfill validator — period === 1 and amountPerPeriod === 1 (the SDK's
+  buildLockParams full-cliff residual), rejecting arbitrary vesting schedules that
+  otherwise satisfy the gap and cliff-amount checks.
+Tests added: stale-snapshot-loses + null-rejection CAS mirror (tierCommitPolicy),
+reconcile threads the evidence revision for the CAS (reconcileLock), full-cliff
+rejection of a vesting schedule (bind + backfill).
 
 Round-4 (final) review resolved the remaining round-3 partials plus three new
 defects it introduced. All on this branch:
