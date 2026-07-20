@@ -154,11 +154,11 @@ export default function TradeReadinessCard({
   };
 
   return (
-    <section className="mb-5 overflow-hidden rounded-card border border-line-default bg-surface" aria-labelledby="trade-readiness-title">
-      <div className="flex flex-col gap-4 bg-[linear-gradient(120deg,rgba(43,209,126,0.09),transparent_58%)] px-4 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-5 lg:px-6">
+    <section className="overflow-hidden rounded-[16px] border border-line-default bg-bg/65 shadow-[0_18px_50px_rgba(0,0,0,0.16)]" aria-labelledby="trade-readiness-title">
+      <div className="flex flex-col gap-4 border-b border-line bg-[linear-gradient(115deg,rgba(43,209,126,0.08),transparent_52%)] px-4 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-5 lg:px-6">
         <div>
           <div className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-accent-400">Read-only preflight / no wallet connected</div>
-          <h2 id="trade-readiness-title" className="mt-1 font-sans text-xl font-bold tracking-[-0.02em] text-text-1 sm:text-2xl">Trade readiness</h2>
+          <h3 id="trade-readiness-title" className="mt-1 font-sans text-xl font-bold tracking-[-0.02em] text-text-1 sm:text-2xl">Trade readiness</h3>
           <p className="mt-1 max-w-2xl font-sans text-sm leading-relaxed text-text-3">
             Inspect controls, concentration, liquidity, and current routes before opening an execution venue.
           </p>

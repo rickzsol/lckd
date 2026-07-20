@@ -5,8 +5,7 @@ import Link from "next/link";
 import DitherWave from "@/components/landing/DitherWave";
 import MarketChart from "@/components/token/MarketChart";
 import JupiterSwap from "@/components/token/JupiterSwap";
-import TradeReadinessCard from "@/components/token/TradeReadinessCard";
-import ProofMissionCard from "@/components/token/ProofMissionCard";
+import TokenResearchWorkspace from "@/components/token/TokenResearchWorkspace";
 import { PROOF_MISSION_MINT } from "@/lib/proof-missions/mission";
 import TokenImage from "@/components/ui/TokenImage";
 import { useDexMarketData } from "@/hooks/useDexMarketData";
@@ -142,9 +141,6 @@ export default function OfficialTokenClient({ initialLaunch, monitorUrl }: Props
         ))}
       </section>
 
-      <TradeReadinessCard mintAddress={mintAddress} ticker={`$${symbol}`} />
-      <ProofMissionCard mintAddress={mintAddress} />
-
       <section className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div>
           <MarketChart key={`${mintAddress ?? "pending"}-${market ? "indexed" : "waiting"}`} mintAddress={mintAddress ?? undefined} />
@@ -180,6 +176,8 @@ export default function OfficialTokenClient({ initialLaunch, monitorUrl }: Props
           </div>
         </div>
       </section>
+
+      <TokenResearchWorkspace mintAddress={mintAddress} ticker={`$${symbol}`} />
 
       <section className="grid gap-4 md:grid-cols-2 lg:gap-5">
         <div className="rounded-card border border-line-default bg-surface p-5">

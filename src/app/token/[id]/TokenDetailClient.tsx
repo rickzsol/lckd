@@ -8,8 +8,7 @@ import MarketChart from "@/components/token/MarketChart";
 import JupiterSwap from "@/components/token/JupiterSwap";
 import TokenLockCard from "@/components/token/TokenLockCard";
 import TokenMetadataCard from "@/components/token/TokenMetadataCard";
-import TradeReadinessCard from "@/components/token/TradeReadinessCard";
-import ProofMissionCard from "@/components/token/ProofMissionCard";
+import TokenResearchWorkspace from "@/components/token/TokenResearchWorkspace";
 import AllocationPanel from "@/components/token/AllocationPanel";
 import Badge, { getTrustBadgeLabel } from "@/components/ui/Badge";
 import TokenImage from "@/components/ui/TokenImage";
@@ -165,9 +164,6 @@ export default function TokenDetailClient({
         ))}
       </section>
 
-      <TradeReadinessCard mintAddress={t.mintAddress} ticker={t.ticker} />
-      <ProofMissionCard mintAddress={t.mintAddress} />
-
       <section className="mb-5 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
         <MarketChart mintAddress={t.mintAddress} />
         <div className="flex flex-col gap-4 lg:gap-5">
@@ -175,6 +171,8 @@ export default function TokenDetailClient({
           <JupiterSwap mintAddress={t.mintAddress} ticker={t.ticker} />
         </div>
       </section>
+
+      <TokenResearchWorkspace mintAddress={t.mintAddress} ticker={t.ticker} />
 
       {allocations && t.mintAddress && (
         <AllocationPanel
