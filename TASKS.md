@@ -39,6 +39,15 @@
 - [x] Pass lint, typecheck, 196 tests, production build, live LCKD aggregation, desktop/mobile browser QA, and two bounded independent review rounds.
 - [ ] Open and merge a focused pull request, then verify the production token page after explicit deployment approval.
 
+## Proof missions
+
+- [x] Add a recurring weekly LCKD research mission with GitHub-linked wallet attribution and public HTTPS evidence submission.
+- [x] Add private Supabase submission and review tables with RLS, server-only access, distinct-review enforcement, self-review rejection, and atomic two-approval publication.
+- [x] Add accepted-proof cards, a weekly leaderboard, reviewer queue, achievable reviewer quorum checks, and stale-write-safe client state.
+- [x] Pass lint, typecheck, 202 tests, production build, mocked desktop/mobile interaction checks, and two bounded independent review rounds.
+- [ ] Apply the staged migration to a local or preview database and prove the real two-review concurrency path, duplicates, self-review rejection, and approve/reject serialization.
+- [ ] Configure at least two numeric reviewer GitHub IDs, then open the stacked pull request after Trade Readiness is integrated.
+
 ## Launch fees
 
 - [x] Implement the exact 0.1 SOL same-transaction LCKD buyback and exact acquired-amount burn path.

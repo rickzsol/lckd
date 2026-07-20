@@ -27,6 +27,7 @@ const PRESETS = {
   github: { limit: 30, windowMs: 60_000 },
   record: { limit: 15, windowMs: 60_000 },
   match: { limit: 5, windowMs: 60_000 },
+  proof: { limit: 12, windowMs: 60_000 },
   quote: { limit: 5, windowMs: 60_000 },
   tradeEvidenceGlobal: { limit: 60, windowMs: 60_000 },
   tradeQuoteGlobal: { limit: 6, windowMs: 60_000 },
