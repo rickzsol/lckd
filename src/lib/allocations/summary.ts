@@ -40,6 +40,8 @@ export interface AllocationSummary {
     counterpartyWallet: string | null;
     classification: AllocationClassification;
     blockTime: string | null;
+    isFinal: boolean;
+    counterpartyTracked: boolean | null;
   }>;
 }
 
@@ -90,6 +92,7 @@ export function buildAllocationSummary(
   snapshots: readonly AllocationSnapshot[],
 ): AllocationSummary {
   const latestSnapshots = latestBalanceByWallet(snapshots);
+  const trackedWallets = new Set(wallets.map((wallet) => wallet.wallet_address));
   const walletsByBucket = new Map<string, AllocationWallet[]>();
   for (const wallet of wallets) {
     const list = walletsByBucket.get(wallet.bucket_id) ?? [];
@@ -152,6 +155,12 @@ export function buildAllocationSummary(
       counterpartyWallet: transfer.counterparty_wallet,
       classification: transfer.classification,
       blockTime: transfer.block_time,
+      // Current ingestion reads at confirmed commitment and does not persist a
+      // finalized checkpoint. Fail closed until the finalized sweep ships.
+      isFinal: false,
+      counterpartyTracked: transfer.counterparty_wallet
+        ? trackedWallets.has(transfer.counterparty_wallet)
+        : null,
     })),
   };
 }

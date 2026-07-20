@@ -176,6 +176,7 @@ export default function TokenDetailClient({
           summary={allocations.summary}
           creatorWallet={allocations.creatorWallet}
           lockedAmountRaw={allocations.lockedAmountRaw}
+          isLockUnlockPending={allocations.isLockUnlockPending}
           mintAddress={t.mintAddress}
         />
       )}

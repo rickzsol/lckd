@@ -3,10 +3,6 @@ import Hero from "@/components/landing/Hero";
 import WhyCards from "@/components/landing/WhyCards";
 import FeatureRows from "@/components/landing/FeatureRows";
 import ClosingCta from "@/components/landing/ClosingCta";
-import {
-  getOfficialLaunch,
-  getPublicLaunchMonitorUrl,
-} from "@/lib/launchMonitorClient.server";
 
 export const metadata: Metadata = {
   title: "Solana token launch workflow",
@@ -23,14 +19,10 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function Home() {
-  const officialLaunch = await getOfficialLaunch();
+export default function Home() {
   return (
     <>
-      <Hero
-        officialLaunch={officialLaunch}
-        launchMonitorUrl={getPublicLaunchMonitorUrl()}
-      />
+      <Hero />
       <WhyCards />
       <FeatureRows />
       <ClosingCta />

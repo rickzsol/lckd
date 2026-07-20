@@ -4,12 +4,17 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import type { AllocationSummary, BucketSummary } from "@/lib/allocations/summary";
 import { formatRawAmount, percentOfSupply } from "@/lib/allocations/format";
+import {
+  allocationCounterpartyLabel,
+  allocationMovementLabel,
+} from "@/lib/allocations/presentation";
 import AllocationDeclareForm from "./AllocationDeclareForm";
 
 interface AllocationPanelProps {
   summary: AllocationSummary;
   creatorWallet: string;
   lockedAmountRaw: string | null;
+  isLockUnlockPending: boolean;
   mintAddress: string;
 }
 
@@ -21,15 +26,6 @@ const SEGMENT_SHADES = [
   "bg-white/9",
   "bg-white/7",
 ];
-
-const CLASSIFICATION_STYLES: Record<string, { label: string; className: string }> = {
-  distributed: { label: "distributed", className: "text-accent-400" },
-  sold: { label: "sold", className: "text-danger" },
-  internal: { label: "moved", className: "text-text-3" },
-  burned: { label: "burned", className: "text-warn" },
-  received: { label: "received", className: "text-text-3" },
-  unknown: { label: "unindexed", className: "text-text-3" },
-};
 
 function shortAddress(address: string | null): string {
   if (!address) return "--";
@@ -93,8 +89,8 @@ function BucketRow({
       {[
         { l: "declared", v: declared },
         { l: "current", v: current },
-        { l: "distributed", v: distributed },
-        { l: "sold", v: sold },
+        { l: "distribution signals", v: distributed },
+        { l: "sale signals", v: sold },
       ].map((cell) => (
         <div key={cell.l}>
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-4 sm:hidden">
@@ -113,6 +109,7 @@ export default function AllocationPanel({
   summary,
   creatorWallet,
   lockedAmountRaw,
+  isLockUnlockPending,
   mintAddress,
 }: AllocationPanelProps) {
   const isCreator = useIsCreator(creatorWallet);
@@ -121,9 +118,6 @@ export default function AllocationPanel({
   const hasAnything = activeBuckets.length > 0 || lockedAmountRaw !== null;
 
   const segments: Array<{ key: string; raw: string; className: string }> = [];
-  if (lockedAmountRaw) {
-    segments.push({ key: "locked", raw: lockedAmountRaw, className: "bg-accent" });
-  }
   activeBuckets.forEach((bucket, index) => {
     segments.push({
       key: bucket.id,
@@ -162,7 +156,7 @@ export default function AllocationPanel({
 
           <div className="hidden gap-x-3 pb-1 sm:grid sm:grid-cols-[minmax(140px,1.4fr)_repeat(4,minmax(70px,1fr))]">
             <span />
-            {["declared", "current", "distributed", "sold"].map((label) => (
+            {["declared", "current", "distribution signals", "sale signals"].map((label) => (
               <span
                 key={label}
                 className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3"
@@ -175,12 +169,12 @@ export default function AllocationPanel({
           {lockedAmountRaw && (
             <BucketRow
               label="locked"
-              chip="locked on-chain"
-              isEnforced
+              chip={isLockUnlockPending ? "unlock pending" : "historical record"}
+              isEnforced={isLockUnlockPending}
               declared={formatRawAmount(lockedAmountRaw)}
-              current={formatRawAmount(lockedAmountRaw)}
-              distributed="0"
-              sold="0"
+              current="--"
+              distributed="--"
+              sold="--"
             />
           )}
           {activeBuckets.map((bucket: BucketSummary) => (
@@ -209,9 +203,14 @@ export default function AllocationPanel({
               </div>
               <div className="flex flex-col gap-1.5">
                 {summary.recentTransfers.slice(0, 8).map((transfer) => {
-                  const style =
-                    CLASSIFICATION_STYLES[transfer.classification] ??
-                    CLASSIFICATION_STYLES.unknown;
+                  const label = allocationMovementLabel(
+                    transfer.classification,
+                    transfer.isFinal,
+                  );
+                  const counterparty = allocationCounterpartyLabel(
+                    transfer.counterpartyWallet,
+                    transfer.counterpartyTracked,
+                  );
                   return (
                     <a
                       key={`${transfer.signature}-${transfer.walletAddress}-${transfer.direction}-${transfer.amount}`}
@@ -220,14 +219,24 @@ export default function AllocationPanel({
                       rel="noopener noreferrer"
                       className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px] text-text-3 tabular-nums transition-colors duration-180 ease-out hover:text-text-2"
                     >
-                      <span className={`w-[76px] font-semibold ${style.className}`}>
-                        {style.label}
+                      <span className="w-[110px] font-semibold text-text-3">
+                        {label}
                       </span>
                       <span className="text-text-2">{formatRawAmount(transfer.amount)}</span>
                       <span>
                         {transfer.direction === "out" ? "to" : "from"}{" "}
-                        {shortAddress(transfer.counterpartyWallet)}
+                        {counterparty === "an external wallet"
+                          ? counterparty
+                          : shortAddress(counterparty)}
                       </span>
+                      {!transfer.isFinal && (
+                        <span
+                          className="text-text-4"
+                          title="Recorded at confirmed commitment; finality is not tracked yet"
+                        >
+                          provisional
+                        </span>
+                      )}
                       {transfer.blockTime && (
                         <span className="ml-auto text-text-4">
                           {new Date(transfer.blockTime).toLocaleDateString("en-US", {
@@ -251,8 +260,10 @@ export default function AllocationPanel({
 
       <p className="mt-4 border-t border-line pt-3.5 font-mono text-[11px] leading-[1.6] text-text-3">
         Declared buckets are labels published by the creator and tracked on-chain by
-        LCKD. Only the locked bucket is enforced by contract; treat the rest as
-        signals, not guarantees.
+        LCKD. Movement labels and totals are provisional transaction classifications.
+        The launch lock is contract-enforced only until its recorded unlock time.
+        Current escrow balance is not shown without live verification. Treat declared
+        buckets as signals, not guarantees.
       </p>
 
       {isCreator && (

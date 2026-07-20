@@ -168,9 +168,12 @@ test("recent transfers are capped and mapped to the public shape", () => {
     "amount",
     "blockTime",
     "classification",
+    "counterpartyTracked",
     "counterpartyWallet",
     "direction",
+    "isFinal",
     "signature",
     "walletAddress",
   ]);
+  assert.equal(summary.recentTransfers[0].isFinal, false);
 });
