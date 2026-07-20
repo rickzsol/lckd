@@ -1,7 +1,17 @@
 import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { getCurrentProofMission } from "../src/lib/proof-missions/mission";
 
 const LCKD_MINT = "7UTubJ3W6JWwLUj82B9LgHFDmc8wFWtSNLis6u8epump";
+
+test("generic token detail keeps the research workspace after the market chart", () => {
+  const source = readFileSync(
+    new URL("../src/app/token/[id]/TokenDetailClient.tsx", import.meta.url),
+    "utf8",
+  );
+  expect(source.indexOf("<MarketChart")).toBeGreaterThan(-1);
+  expect(source.indexOf("<TokenResearchWorkspace")).toBeGreaterThan(source.indexOf("<MarketChart"));
+});
 
 test("token trade readiness evidence and routes render", async ({ page }, testInfo) => {
   test.setTimeout(45_000);
@@ -72,6 +82,15 @@ test("token trade readiness evidence and routes render", async ({ page }, testIn
   expect(response?.status()).toBeLessThan(400);
 
   const card = page.getByRole("heading", { name: "Trade readiness" }).locator("xpath=ancestor::section");
+  const workspace = page.getByTestId("token-research-workspace");
+  await expect(workspace.getByRole("heading", { name: "Read the market. Verify the evidence." })).toBeVisible();
+  const isBelowChart = await page.getByRole("region", { name: "Interactive market-cap chart" }).evaluate((chart) => {
+    const researchWorkspace = document.querySelector('[data-testid="token-research-workspace"]');
+    return Boolean(researchWorkspace && (
+      chart.compareDocumentPosition(researchWorkspace) & Node.DOCUMENT_POSITION_FOLLOWING
+    ));
+  });
+  expect(isBelowChart).toBe(true);
   await expect(card.getByText("Token-2022 controls parsed from finalized state.")).toBeVisible();
   await expect(card.getByText(/At least .*% of supply/)).toBeVisible();
   await expect(card.getByText(/pumpswap pair indexed/i)).toBeVisible();
