@@ -30,6 +30,15 @@
 - [x] Merge PR #13, deploy merge commit `caa8b94`, and verify the live stats response plus the allocation-bearing LCKD token page on desktop and mobile.
 - [ ] Add persisted allocation finality, confidence, evidence, and a finalized reconciliation sweep before showing settled movement classifications.
 
+## Trade readiness
+
+- [x] Add a read-only token-page preflight for finalized mint authorities, Token-2022 controls, concentration coverage, and indexed liquidity freshness.
+- [x] Add three fixed SOL buy previews and a reverse sell-route check through Jupiter Swap API V2 without wallet custody or transaction construction.
+- [x] Fail closed for unavailable evidence, incomplete largest-account coverage, scaled-UI token amounts, and missing routes.
+- [x] Protect Helius and Jupiter reads with per-IP limits plus shared production budgets using the existing distributed limiter.
+- [x] Pass lint, typecheck, 196 tests, production build, live LCKD aggregation, desktop/mobile browser QA, and two bounded independent review rounds.
+- [ ] Open and merge a focused pull request, then verify the production token page after explicit deployment approval.
+
 ## Launch fees
 
 - [x] Implement the exact 0.1 SOL same-transaction LCKD buyback and exact acquired-amount burn path.

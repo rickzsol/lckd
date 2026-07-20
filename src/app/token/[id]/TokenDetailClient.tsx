@@ -8,6 +8,7 @@ import MarketChart from "@/components/token/MarketChart";
 import JupiterSwap from "@/components/token/JupiterSwap";
 import TokenLockCard from "@/components/token/TokenLockCard";
 import TokenMetadataCard from "@/components/token/TokenMetadataCard";
+import TradeReadinessCard from "@/components/token/TradeReadinessCard";
 import AllocationPanel from "@/components/token/AllocationPanel";
 import Badge, { getTrustBadgeLabel } from "@/components/ui/Badge";
 import TokenImage from "@/components/ui/TokenImage";
@@ -162,6 +163,8 @@ export default function TokenDetailClient({
           </div>
         ))}
       </section>
+
+      <TradeReadinessCard mintAddress={t.mintAddress} ticker={t.ticker} />
 
       <section className="mb-5 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
         <MarketChart mintAddress={t.mintAddress} />
