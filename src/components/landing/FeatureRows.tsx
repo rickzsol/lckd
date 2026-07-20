@@ -58,22 +58,22 @@ const ROWS: FeatureRow[] = [
   {
     index: "01",
     icon: LockIcon,
-    title: "One atomic launch.",
-    body: "Token creation, the initial buy, and the Streamflow lock execute together. If any instruction fails, the transaction reverts and no token is created.",
+    title: "Lock it, or don't.",
+    body: "Choose a Streamflow lock or launch without one. Either way, the reviewed launch is built as one atomic transaction.",
     kicker: "one transaction. one finalized receipt.",
   },
   {
     index: "02",
     icon: GithubIcon,
     title: "Identity, linked.",
-    body: "Connect GitHub and link a wallet with a signed ownership message. Public profile data and launch receipts stay tied to that identity.",
-    kicker: "github-authenticated profiles. signed wallet links.",
+    body: "Sign in with X or GitHub, then link a wallet with a signed ownership message. Each receipt stays tied to that identity.",
+    kicker: "x or github. signed wallet links.",
   },
   {
     index: "03",
     icon: BoltIcon,
     title: "Proof, on-chain.",
-    body: "Inspect the deposited amount, unlock time, wallet, and transaction signatures. The receipt shows what is locked and what is not.",
+    body: "Inspect the wallet and transaction signature. If a lock exists, the receipt also shows its amount and unlock time.",
     kicker: "public evidence. explicit limits.",
   },
 ];

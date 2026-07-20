@@ -7,7 +7,7 @@ import type { Token } from "@/types";
 
 export { OPTIONS };
 
-const TOKEN_COLUMNS = "id, mint_address, name, ticker, description, image_uri, trust_tier, creator_wallet, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, launch_verified_at, lock_verified_at, lock_unlock_at, twitter_url, telegram_url, website_url";
+const TOKEN_COLUMNS = "id, mint_address, name, ticker, description, image_uri, trust_tier, creator_wallet, has_lock, creator_provider, creator_username, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, launch_verified_at, lock_verified_at, lock_unlock_at, twitter_url, telegram_url, website_url";
 
 export async function GET(
   _request: NextRequest,
@@ -23,8 +23,7 @@ export async function GET(
     let query = getSupabase()
       .from("tokens")
       .select(TOKEN_COLUMNS)
-      .not("launch_verified_at", "is", null)
-      .not("lock_verified_at", "is", null);
+      .not("launch_verified_at", "is", null);
 
     query = isValidSolanaAddress(ca)
       ? query.eq("mint_address", ca)

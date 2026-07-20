@@ -66,7 +66,7 @@ const intentSchema = z.object({
   quotedTokenAmount: z.string().regex(/^\d+$/),
   maxQuoteAmount: z.string().regex(/^\d+$/),
   plannedLockAmount: z.string().regex(/^\d+$/),
-  plannedUnlockTimestamp: z.number().int().positive().safe(),
+  plannedUnlockTimestamp: z.number().int().nonnegative().safe(),
   plannedStreamflowFeePercent: z.number().finite().min(0).lt(100),
   issuedAtomicTransaction: z.string().min(100).max(2_000).nullable(),
   issuedAtomicMessageHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
   let snapshot;
   try {
     snapshot = await getOwnedAtomicLaunchIntent({
-      githubId: session.github_id,
+      githubId: session.identity_id,
       creatorWallet: session.wallet_address,
       mintAddress: parsed.data.mintPublicKey,
     });
@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
       return apiError("Atomic transaction does not match the immutable launch intent", 422);
     }
     await issueAtomicTransaction({
-      githubId: session.github_id,
+      githubId: session.identity_id,
       creatorWallet: session.wallet_address,
       mintAddress: intent.mintAddress,
       expectedStateVersion: intent.stateVersion,
@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
       issuedAtomicTransaction: Buffer.from(bundle.txBytes).toString("base64"),
     });
     const persistedResult = intentSchema.safeParse(await getOwnedAtomicLaunchIntent({
-      githubId: session.github_id,
+      githubId: session.identity_id,
       creatorWallet: session.wallet_address,
       mintAddress: intent.mintAddress,
     }));

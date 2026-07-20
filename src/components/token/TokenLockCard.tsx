@@ -18,7 +18,14 @@ export default function TokenLockCard({ token }: { token: DisplayToken }) {
         Token lock record
       </div>
 
-      {hasLockRecord ? (
+      {!token.metadata.hasLock ? (
+        <div role="status" className="rounded-control border border-line-default bg-surface-deep p-4">
+          <p className="font-mono text-sm font-bold text-text-1">Launched without a token lock</p>
+          <p className="mt-2 font-sans text-sm leading-[1.6] text-text-3">
+            The launch receipt confirms that no Streamflow lock was created.
+          </p>
+        </div>
+      ) : hasLockRecord ? (
         <>
           <div className="mb-1.5 flex justify-between font-mono text-[11px] text-text-3 tabular-nums">
             <span>{token.lock.start}</span>
@@ -64,14 +71,16 @@ export default function TokenLockCard({ token }: { token: DisplayToken }) {
       )}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <a
-          href="https://app.streamflow.finance/token-lock"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-secondary"
-        >
-          Streamflow <span aria-hidden="true">&#8599;</span>
-        </a>
+        {token.metadata.hasLock && (
+          <a
+            href="https://app.streamflow.finance/token-lock"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-secondary"
+          >
+            Streamflow <span aria-hidden="true">&#8599;</span>
+          </a>
+        )}
         {token.mintAddress && (
           <a
             href={`https://solscan.io/token/${token.mintAddress}`}

@@ -16,6 +16,6 @@ export default async function LaunchTestPage() {
   if (!session?.github_id) {
     redirect("/api/auth/signin?callbackUrl=%2Flaunch-test");
   }
-  if (!isLaunchTestUser(session.github_id)) notFound();
+  if (!session.github_id || !isLaunchTestUser(session.github_id)) notFound();
   return <LaunchPageClient callbackUrl="/launch-test" />;
 }

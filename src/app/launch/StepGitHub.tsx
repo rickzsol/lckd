@@ -71,12 +71,13 @@ export default function StepGitHub({
   callbackUrl: "/launch" | "/launch-test";
 }) {
   const { data: session } = useSession();
+  const isGitHubSession = session?.identity_provider === "github";
   const isLinked = !!session?.github_username;
   const username = w.config.githubUsername ?? session?.github_username ?? null;
 
   const handleConnect = () => {
     if (isLinked) {
-      w.updateConfig("githubUsername", session.github_username);
+      w.updateConfig("githubUsername", session.github_username ?? null);
     } else {
       signIn("github", { callbackUrl });
     }
@@ -85,9 +86,24 @@ export default function StepGitHub({
   // Sync session to config when already linked
   useEffect(() => {
     if (isLinked && !w.config.githubUsername) {
-      w.updateConfig("githubUsername", session.github_username);
+      w.updateConfig("githubUsername", session.github_username ?? null);
     }
   }, [isLinked, w, session?.github_username]);
+
+  if (!isGitHubSession) {
+    return (
+      <div>
+        <h2 className="mb-5 font-mono text-[13px] font-bold text-accent">03 / Project links</h2>
+        <p className="mb-5 font-mono text-[11px] leading-relaxed text-text-3">
+          Signed in as @{session?.identity_username} on X. GitHub repository proof is optional and unavailable for this launch.
+        </p>
+        <div className="flex gap-2.5">
+          <button type="button" onClick={w.goBack} className="btn-secondary flex-1 py-3">&larr; back</button>
+          <button type="button" onClick={w.goNext} className="btn-primary flex-[2] py-3">continue &rarr;</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

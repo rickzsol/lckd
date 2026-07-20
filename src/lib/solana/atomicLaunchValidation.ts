@@ -58,6 +58,8 @@ const LAMPORTS_PER_SOL = 1_000_000_000;
 const SLIPPAGE_BPS = 1_000;
 const UNLOCK_BUFFER_SECONDS = 120;
 const MAX_CLUSTER_TIME_DRIFT_SECONDS = 60;
+const NO_LOCK_MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+const NO_LOCK_MEMO = Buffer.from("lckd:no-lock:v1", "utf8");
 
 export interface ReviewedAtomicEconomics {
   quotedTokenAmount: string;
@@ -69,22 +71,22 @@ export interface ReviewedAtomicEconomics {
 
 export async function deriveReviewedAtomicEconomics(
   connection: Connection,
-  config: { buyAmountSol: number; lockPercentage: number },
+  config: { buyAmountSol: number; hasLock: boolean; lockPercentage: number },
   wallet: PublicKey,
 ): Promise<ReviewedAtomicEconomics> {
   const buyLamports = Math.round(config.buyAmountSol * LAMPORTS_PER_SOL);
   if (!Number.isSafeInteger(buyLamports) || buyLamports < 1) {
     throw new Error("Reviewed atomic buy amount is invalid");
   }
-  if (!Number.isInteger(config.lockPercentage) || config.lockPercentage < 51 || config.lockPercentage > 99) {
+  if (config.hasLock && (!Number.isInteger(config.lockPercentage) || config.lockPercentage < 51 || config.lockPercentage > 99)) {
     throw new Error("Reviewed atomic lock percentage is invalid");
   }
   const onlineSdk = new OnlinePumpSdk(connection);
   const [global, feeConfig, clusterTimestamp, streamflowFeePercent] = await Promise.all([
     onlineSdk.fetchGlobal(),
     onlineSdk.fetchFeeConfig(),
-    getConfirmedClusterTimestamp(connection),
-    getStreamflowTotalFeePercent(connection, wallet),
+    config.hasLock ? getConfirmedClusterTimestamp(connection) : 0,
+    config.hasLock ? getStreamflowTotalFeePercent(connection, wallet) : 0,
   ]);
   const amount = new BN(buyLamports);
   const quoted = getBuyTokenAmountFromSolAmount({
@@ -97,11 +99,9 @@ export async function deriveReviewedAtomicEconomics(
   });
   const maxQuote = amount.muln(10_000 + SLIPPAGE_BPS).addn(9_999).divn(10_000);
   const quotedValue = BigInt(quoted.toString());
-  const lockAmount = calculateLockAmount(
-    quotedValue,
-    config.lockPercentage,
-    streamflowFeePercent,
-  );
+  const lockAmount = config.hasLock
+    ? calculateLockAmount(quotedValue, config.lockPercentage, streamflowFeePercent)
+    : BigInt(0);
   return {
     quotedTokenAmount: quoted.toString(),
     maxQuoteAmount: maxQuote.toString(),
@@ -144,6 +144,7 @@ export interface LookupSetupExpectation {
 }
 
 export interface AtomicTransactionExpectation {
+  hasLock?: boolean;
   wallet: PublicKey;
   mint: PublicKey;
   metadata: PublicKey;
@@ -396,8 +397,13 @@ export async function validateAtomicLaunchTransactionClient(
   const transaction = VersionedTransaction.deserialize(bytes);
   assertUnsigned(transaction);
   const message = transaction.message;
+  const hasLock = expectation.hasLock !== false;
   const signers = message.staticAccountKeys.slice(0, message.header.numRequiredSignatures);
-  const expectedSigners = [expectation.wallet, expectation.mint, expectation.metadata];
+  const expectedSigners = [
+    expectation.wallet,
+    expectation.mint,
+    expectation.metadata,
+  ];
   const isBuybackBurn = expectation.fee.feeMode === "buybackBurn";
   const expectedLookupTables = isBuybackBurn
     ? [expectation.lookupTable, expectation.protocolLookupTable!]
@@ -420,8 +426,9 @@ export async function validateAtomicLaunchTransactionClient(
   const expectedPrice = ComputeBudgetProgram.setComputeUnitPrice({
     microLamports: DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
   });
+  const feeInstructionIndex = 6;
   const feeInstruction = isBuybackBurn
-    ? instructions[6]
+    ? instructions[feeInstructionIndex]
     : buildLaunchFeeInstruction(expectation.wallet, expectation.fee);
   if (isBuybackBurn) {
     if (!feeInstruction) throw new Error("Atomic buyback-and-burn instruction is missing");
@@ -449,7 +456,7 @@ export async function validateAtomicLaunchTransactionClient(
     PUMPFUN_PROGRAM_ID,
     ASSOCIATED_TOKEN_PROGRAM_ID,
     PUMPFUN_PROGRAM_ID,
-    STREAMFLOW_V13_PROGRAM_ID,
+    hasLock ? STREAMFLOW_V13_PROGRAM_ID : NO_LOCK_MEMO_PROGRAM_ID,
     ...(feeInstruction ? [feeInstruction.programId] : []),
     ...(!isBuybackBurn ? [AddressLookupTableProgram.programId] : []),
   ];
@@ -475,18 +482,29 @@ export async function validateAtomicLaunchTransactionClient(
     expectation.mint,
     TOKEN_PROGRAM_ID,
   );
-  const lockExpectation = createStreamflowInstructionExpectation({
+  const deactivate = AddressLookupTableProgram.deactivateLookupTable({
+    lookupTable: expectation.lookupTable.key,
+    authority: expectation.wallet,
+  });
+  const lockExpectation = hasLock ? createStreamflowInstructionExpectation({
     sender: expectation.wallet,
     mint: expectation.mint,
     metadata: expectation.metadata,
     amount: new BN(expectation.lockAmount),
     unlockTimestamp: expectation.unlockTimestamp,
     name: expectation.name,
-  });
-  const deactivate = AddressLookupTableProgram.deactivateLookupTable({
-    lookupTable: expectation.lookupTable.key,
-    authority: expectation.wallet,
-  });
+  }) : null;
+  const launchMarker = lockExpectation
+    ? new TransactionInstruction({
+        programId: lockExpectation.programId,
+        data: lockExpectation.data,
+        keys: [...lockExpectation.keys],
+      })
+    : new TransactionInstruction({
+        programId: NO_LOCK_MEMO_PROGRAM_ID,
+        data: NO_LOCK_MEMO,
+        keys: [{ pubkey: expectation.metadata, isSigner: true, isWritable: false }],
+      });
   const expectedInstructions = [
     expectedLimit,
     expectedPrice,
@@ -509,11 +527,7 @@ export async function validateAtomicLaunchTransactionClient(
       buybackFeeRecipient: BUYBACK_FEE_RECIPIENT,
       tokenProgram: TOKEN_PROGRAM_ID,
     }),
-    new TransactionInstruction({
-      programId: lockExpectation.programId,
-      data: lockExpectation.data,
-      keys: [...lockExpectation.keys],
-    }),
+    launchMarker,
     ...(feeInstruction ? [feeInstruction] : []),
     ...(!isBuybackBurn ? [deactivate] : []),
   ];
@@ -551,18 +565,20 @@ export async function validateAtomicLaunchTransactionClient(
   ) {
     throw new Error("Atomic launch token account instruction changed");
   }
-  if (
+  if (lockExpectation && (
     instructions[5].keys.length !== lockExpectation.keys.length ||
     instructions[5].keys.some((account, index) =>
       !account.pubkey.equals(lockExpectation.keys[index].pubkey))
-  ) {
+  )) {
     throw new Error("Atomic launch Streamflow accounts changed");
   }
-  validateStreamflowCreateInstruction(new TransactionInstruction({
-    programId: instructions[5].programId,
-    data: instructions[5].data,
-    keys: [...lockExpectation.keys],
-  }), lockExpectation);
+  if (lockExpectation) {
+    validateStreamflowCreateInstruction(new TransactionInstruction({
+      programId: instructions[5].programId,
+      data: instructions[5].data,
+      keys: [...lockExpectation.keys],
+    }), lockExpectation);
+  }
   if (!isBuybackBurn) {
     const deactivateActual = instructions[instructions.length - 1];
     if (

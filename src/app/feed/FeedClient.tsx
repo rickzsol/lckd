@@ -184,7 +184,9 @@ export default function FeedClient({ launchMonitorUrl, officialMintAddress, toke
                     <span className="max-w-full truncate font-mono text-[10px] text-text-3">
                       {t.dev.github
                         ? `@${t.dev.github}${t.dev.accountAge ? ` · ${t.dev.accountAge}` : ""}`
-                        : "anon dev"}
+                        : t.dev.provider === "twitter" && t.dev.username
+                          ? `@${t.dev.username} on X`
+                          : "anon dev"}
                     </span>
                     <Badge tier={t.tier} label={getTrustBadgeLabel(t.tierLabel)} />
                   </div>
@@ -212,7 +214,7 @@ export default function FeedClient({ launchMonitorUrl, officialMintAddress, toke
                 <div className="flex items-center justify-between gap-3 font-mono text-[10px]">
                   <span className="font-semibold uppercase tracking-[0.12em] text-text-4">Lock receipt</span>
                   <span className="text-right font-semibold text-text-2 tabular-nums">
-                    {hasLockRecord ? displayedLockAmount : "Unavailable"}
+                    {hasLockRecord ? displayedLockAmount : t.metadata.hasLock ? "Unavailable" : "No lock"}
                   </span>
                 </div>
                 {hasLockRecord && (

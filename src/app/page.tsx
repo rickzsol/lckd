@@ -7,12 +7,12 @@ import ClosingCta from "@/components/landing/ClosingCta";
 export const metadata: Metadata = {
   title: "Solana token launch workflow",
   description:
-    "Create a Solana token with its Streamflow time lock in one atomic transaction. Review the finalized receipt independently.",
+    "Launch a Solana token with or without a Streamflow lock. Sign in with X or GitHub and review the finalized receipt.",
   alternates: { canonical: "/" },
   openGraph: {
     title: "LCKD | Solana token launch workflow",
     description:
-      "A transparent atomic create-and-lock workflow with public receipts.",
+      "Launch with an optional token lock and a public on-chain receipt.",
     url: "/",
     siteName: "LCKD",
     type: "website",

@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const walletAddress = normalizeRobinhoodWallet(request.nextUrl.searchParams.get("walletAddress"));
-    const existing = await latestRobinhoodIntent(auth.session.github_id, walletAddress);
+    const existing = await latestRobinhoodIntent(auth.session.identity_id, walletAddress);
     if (!existing) return apiResponse({ intent: null });
     return apiResponse({ intent: robinhoodIntentResponse(existing) });
   } catch (error) {
@@ -85,17 +85,17 @@ export async function POST(request: NextRequest) {
   try {
     if (parsed.data.phase === "prepared") {
       const normalized = normalizeRobinhoodIntent(parsed.data);
-      const intent = await prepareRobinhoodIntent(auth.session.github_id, normalized);
+      const intent = await prepareRobinhoodIntent(auth.session.identity_id, normalized);
       return apiResponse({ intent: robinhoodIntentResponse(intent) });
     }
     const wallet = normalizeRobinhoodWallet(parsed.data.walletAddress);
     const salt = normalizeRobinhoodSalt(parsed.data.salt);
     if (parsed.data.phase === "ambiguous") {
-      const intent = await markRobinhoodIntentAmbiguous(auth.session.github_id, wallet, salt);
+      const intent = await markRobinhoodIntentAmbiguous(auth.session.identity_id, wallet, salt);
       return apiResponse({ intent: robinhoodIntentResponse(intent) });
     }
     if (parsed.data.phase === "reconcile") {
-      const current = await getRobinhoodIntent(auth.session.github_id, wallet, salt);
+      const current = await getRobinhoodIntent(auth.session.identity_id, wallet, salt);
       if (!["submitted", "ambiguous"].includes(current.status)) {
         return apiError("Reconciliation checkpoint is out of order", 409);
       }
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     }
     const transactionHash = normalizeRobinhoodHash(parsed.data.transactionHash);
     const intent = await checkpointRobinhoodIntent(
-      auth.session.github_id,
+      auth.session.identity_id,
       wallet,
       salt,
       transactionHash,

@@ -11,7 +11,7 @@ const TIER_LABELS: Record<TrustTier, string> = {
   [TrustTier.SHIPPED]: "SHIPPED",
 };
 
-const TOKEN_COLUMNS = "id, mint_address, name, ticker, image_uri, trust_tier, creator_wallet, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, launch_verified_at, lock_verified_at, lock_unlock_at, description, twitter_url, telegram_url, website_url";
+const TOKEN_COLUMNS = "id, mint_address, name, ticker, image_uri, trust_tier, creator_wallet, has_lock, creator_provider, creator_username, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, launch_verified_at, lock_verified_at, lock_unlock_at, description, twitter_url, telegram_url, website_url";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function formatTokenAmount(raw: string): string {
@@ -83,7 +83,7 @@ export function tokenToDisplay(
 ): DisplayToken {
   const lockStartDate = new Date(t.lock_verified_at ?? t.created_at);
   const lockEndDate = new Date(t.lock_unlock_at ?? "");
-  const isUnlocked = Number.isFinite(lockEndDate.getTime()) && Date.now() >= lockEndDate.getTime();
+  const isUnlocked = !t.has_lock || (Number.isFinite(lockEndDate.getTime()) && Date.now() >= lockEndDate.getTime());
   const lockPct = calculateLockProgress(
     t.lock_verified_at ?? t.created_at,
     t.lock_unlock_at,
@@ -107,6 +107,7 @@ export function tokenToDisplay(
       buyAmountSol: t.buy_amount_sol,
       launchTx: t.launch_tx,
       lockTx: t.lock_tx,
+      hasLock: t.has_lock,
       launchVerifiedAt: t.launch_verified_at,
       lockVerifiedAt: t.lock_verified_at,
       unlockAt: t.lock_unlock_at,
@@ -116,6 +117,8 @@ export function tokenToDisplay(
     },
     dev: {
       github: t.github_username,
+      provider: t.creator_provider,
+      username: t.creator_username,
       avatar: t.github_username
         ? t.github_username.slice(0, 2).toUpperCase()
         : "??",
@@ -153,7 +156,6 @@ export async function getTokens(pinnedMintAddress?: string): Promise<DisplayToke
       .from("tokens")
       .select(TOKEN_COLUMNS)
       .not("launch_verified_at", "is", null)
-      .not("lock_verified_at", "is", null)
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -166,7 +168,6 @@ export async function getTokens(pinnedMintAddress?: string): Promise<DisplayToke
         .select(TOKEN_COLUMNS)
         .eq("mint_address", pinnedMintAddress)
         .not("launch_verified_at", "is", null)
-        .not("lock_verified_at", "is", null)
         .maybeSingle();
       if (!pinnedError && pinnedToken) {
         tokens = [pinnedToken as Token, ...tokens.slice(0, 49)];
@@ -207,7 +208,6 @@ export async function getTokenByIdOrMint(
         .select(TOKEN_COLUMNS)
         .eq(UUID_PATTERN.test(id) ? "id" : "mint_address", id)
         .not("launch_verified_at", "is", null)
-        .not("lock_verified_at", "is", null)
         .limit(1)
         .single();
 

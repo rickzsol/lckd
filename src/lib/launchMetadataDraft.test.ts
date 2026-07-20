@@ -22,6 +22,7 @@ const config: LaunchConfig = {
   ...draft,
   image: null,
   buyAmountSol: 0.1,
+  hasLock: true,
   lockDurationDays: 30,
   lockPercentage: 99,
   githubUsername: "builder",

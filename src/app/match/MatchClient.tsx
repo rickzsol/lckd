@@ -80,8 +80,10 @@ export default function MatchClient() {
               sign in with github
             </button>
           </div>
-        ) : (
+        ) : session.github_username ? (
           <MatchForm username={session.github_username} />
+        ) : (
+            <p className="font-mono text-xs text-text-3">GitHub sign-in is required for match applications.</p>
         )}
       </div>
     </div>

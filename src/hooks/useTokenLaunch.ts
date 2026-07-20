@@ -135,6 +135,17 @@ export const LAUNCH_PHASES_WITH_LOCK = [
   "Finalizing token launch and lock...",
 ] as const;
 
+export const LAUNCH_PHASES_WITHOUT_LOCK = [
+  "Uploading metadata to IPFS...",
+  "Preparing atomic launch resources...",
+  "Awaiting wallet signature (lookup setup)...",
+  "Finalizing lookup setup...",
+  "Building atomic token launch...",
+  "Awaiting wallet signature (atomic launch)...",
+  "Simulating atomic launch...",
+  "Finalizing token launch...",
+] as const;
+
 async function responseError(response: Response, fallback: string): Promise<Error> {
   const body = await response.json().catch(() => null);
   return new Error(body && typeof body.error === "string" ? body.error : fallback);
@@ -387,7 +398,8 @@ export function useTokenLaunch(config: LaunchConfig) {
     let atomicSignature = "";
     let isAtomicCheckpointed = false;
     try {
-      let requiredSol = config.buyAmountSol + CREATE_TX_SOL_OVERHEAD + LOCK_TX_SOL_OVERHEAD;
+      let requiredSol = config.buyAmountSol + CREATE_TX_SOL_OVERHEAD +
+        (config.hasLock ? LOCK_TX_SOL_OVERHEAD : 0);
       const walletSol = (await connection.getBalance(publicKey, "confirmed")) / LAMPORTS_PER_SOL;
       if (walletSol < requiredSol) {
         throw new Error(`Insufficient SOL. You have ${walletSol.toFixed(4)} SOL but need ~${requiredSol.toFixed(4)} SOL.`);
@@ -445,6 +457,7 @@ export function useTokenLaunch(config: LaunchConfig) {
           ticker: config.ticker,
           description: config.description,
           buyAmountSol: config.buyAmountSol,
+          hasLock: config.hasLock,
           lockDurationDays: config.lockDurationDays,
           lockPercentage: config.lockPercentage,
           githubUsername: config.githubUsername,
@@ -478,11 +491,15 @@ export function useTokenLaunch(config: LaunchConfig) {
       ) {
         throw new Error("Atomic setup economics changed from the reviewed configuration");
       }
-      validateReviewedUnlockTimestamp(
-        setup.unlockTimestamp,
-        setupEconomics.clusterTimestamp,
-        config.lockDurationDays,
-      );
+      if (config.hasLock) {
+        validateReviewedUnlockTimestamp(
+          setup.unlockTimestamp,
+          setupEconomics.clusterTimestamp,
+          config.lockDurationDays,
+        );
+      } else if (setup.unlockTimestamp !== 0 || setup.lockAmount !== "0") {
+        throw new Error("Unlocked launch unexpectedly contains lock terms");
+      }
       if (setup.mintPublicKey !== mintAddress ||
           setup.metadataPublicKey !== metadataKeypair.publicKey.toBase58()) {
         throw new Error("Atomic setup signer identities changed");
@@ -624,6 +641,7 @@ export function useTokenLaunch(config: LaunchConfig) {
         wallet: publicKey,
         mint: mintKeypair.publicKey,
         metadata: metadataKeypair.publicKey,
+        hasLock: config.hasLock,
         lookupTable: lookupResponse.value,
         lookupAddresses: atomic.lookupAddresses.map((address) => new PublicKey(address)),
         protocolLookupTable,
@@ -688,7 +706,7 @@ export function useTokenLaunch(config: LaunchConfig) {
       setLaunchResult({
         mintAddress,
         createTxSignature: atomicSignature,
-        lockTxSignature: atomicSignature,
+        lockTxSignature: config.hasLock ? atomicSignature : null,
         lockMetadataId: metadataKeypair.publicKey.toBase58(),
         lockAmount: atomic.lockAmount,
         unlockTimestamp: atomic.unlockTimestamp,
@@ -973,7 +991,7 @@ export function useTokenLaunch(config: LaunchConfig) {
   return {
     launchStatus,
     launchPhase,
-    launchPhases: LAUNCH_PHASES_WITH_LOCK,
+    launchPhases: config.hasLock ? LAUNCH_PHASES_WITH_LOCK : LAUNCH_PHASES_WITHOUT_LOCK,
     launchResult,
     recoveredConfig,
     errorMessage,

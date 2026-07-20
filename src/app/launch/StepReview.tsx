@@ -81,8 +81,10 @@ function ReviewForm({ w }: { w: WizardContext }) {
           },
           {
             n: "2",
-            label: "Create + Buy + Lock + Burn",
-            detail: `${w.config.buyAmountSol} SOL token buy, fixed 0.1 SOL LCKD buyback and burn, ${w.config.lockPercentage}% locked for ${w.config.lockDurationDays} days`,
+            label: w.config.hasLock ? "Create + Buy + Lock + Burn" : "Create + Buy + Burn",
+            detail: w.config.hasLock
+              ? `${w.config.buyAmountSol} SOL token buy, fixed 0.1 SOL LCKD buyback and burn, ${w.config.lockPercentage}% locked for ${w.config.lockDurationDays} days`
+              : `${w.config.buyAmountSol} SOL token buy, fixed 0.1 SOL LCKD buyback and burn, no token lock`,
           },
         ].map((item) => (
           <div
@@ -123,7 +125,7 @@ function ReviewForm({ w }: { w: WizardContext }) {
       <div className="warning-box mb-4">
         <span className="callout-title">before you sign</span>
         Two wallet approvals. The first prepares the lookup table. The second atomically creates,
-        buys, locks, buys back LCKD, and burns it. No token is created unless the full transaction
+        buys{w.config.hasLock ? ", locks" : ""}, buys back LCKD, and burns it. No token is created unless the full transaction
         executes.
       </div>
 
@@ -422,7 +424,7 @@ function SuccessView({ w }: { w: WizardContext }) {
         Token created
       </div>
       <div className="mb-2 font-mono text-xs text-text-3">
-        {w.config.name} (${w.config.ticker}) is confirmed and the time lock is verified
+        {w.config.name} (${w.config.ticker}) is confirmed{w.config.hasLock ? " and the time lock is verified" : " with no token lock"}
       </div>
 
       {/* Mint address */}

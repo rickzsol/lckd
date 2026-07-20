@@ -37,7 +37,7 @@ export async function savePreparedLaunchIntent(
   if (lookupError) throw new LaunchRecoveryError("Launch recovery is unavailable", 503);
   if (
     existing &&
-    (existing.github_id !== input.session.github_id ||
+    (existing.github_id !== input.session.identity_id ||
       existing.creator_wallet !== input.session.wallet_address)
   ) {
     throw new LaunchRecoveryError("Mint is already reserved", 409);
@@ -47,7 +47,7 @@ export async function savePreparedLaunchIntent(
   }
 
   const values = {
-    github_id: input.session.github_id,
+    github_id: input.session.identity_id,
     creator_wallet: input.session.wallet_address,
     mint_address: input.mintAddress,
     metadata_uri: input.metadataUri,
@@ -71,7 +71,7 @@ export async function completeLaunchIntent(
   const { data, error } = await getServerClient()
     .from("launch_intents")
     .update({ status: "completed", updated_at: new Date().toISOString() })
-    .eq("github_id", session.github_id)
+    .eq("github_id", session.identity_id)
     .eq("creator_wallet", session.wallet_address)
     .eq("mint_address", mintAddress)
     .select("id")

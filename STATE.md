@@ -5,6 +5,7 @@ Updated: 2026-07-20
 ## Current status
 
 - Remote `main` is `418fed0c`; PR #14 shipped Trade Readiness and Proof Missions at `034da003`, and PR #15 moved both into the post-chart research workspace at `418fed0c`. The older local `main` worktree has diverged and is not the release source.
+- X OAuth and provider-neutral wallet profiles are integrated alongside GitHub login. Solana launches support an explicit no-lock path with a signed atomic marker, finalized receipt verification, public `UNLOCKED` labeling, and the existing buyback-and-burn invariants. Production migration `20260720162158_x_auth_optional_locks.sql` is applied. Local Chrome verified X login, profile persistence, and the authenticated launch/account UI; a real token launch was not sent.
 - Public atomic Solana launches are live on [lckd.tech](https://lckd.tech). Production uses Node.js 24.x and the provisioned Supabase data plane; the core atomic-launch and shared-rate-limit paths are active.
 - The Railway launch monitor is deployed with persistent state. Its readiness endpoint reports connected, ready, and subscribed, and the official token page and feed consume its verified state.
 - Main workflow run `29757837846` passed quality, the Robinhood fork, and production deployment for `418fed0c`. Vercel deployment `dpl_FJuuqTVeSowEDyZyajb1q5MHtufR` is READY and aliased to lckd.tech.
@@ -49,6 +50,7 @@ Updated: 2026-07-20
 ## Open release gates
 
 - Add persisted allocation finality, confidence, and evidence plus the finalized reconciliation sweep before presenting any movement classification as settled fact.
+- Configure the production X OAuth environment, deploy the canonical release, and verify the production X callback plus no-lock selection. A funded locked or no-lock token launch still requires an explicit disposable-wallet canary.
 - Require CI and review on `main`, protect the Production environment, and scope deployment secrets to that environment.
 - Close the deactivated canary ALT `77G3qNXtJAYYokEqqtbyh8dhQdpVFEJedJdNStbiNi9Q` from its owner wallet `8A4i2yk8R9ivCGdtQeyo71JYyB6CjfSsMnWcYthisPwT`; Phantom is currently switched to another account. Complete the pending TEST token directory verification.
 - Submit Phantom's dApp review form with the prior successful owner-recipient ALT close if its warning remains after the signing and pre-simulation remediation is deployed.

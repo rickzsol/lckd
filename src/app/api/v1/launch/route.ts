@@ -40,6 +40,7 @@ const launchSchema = z.object({
   ticker: z.string().trim().min(1).max(13),
   description: z.string().max(1000).default(""),
   buyAmountSol: z.number().finite().min(0.01).max(100),
+  hasLock: z.boolean().default(true),
   lockDurationDays: z.number().int().min(7).max(365),
   lockPercentage: z.number().int().min(51).max(99),
   githubUsername: z.string().max(39).nullable().optional(),
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
     const mintPublicKey = new PublicKey(body.mintPublicKey);
     const metadataPublicKey = new PublicKey(body.metadataPublicKey);
     const existing = await getOwnedAtomicLaunchIntent({
-      githubId: session.github_id,
+      githubId: session.identity_id,
       creatorWallet: session.wallet_address,
       mintAddress: body.mintPublicKey,
     });
@@ -143,9 +144,10 @@ export async function POST(request: NextRequest) {
       ticker: body.ticker,
       description: body.description,
       buyAmountSol: body.buyAmountSol,
+      hasLock: body.hasLock,
       lockDurationDays: body.lockDurationDays,
       lockPercentage: body.lockPercentage,
-      githubUsername: session.github_username,
+      githubUsername: session.identity_provider === "github" ? session.github_username ?? null : null,
       githubRepo: body.githubRepo ?? null,
       liveUrl: body.liveUrl ?? null,
       twitterUrl: body.twitterUrl ?? null,
@@ -160,7 +162,7 @@ export async function POST(request: NextRequest) {
       ? await restorePersistedSetup(identity, existing)
       : await buildAtomicLookupPreparation(identity);
     const intent = await prepareAtomicLaunchIntent({
-      githubId: session.github_id,
+      githubId: session.identity_id,
       creatorWallet: session.wallet_address,
       mintAddress: body.mintPublicKey,
       metadataAddress: body.metadataPublicKey,
@@ -189,9 +191,8 @@ export async function POST(request: NextRequest) {
       plannedStreamflowFeePercent: setup.streamflowFeePercent,
       expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
     });
-
     const persisted = await getOwnedAtomicLaunchIntent({
-      githubId: session.github_id,
+      githubId: session.identity_id,
       creatorWallet: session.wallet_address,
       mintAddress: body.mintPublicKey,
     });

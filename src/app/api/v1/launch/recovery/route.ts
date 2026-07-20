@@ -81,7 +81,7 @@ const checkpointSchema = z.discriminatedUnion("phase", [
     atomicTxSignature: signature,
     lockMetadataId: address,
     lockAmount: z.string().regex(/^\d+$/),
-    unlockTimestamp: z.number().int().positive().safe(),
+    unlockTimestamp: z.number().int().nonnegative().safe(),
     atomicBlockhash: z.string().min(32).max(64),
     atomicLastValidBlockHeight: blockHeight,
     transaction: signedTransaction,
@@ -181,7 +181,7 @@ async function getOwnedIntent(
   mintAddress: string | null,
 ): Promise<AtomicIntent | null> {
   return getOwnedAtomicLaunchIntent({
-    githubId: session.github_id,
+    githubId: session.identity_id,
     creatorWallet: session.wallet_address,
     mintAddress,
   });
@@ -331,7 +331,7 @@ async function reconcileUncheckpointedSetup(
   if (discovery.state === "absent") return null;
   const setupSignature = discovery.signature;
   const submitted = await checkpointAtomicAltSetupSubmitted({
-    githubId: session.github_id,
+    githubId: session.identity_id,
     creatorWallet: session.wallet_address,
     mintAddress: intent.mintAddress,
     expectedStateVersion: intent.stateVersion,
@@ -345,7 +345,7 @@ async function reconcileUncheckpointedSetup(
   if (!checkpointed) throw new AtomicLaunchRecoveryError("ALT setup recovery state disappeared", 409);
   await verifyFinalizedAltSetup(checkpointed);
   return checkpointAtomicAltReady({
-    githubId: session.github_id,
+    githubId: session.identity_id,
     creatorWallet: session.wallet_address,
     mintAddress: intent.mintAddress,
     expectedStateVersion: submitted.stateVersion,
@@ -375,7 +375,7 @@ async function reconcileUncheckpointedAtomic(
   if (discovery.state === "absent") return null;
   const atomicSignature = discovery.signature;
   return checkpointAtomicTransactionSubmitted({
-    githubId: session.github_id,
+    githubId: session.identity_id,
     creatorWallet: session.wallet_address,
     mintAddress: intent.mintAddress,
     expectedStateVersion: intent.stateVersion,
@@ -882,7 +882,7 @@ async function requestCleanupWithReceiptGuards(
     const reconciled = await reconcileUncheckpointedSetup(session, intent, finalizedBlockHeight);
     if (reconciled) {
       return requestAtomicCleanup({
-        githubId: session.github_id,
+        githubId: session.identity_id,
         creatorWallet: session.wallet_address,
         mintAddress: intent.mintAddress,
         expectedStateVersion: reconciled.stateVersion,
@@ -910,14 +910,14 @@ async function requestCleanupWithReceiptGuards(
     if (setupState === "finalized") {
       await verifyFinalizedAltSetup(intent);
       const ready = await checkpointAtomicAltReady({
-        githubId: session.github_id,
+        githubId: session.identity_id,
         creatorWallet: session.wallet_address,
         mintAddress: intent.mintAddress,
         expectedStateVersion: intent.stateVersion,
         setupSignature: intent.setupTx,
       });
       return requestAtomicCleanup({
-        githubId: session.github_id,
+        githubId: session.identity_id,
         creatorWallet: session.wallet_address,
         mintAddress: intent.mintAddress,
         expectedStateVersion: ready.stateVersion,
@@ -959,7 +959,7 @@ async function requestCleanupWithReceiptGuards(
     }
   }
   return requestAtomicCleanup({
-    githubId: session.github_id,
+    githubId: session.identity_id,
     creatorWallet: session.wallet_address,
     mintAddress: intent.mintAddress,
     expectedStateVersion: intent.stateVersion,
@@ -1030,7 +1030,7 @@ export async function POST(request: NextRequest) {
         if (await priorSignatureState(body.previousSignature, intent.setupBlockhash) === "finalized") {
           await verifyFinalizedAltSetup(intent);
           const ready = await checkpointAtomicAltReady({
-            githubId: session.github_id,
+            githubId: session.identity_id,
             creatorWallet: session.wallet_address,
             mintAddress: body.mintAddress,
             expectedStateVersion: body.expectedStateVersion,
@@ -1048,7 +1048,7 @@ export async function POST(request: NextRequest) {
         body.setupLastValidBlockHeight,
       );
       const result = await checkpointAtomicAltSetupSubmitted({
-        githubId: session.github_id,
+        githubId: session.identity_id,
         creatorWallet: session.wallet_address,
         mintAddress: body.mintAddress,
         expectedStateVersion: body.expectedStateVersion,
@@ -1064,7 +1064,7 @@ export async function POST(request: NextRequest) {
     if (body.phase === "alt_ready") {
       await verifyFinalizedAltSetup(intent);
       const result = await checkpointAtomicAltReady({
-        githubId: session.github_id,
+        githubId: session.identity_id,
         creatorWallet: session.wallet_address,
         mintAddress: body.mintAddress,
         expectedStateVersion: body.expectedStateVersion,
@@ -1118,7 +1118,7 @@ export async function POST(request: NextRequest) {
         body.cleanupLastValidBlockHeight,
       );
       const result = await checkpointAtomicAltDeactivating({
-        githubId: session.github_id,
+        githubId: session.identity_id,
         creatorWallet: session.wallet_address,
         mintAddress: body.mintAddress,
         expectedStateVersion: body.expectedStateVersion,
@@ -1151,7 +1151,7 @@ export async function POST(request: NextRequest) {
             return apiError("ALT account still exists after finalized close", 422);
           }
           const closed = await checkpointAtomicAltClosed({
-            githubId: session.github_id,
+            githubId: session.identity_id,
             creatorWallet: session.wallet_address,
             mintAddress: body.mintAddress,
             expectedStateVersion: intent.stateVersion,
@@ -1184,7 +1184,7 @@ export async function POST(request: NextRequest) {
         body.cleanupLastValidBlockHeight,
       );
       const result = await checkpointAtomicAltCloseSubmitted({
-        githubId: session.github_id,
+        githubId: session.identity_id,
         creatorWallet: session.wallet_address,
         mintAddress: body.mintAddress,
         expectedStateVersion: body.expectedStateVersion,
@@ -1215,7 +1215,7 @@ export async function POST(request: NextRequest) {
         return apiError("ALT account still exists after close", 409);
       }
       const result = await checkpointAtomicAltClosed({
-        githubId: session.github_id,
+        githubId: session.identity_id,
         creatorWallet: session.wallet_address,
         mintAddress: body.mintAddress,
         expectedStateVersion: body.expectedStateVersion,
@@ -1251,7 +1251,7 @@ export async function POST(request: NextRequest) {
       body.atomicLastValidBlockHeight,
     );
     const result = await checkpointAtomicTransactionSubmitted({
-      githubId: session.github_id,
+      githubId: session.identity_id,
       creatorWallet: session.wallet_address,
       mintAddress: body.mintAddress,
       expectedStateVersion: body.expectedStateVersion,

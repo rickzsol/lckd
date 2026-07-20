@@ -81,6 +81,12 @@
 
 ## Feature integration
 
+- [x] Stage X OAuth, provider-neutral wallet linking, optional Streamflow locks, exact no-lock transaction validation, and public unlocked receipts.
+- [x] Pass lint, typecheck, 204 tests, and the production build for the X auth and optional-lock change on current `origin/main`.
+- [x] Review and apply `20260720162158_x_auth_optional_locks.sql` to production, then verify the migration and anonymous read boundaries.
+- [x] Configure the X OAuth app, production and local callbacks, and ignored local credentials.
+- [x] Verify X login, profile persistence, and the authenticated launch/account UI in Chrome against the local artifact.
+- [ ] Verify one locked and one no-lock production launch with a disposable wallet after explicit spend approval.
 - [ ] Squash-integrate `feature/holder-intel` from current `main`, review its timeout/provenance behavior, and open a focused PR.
 - [ ] Squash-integrate `feature/trust-api` from current `main` and resolve its documented concurrency finding before opening a PR.
 - [ ] Squash-integrate `feature/sas-attestations` from current `main` and resolve its documented concurrency finding before opening a PR.

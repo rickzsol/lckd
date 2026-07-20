@@ -6,8 +6,11 @@ import { getServerClient } from "@/lib/supabase";
 import { apiError } from "./helpers";
 
 export interface AuthSession {
-  github_id: string;
-  github_username: string;
+  identity_id: string;
+  identity_provider: "github" | "twitter";
+  identity_username: string;
+  github_id?: string;
+  github_username?: string;
 }
 
 export interface LinkedWalletSession extends AuthSession {
@@ -22,12 +25,18 @@ export async function requireAuth(): Promise<
 > {
   const raw = await getServerSession(authOptions);
 
-  if (!raw?.github_id || !raw?.github_username) {
+  if (!raw?.identity_id || !raw.identity_provider || !raw.identity_username) {
     return { session: null, error: apiError("Unauthorized", 401) };
   }
 
   return {
-    session: { github_id: raw.github_id, github_username: raw.github_username },
+    session: {
+      identity_id: raw.identity_id,
+      identity_provider: raw.identity_provider,
+      identity_username: raw.identity_username,
+      github_id: raw.github_id,
+      github_username: raw.github_username,
+    },
     error: null,
   };
 }
@@ -42,9 +51,9 @@ export async function requireLinkedWallet(): Promise<
 
   try {
     const { data, error } = await getServerClient()
-      .from("github_profiles")
-      .select("github_username, wallet_address")
-      .eq("github_id", auth.session.github_id)
+      .from("auth_profiles")
+      .select("username, wallet_address")
+      .eq("identity_id", auth.session.identity_id)
       .maybeSingle();
 
     if (error) {
@@ -58,7 +67,7 @@ export async function requireLinkedWallet(): Promise<
     return {
       session: {
         ...auth.session,
-        github_username: data.github_username,
+        identity_username: data.username,
         wallet_address: data.wallet_address,
       },
       error: null,

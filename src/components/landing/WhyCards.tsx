@@ -55,18 +55,18 @@ interface Card {
 const CARDS: Card[] = [
   {
     icon: LockIcon,
-    title: "Atomic token locks",
-    body: "Creation, the initial buy, and the Streamflow lock settle in one transaction. If the lock fails, no token is created.",
+    title: "Locks are optional",
+    body: "Add a Streamflow lock when it fits your launch, or keep the purchased tokens in your wallet.",
   },
   {
     icon: GithubIcon,
-    title: "GitHub-linked builders",
-    body: "A GitHub session and signed wallet link connect each public profile to its launch receipts.",
+    title: "Sign in your way",
+    body: "Use X or GitHub, then link the wallet that will approve and own the launch.",
   },
   {
     icon: BoltIcon,
     title: "Receipts, not promises",
-    body: "Inspect the amount, unlock time, wallet, and finalized signature directly on-chain.",
+    body: "Inspect the wallet, finalized signature, and any lock terms directly on-chain.",
   },
 ];
 

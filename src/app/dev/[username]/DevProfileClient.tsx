@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useSession } from "next-auth/react";
-import { useWallet } from "@solana/wallet-adapter-react";
 import Image from "next/image";
 import Link from "next/link";
 import Badge, { getTrustBadgeLabel, getTrustTierBadgeLabel } from "@/components/ui/Badge";
@@ -12,6 +11,7 @@ import { getAccountAge } from "@/lib/accountAge";
 import { TrustTier } from "@/types/index";
 import type { GitHubProfile, ContributionDay } from "@/types/index";
 import type { DisplayToken } from "@/types/display";
+import WalletLinkCard from "@/components/profile/WalletLinkCard";
 
 type Tab = "launches" | "github" | "settings";
 
@@ -212,7 +212,7 @@ function LaunchesTab({ tokens }: { tokens: DisplayToken[] }) {
                   Lock receipt
                 </span>
                 <span className="text-right font-semibold text-text-2 tabular-nums">
-                  {hasLockRecord ? `${t.lock.amount} · ${t.lock.duration}` : "Unavailable"}
+                  {hasLockRecord ? `${t.lock.amount} · ${t.lock.duration}` : t.metadata.hasLock ? "Unavailable" : "No lock"}
                 </span>
               </div>
               {hasLockRecord && (
@@ -327,93 +327,7 @@ function ContributionGraph({
 function SettingsTab({ profile }: { profile: GitHubProfile }) {
   return (
     <div className="flex flex-col gap-6">
-      <WalletLinkSection profile={profile} />
-    </div>
-  );
-}
-
-function WalletLinkSection({ profile }: { profile: GitHubProfile }) {
-  const { publicKey, signMessage, connected } = useWallet();
-  const [isLinking, setIsLinking] = useState(false);
-  const [linkError, setLinkError] = useState<string | null>(null);
-  const [linkSuccess, setLinkSuccess] = useState(false);
-  const [linkedAddress, setLinkedAddress] = useState(profile.wallet_address);
-
-  const handleLinkWallet = useCallback(async () => {
-    if (!publicKey || !signMessage) return;
-
-    setIsLinking(true);
-    setLinkError(null);
-
-    try {
-      const ts = Date.now();
-      const message = `Link wallet to lckd.tech\nUsername: ${profile.github_username}\nTimestamp: ${ts}`;
-      const msgBytes = new TextEncoder().encode(message);
-      const sigBytes = await signMessage(msgBytes);
-      const signature = btoa(String.fromCharCode(...sigBytes));
-
-      const res = await fetch("/api/profile/link-wallet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          walletAddress: publicKey.toBase58(),
-          signature,
-          message,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to link wallet");
-      }
-
-      setLinkSuccess(true);
-      setLinkedAddress(publicKey.toBase58());
-    } catch (err) {
-      setLinkError(err instanceof Error ? err.message : "Failed to link wallet");
-    } finally {
-      setIsLinking(false);
-    }
-  }, [publicKey, signMessage, profile.github_username]);
-
-  return (
-    <div className="rounded-card border border-line-default bg-surface p-4">
-      <h3 className="mb-1 font-sans text-sm font-bold text-text-1">
-        Wallet
-      </h3>
-      <p className="mb-3 font-mono text-[10px] text-text-3">
-        Link your Solana wallet to verify ownership before launching.
-      </p>
-
-      {linkedAddress ? (
-        <div className="flex items-center gap-2">
-          <span className="rounded-md bg-accent-dim px-2 py-1 font-mono text-[11px] tabular-nums text-accent">
-            {truncateAddress(linkedAddress)}
-          </span>
-          {linkSuccess && (
-            <span className="font-mono text-[10px] text-accent">
-              Linked!
-            </span>
-          )}
-        </div>
-      ) : connected && publicKey ? (
-        <button
-          type="button"
-          onClick={handleLinkWallet}
-          disabled={isLinking}
-          className="btn-primary px-4 py-2 text-[11px]"
-        >
-          {isLinking ? "Signing..." : "Link Wallet"}
-        </button>
-      ) : (
-        <p className="font-mono text-[11px] text-text-3">
-          Connect your wallet first using the button in the navbar.
-        </p>
-      )}
-
-      {linkError && (
-        <p role="alert" className="mt-2 font-mono text-[10px] text-danger">{linkError}</p>
-      )}
+      <WalletLinkCard provider="github" username={profile.github_username} initialWalletAddress={profile.wallet_address} />
     </div>
   );
 }

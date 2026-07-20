@@ -20,11 +20,14 @@ export default function RobinhoodLaunchPage() {
   const [walletError, setWalletError] = useState<string>();
   const launch = usePonsLaunch(address);
 
-  if (status === "loading") return <SessionState title="Checking your session" detail="Loading GitHub authentication..." />;
+  if (status === "loading") return <SessionState title="Checking your session" detail="Loading account authentication..." />;
   if (status !== "authenticated") {
     return (
-      <SessionState title="Authenticate the launch session" detail="GitHub identifies the builder profile. Your EVM wallet connects separately and remains the only transaction signer.">
-        <button type="button" onClick={() => signIn("github", { callbackUrl: "/launch/robinhood" })} className="btn-primary mt-6 px-6">sign in with github</button>
+      <SessionState title="Authenticate the launch session" detail="X or GitHub identifies the builder account. Your EVM wallet connects separately and remains the only transaction signer.">
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button type="button" onClick={() => signIn("twitter", { callbackUrl: "/launch/robinhood" })} className="btn-primary px-6">sign in with X</button>
+          <button type="button" onClick={() => signIn("github", { callbackUrl: "/launch/robinhood" })} className="btn-secondary px-6">sign in with GitHub</button>
+        </div>
       </SessionState>
     );
   }
@@ -82,7 +85,7 @@ export default function RobinhoodLaunchPage() {
           </div>
           <div className="grid min-w-[230px] grid-cols-2 gap-px overflow-hidden rounded-card border border-line-default bg-line-default font-mono text-[10px]">
             <HeaderStat icon={<Network />} label="Chain ID" value={String(ROBINHOOD_CHAIN_ID)} />
-            <HeaderStat icon={<ShieldCheck />} label="Session" value={`@${session.github_username ?? "github"}`} />
+            <HeaderStat icon={<ShieldCheck />} label="Session" value={`@${session.identity_username}`} />
           </div>
         </header>
 

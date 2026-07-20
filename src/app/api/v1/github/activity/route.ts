@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Only allow fetching activity for the authenticated user's own repos
-  if (owner.toLowerCase() !== session.github_username.toLowerCase()) {
+  if (!session.github_username || owner.toLowerCase() !== session.github_username.toLowerCase()) {
     return apiError("Can only fetch activity for your own repositories", 403);
   }
 

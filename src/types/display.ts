@@ -2,6 +2,8 @@ import type { TrustTier } from "./index";
 
 export interface DisplayDev {
   github: string | null;
+  provider: "github" | "twitter" | null;
+  username: string | null;
   avatar: string;
   accountAge: string | null;
   repos?: number;
@@ -41,6 +43,7 @@ export interface DisplayTokenMetadata {
   buyAmountSol: number;
   launchTx: string;
   lockTx: string;
+  hasLock: boolean;
   launchVerifiedAt: string | null;
   lockVerifiedAt: string | null;
   unlockAt: string | null;

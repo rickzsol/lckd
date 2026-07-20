@@ -22,8 +22,8 @@ export default function ClosingCta({ showMascot = true }: ClosingCtaProps) {
           Ready to <span className="text-accent">ship</span>?
         </h2>
         <p className="mx-auto mb-8 max-w-[460px] font-sans text-[15px] font-normal leading-[1.7] text-text-3">
-          Create, buy, and lock in one atomic transaction. Verify the finalized
-          receipt.
+          Launch with or without a token lock. Your wallet still signs the final
+          transaction.
         </p>
         <div className="mb-11 flex flex-wrap justify-center gap-3">
           <Link

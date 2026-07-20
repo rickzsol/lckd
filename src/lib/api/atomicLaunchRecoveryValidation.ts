@@ -77,9 +77,10 @@ export const atomicLaunchConfigSchema = z.object({
   ticker: z.string().trim().min(1).max(13),
   description: z.string().max(1000),
   buyAmountSol: z.number().finite().min(0.01).max(100),
+  hasLock: z.boolean().default(true),
   lockDurationDays: z.number().int().min(7).max(365),
   lockPercentage: z.number().int().min(51).max(99),
-  githubUsername: z.string().min(1).max(39),
+  githubUsername: z.string().min(1).max(39).nullable(),
   githubRepo: z.string().max(200).nullable(),
   liveUrl: nullableHttpsUrl,
   twitterUrl: nullableHttpsUrl,
@@ -114,7 +115,7 @@ export const prepareAtomicLaunchSchema = z.object({
   quotedTokenAmount: z.string().regex(/^\d+$/),
   maxQuoteAmount: z.string().regex(/^\d+$/),
   plannedLockAmount: z.string().regex(/^\d+$/),
-  plannedUnlockTimestamp: positiveSafeInteger,
+  plannedUnlockTimestamp: z.number().int().nonnegative().safe(),
   plannedStreamflowFeePercent: z.number().finite().min(0).lt(100),
   setupMessageHash: z.string().regex(/^[0-9a-f]{64}$/),
   setupBlockhash: blockhash,
@@ -138,7 +139,7 @@ export const issueAtomicTransactionSchema = ownedIntentSchema.extend({
   blockhash,
   lastValidBlockHeight: blockHeight,
   lockAmount: z.string().regex(/^\d+$/),
-  unlockTimestamp: z.number().int().positive().safe(),
+  unlockTimestamp: z.number().int().nonnegative().safe(),
   issuedAtomicTransaction: serializedTransaction,
 }).strict();
 
@@ -158,7 +159,7 @@ export const altReadyCheckpointSchema = ownedIntentSchema.extend({
 export const atomicTransactionCheckpointSchema = transactionCheckpointSchema.extend({
   lockMetadataId: address,
   lockAmount: z.string().regex(/^\d+$/),
-  unlockTimestamp: z.number().int().positive().safe(),
+  unlockTimestamp: z.number().int().nonnegative().safe(),
 }).strict();
 
 export const cleanupRequestSchema = ownedIntentSchema.extend({
@@ -198,7 +199,7 @@ export const verifiedAtomicLaunchSchema = ownedIntentSchema.extend({
   lockDebitedAmount: z.string().regex(/^\d+$/),
   purchasedAmount: z.string().regex(/^\d+$/),
   buyAmountSol: z.number().finite().positive().max(100),
-  githubUsername: z.string().min(1).max(39),
+  githubUsername: z.string().min(1).max(39).nullable(),
   githubRepo: z.string().max(200).nullable(),
   liveUrl: nullableHttpsUrl,
   twitterUrl: nullableHttpsUrl,

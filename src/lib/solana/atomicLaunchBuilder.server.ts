@@ -88,11 +88,14 @@ import {
 
 const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 const ATOMIC_COMPUTE_UNIT_LIMIT = 400_000;
+const NO_LOCK_MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+const NO_LOCK_MEMO = Buffer.from("lckd:no-lock:v1", "utf8");
 export const LOCK_SUBMISSION_BUFFER_SECONDS = 120;
 const CONFIG_KEYS = [
   "name",
   "ticker",
   "buyAmountSol",
+  "hasLock",
   "lockDurationDays",
   "lockPercentage",
   "feeMode",
@@ -105,6 +108,7 @@ export interface FrozenAtomicLaunchConfig extends LaunchFeeTerms {
   readonly name: string;
   readonly ticker: string;
   readonly buyAmountSol: number;
+  readonly hasLock: boolean;
   readonly lockDurationDays: number;
   readonly lockPercentage: number;
 }
@@ -215,13 +219,14 @@ async function getConnection(): Promise<Connection> {
 
 export function freezeAtomicLaunchConfig(
   config: Pick<LaunchConfig, "name" | "ticker" | "buyAmountSol" | "lockDurationDays" | "lockPercentage"> &
-    Partial<LaunchFeeTerms>,
+    Partial<Pick<LaunchConfig, "hasLock"> & LaunchFeeTerms>,
 ): FrozenAtomicLaunchConfig {
   const feeTerms = launchFeeTermsFromConfig(config as Record<string, unknown>);
   const frozen = Object.freeze({
     name: config.name,
     ticker: config.ticker,
     buyAmountSol: config.buyAmountSol,
+    hasLock: config.hasLock !== false,
     lockDurationDays: config.lockDurationDays,
     lockPercentage: config.lockPercentage,
     feeMode: feeTerms.feeMode,
@@ -257,10 +262,13 @@ export function assertFrozenAtomicLaunchConfig(
   if (!Number.isFinite(config.buyAmountSol) || config.buyAmountSol < 0.01 || config.buyAmountSol > 100) {
     throw new Error("Atomic launch buy amount is invalid");
   }
-  if (!Number.isInteger(config.lockDurationDays) || config.lockDurationDays < 7 || config.lockDurationDays > 365) {
+  if (typeof config.hasLock !== "boolean") {
+    throw new Error("Atomic launch lock selection is invalid");
+  }
+  if (config.hasLock && (!Number.isInteger(config.lockDurationDays) || config.lockDurationDays < 7 || config.lockDurationDays > 365)) {
     throw new Error("Atomic launch lock duration is invalid");
   }
-  if (!Number.isInteger(config.lockPercentage) || config.lockPercentage < 51 || config.lockPercentage > 99) {
+  if (config.hasLock && (!Number.isInteger(config.lockPercentage) || config.lockPercentage < 51 || config.lockPercentage > 99)) {
     throw new Error("Atomic launch lock percentage is invalid");
   }
   assertLaunchFeeTerms(config);
@@ -398,21 +406,23 @@ export async function buildAtomicLaunchInstructions(
   if (!BN.isBN(quote.maxQuoteAmount) || quote.maxQuoteAmount.lten(0)) {
     throw new Error("Atomic launch spend limit is invalid");
   }
-  if (!Number.isSafeInteger(quote.unlockTimestamp) || quote.unlockTimestamp < 1) {
+  if (!Number.isSafeInteger(quote.unlockTimestamp) || (identity.config.hasLock ? quote.unlockTimestamp < 1 : quote.unlockTimestamp !== 0)) {
     throw new Error("Atomic launch unlock timestamp is invalid");
   }
-  const lockAmount = calculateLockAmount(
-    BigInt(quote.quotedTokenAmount.toString()),
-    identity.config.lockPercentage,
-    quote.streamflowFeePercent,
-  );
+  const lockAmount = identity.config.hasLock
+    ? calculateLockAmount(
+        BigInt(quote.quotedTokenAmount.toString()),
+        identity.config.lockPercentage,
+        quote.streamflowFeePercent,
+      )
+    : new BN(0);
   const associatedUser = getAssociatedTokenAddressSync(
     identity.mintPublicKey,
     identity.walletPublicKey,
     false,
     TOKEN_PROGRAM_ID,
   );
-  const instructions = [
+  const instructions: TransactionInstruction[] = [
     ComputeBudgetProgram.setComputeUnitLimit({ units: ATOMIC_COMPUTE_UNIT_LIMIT }),
     ComputeBudgetProgram.setComputeUnitPrice({
       microLamports: DEFAULT_PRIORITY_FEE_MICROLAMPORTS,
@@ -442,15 +452,23 @@ export async function buildAtomicLaunchInstructions(
       buybackFeeRecipient: PUMP_BUYBACK_FEE_RECIPIENT,
       tokenProgram: TOKEN_PROGRAM_ID,
     }),
-    await buildStreamflowCreateInstruction({
+  ];
+  if (identity.config.hasLock) {
+    instructions.push(await buildStreamflowCreateInstruction({
       sender: identity.walletPublicKey,
       mint: identity.mintPublicKey,
       metadata: identity.metadataPublicKey,
       amount: lockAmount,
       unlockTimestamp: quote.unlockTimestamp,
       name: identity.config.name,
-    }),
-  ];
+    }));
+  } else {
+    instructions.push(new TransactionInstruction({
+      programId: NO_LOCK_MEMO_PROGRAM_ID,
+      keys: [{ pubkey: identity.metadataPublicKey, isSigner: true, isWritable: false }],
+      data: NO_LOCK_MEMO,
+    }));
+  }
   const feeInstruction = identity.config.feeMode === "buybackBurn"
     ? buildFrozenBuybackBurnInstruction(identity.walletPublicKey, identity.config)
     : buildLaunchFeeInstruction(identity.walletPublicKey, identity.config);
@@ -474,8 +492,8 @@ async function buildQuotedPlan(
   const [global, feeConfig, streamflowFeePercent, clusterTimestamp] = await Promise.all([
     onlineSdk.fetchGlobal(),
     onlineSdk.fetchFeeConfig(),
-    getStreamflowTotalFeePercent(connection, identity.walletPublicKey),
-    getConfirmedClusterTimestamp(connection),
+    identity.config.hasLock ? getStreamflowTotalFeePercent(connection, identity.walletPublicKey) : 0,
+    identity.config.hasLock ? getConfirmedClusterTimestamp(connection) : 0,
   ]);
   const buyAmount = new BN(solToLamports(identity.config.buyAmountSol));
   const quotedTokenAmount = getBuyTokenAmountFromSolAmount({
@@ -494,10 +512,9 @@ async function buildQuotedPlan(
     quotedTokenAmount,
     maxQuoteAmount,
     streamflowFeePercent,
-    unlockTimestamp: calculateAtomicUnlockTimestamp(
-      clusterTimestamp,
-      identity.config.lockDurationDays,
-    ),
+    unlockTimestamp: identity.config.hasLock
+      ? calculateAtomicUnlockTimestamp(clusterTimestamp, identity.config.lockDurationDays)
+      : 0,
   });
 }
 
@@ -571,7 +588,8 @@ export async function buildAtomicLaunchInstructionsFromSnapshot(
     !/^\d+$/.test(snapshot.quotedTokenAmount) ||
     !/^\d+$/.test(snapshot.maxQuoteAmount) ||
     !/^\d+$/.test(snapshot.lockAmount) ||
-    !Number.isSafeInteger(snapshot.unlockTimestamp) || snapshot.unlockTimestamp < 1 ||
+    !Number.isSafeInteger(snapshot.unlockTimestamp) ||
+    (identity.config.hasLock ? snapshot.unlockTimestamp < 1 : snapshot.unlockTimestamp !== 0) ||
     !Number.isFinite(snapshot.streamflowFeePercent) ||
     snapshot.streamflowFeePercent < 0 || snapshot.streamflowFeePercent >= 100
   ) {
@@ -792,19 +810,28 @@ export function validateAtomicLaunchTransaction(
   ) {
     throw new Error("Atomic launch buy quote mismatch");
   }
-  const streamflowExpectation = createStreamflowInstructionExpectation({
-    sender: expectation.walletPublicKey,
-    mint: expectation.mintPublicKey,
-    metadata: expectation.metadataPublicKey,
-    amount: expectation.lockAmount,
-    unlockTimestamp: expectation.unlockTimestamp,
-    name: expectation.config.name,
-  });
-  validateStreamflowCreateInstruction(new TransactionInstruction({
-    programId: actual[5].programId,
-    data: actual[5].data,
-    keys: [...streamflowExpectation.keys],
-  }), streamflowExpectation);
+  if (expectation.config.hasLock) {
+    const streamflowExpectation = createStreamflowInstructionExpectation({
+      sender: expectation.walletPublicKey,
+      mint: expectation.mintPublicKey,
+      metadata: expectation.metadataPublicKey,
+      amount: expectation.lockAmount,
+      unlockTimestamp: expectation.unlockTimestamp,
+      name: expectation.config.name,
+    });
+    validateStreamflowCreateInstruction(new TransactionInstruction({
+      programId: actual[5].programId,
+      data: actual[5].data,
+      keys: [...streamflowExpectation.keys],
+    }), streamflowExpectation);
+  } else if (
+    !actual[5].programId.equals(NO_LOCK_MEMO_PROGRAM_ID) ||
+    !actual[5].data.equals(NO_LOCK_MEMO) ||
+    actual[5].keys.length !== 1 ||
+    !actual[5].keys[0].pubkey.equals(expectation.metadataPublicKey)
+  ) {
+    throw new Error("Atomic no-lock marker changed");
+  }
   return transaction;
 }
 

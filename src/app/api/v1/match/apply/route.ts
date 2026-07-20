@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
   if (body.repo) {
     const [owner] = body.repo.split("/");
-    if (owner.toLowerCase() !== session.github_username.toLowerCase()) {
+    if (!session.github_id || !session.github_username || owner.toLowerCase() !== session.github_username.toLowerCase()) {
       return apiError("Repository owner must match your GitHub account", 403);
     }
   }

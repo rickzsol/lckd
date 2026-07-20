@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Only allow fetching repos for the authenticated user
-  if (username.toLowerCase() !== session.github_username.toLowerCase()) {
+  if (!session.github_username || username.toLowerCase() !== session.github_username.toLowerCase()) {
     return apiError("Can only fetch repos for your own account", 403);
   }
 

@@ -41,15 +41,14 @@ export default function Hero() {
       >
         Builders who ship.
         <br />
-        <span className="text-accent">Tokens that lock.</span>
+        <span className="text-accent">Your token. Your call.</span>
       </h1>
 
       <p
         className="m-0 mb-9 max-w-[460px] font-mono text-[clamp(12px,3.2vw,15px)] font-medium leading-[1.8] text-text-3"
         style={{ animation: RISE, animationDelay: "160ms" }}
       >
-        Create, buy, and lock in one atomic transaction. Built on pump.fun +
-        Streamflow.
+        Launch with or without a token lock. Sign in with X or GitHub.
       </p>
 
       <div

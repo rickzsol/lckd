@@ -125,6 +125,65 @@ test("builds a packet-sized atomic launch with three static signers and one exac
   assert.equal(setup.transaction.length, 1_224);
 });
 
+test("builds a signed no-lock marker and keeps the purchased tokens out of Streamflow", async () => {
+  const wallet = seededKeypair(1).publicKey;
+  const mint = seededKeypair(2).publicKey;
+  const metadata = seededKeypair(3).publicKey;
+  const config = freezeAtomicLaunchConfig({
+    name: "Unlocked",
+    ticker: "OPEN",
+    buyAmountSol: 0.1,
+    hasLock: false,
+    lockDurationDays: 30,
+    lockPercentage: 99,
+  });
+  const identity = {
+    config,
+    walletPublicKey: wallet,
+    mintPublicKey: mint,
+    metadataPublicKey: metadata,
+    metadataUri: "https://example.com/metadata.json",
+  };
+  const plan = await buildAtomicLaunchInstructions(identity, {
+    quotedTokenAmount: new BN("250000000000000"),
+    maxQuoteAmount: new BN("110000000"),
+    streamflowFeePercent: 0,
+    unlockTimestamp: 0,
+  });
+  const lookupAddresses = canonicalLookupAddresses(plan.instructions, [wallet, mint, metadata]);
+  const lookupTable = lookup(seededKeypair(4).publicKey, wallet, lookupAddresses);
+  const instructions = [
+    ...plan.instructions,
+    AddressLookupTableProgram.deactivateLookupTable({ lookupTable: lookupTable.key, authority: wallet }),
+  ];
+  const blockhash = seededKeypair(5).publicKey.toBase58();
+  const transaction = new VersionedTransaction(new TransactionMessage({
+    payerKey: wallet,
+    recentBlockhash: blockhash,
+    instructions,
+  }).compileToV0Message([lookupTable]));
+
+  const validated = validateAtomicLaunchTransaction(transaction.serialize(), {
+    ...identity,
+    lookupTable,
+    lookupAddresses,
+    instructions,
+    quotedTokenAmount: plan.quotedTokenAmount,
+    maxQuoteAmount: plan.maxQuoteAmount,
+    lockAmount: plan.lockAmount,
+    unlockTimestamp: plan.unlockTimestamp,
+    blockhash,
+  });
+
+  assert.equal(plan.lockAmount.toString(), "0");
+  assert.equal(plan.unlockTimestamp, 0);
+  assert.equal(plan.instructions[5].programId.toBase58(), "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+  assert.equal(plan.instructions[5].data.toString("utf8"), "lckd:no-lock:v1");
+  assert.equal(plan.instructions[5].keys[0].isSigner, true);
+  assert.equal(validated.message.header.numRequiredSignatures, 3);
+  assert.equal(validated.message.compiledInstructions.length, 7);
+});
+
 test("builds the mandatory buyback launch under packet size with two exact ALTs and no fourth signer", async () => {
   const wallet = seededKeypair(1).publicKey;
   const mint = seededKeypair(2).publicKey;
@@ -211,6 +270,7 @@ test("requires an immutable validated launch config", async () => {
           name: "Mutable",
           ticker: "MUT",
           buyAmountSol: 0.1,
+          hasLock: true,
           lockDurationDays: 30,
           lockPercentage: 100,
           feeMode: "waived" as const,

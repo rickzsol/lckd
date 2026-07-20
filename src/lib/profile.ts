@@ -5,7 +5,7 @@ import { tokenToDisplay } from "./queries";
 import { hasSupabaseConfig } from "./supabase";
 
 const PROFILE_COLUMNS = "id, github_username, github_avatar, account_created_at, public_repos, wallet_address, total_commits, last_refreshed";
-const TOKEN_COLUMNS = "id, mint_address, name, ticker, image_uri, trust_tier, creator_wallet, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, launch_verified_at, lock_verified_at, lock_unlock_at, description, twitter_url, telegram_url, website_url";
+const TOKEN_COLUMNS = "id, mint_address, name, ticker, image_uri, trust_tier, creator_wallet, has_lock, creator_provider, creator_username, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, launch_verified_at, lock_verified_at, lock_unlock_at, description, twitter_url, telegram_url, website_url";
 
 export async function getProfileByUsername(
   username: string,
@@ -46,7 +46,6 @@ export async function getTokensByCreator(
       .select(TOKEN_COLUMNS)
       .eq("github_username", username)
       .not("launch_verified_at", "is", null)
-      .not("lock_verified_at", "is", null)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -86,7 +85,6 @@ export async function getVerifiedDevelopers(): Promise<DeveloperSummary[]> {
       .from("tokens")
       .select("github_username, ticker, trust_tier, created_at")
       .not("launch_verified_at", "is", null)
-      .not("lock_verified_at", "is", null)
       .not("github_username", "is", null)
       .order("created_at", { ascending: false })
       .limit(500);
@@ -153,7 +151,7 @@ export async function getVerifiedDevelopers(): Promise<DeveloperSummary[]> {
 
 /** Server-only: links a wallet to a GitHub profile. */
 export async function linkWallet(
-  githubId: string,
+  identityId: string,
   walletAddress: string,
 ): Promise<{
   success: boolean;
@@ -165,9 +163,9 @@ export async function linkWallet(
     const supabase = getServerClient();
 
     const { data: profile, error: profileError } = await supabase
-      .from("github_profiles")
+      .from("auth_profiles")
       .select("id, wallet_address")
-      .eq("github_id", githubId)
+      .eq("identity_id", identityId)
       .maybeSingle();
 
     if (profileError) {
@@ -175,7 +173,7 @@ export async function linkWallet(
       return { success: false, code: "database", error: "Failed to verify profile" };
     }
     if (!profile) {
-      return { success: false, code: "not_found", error: "GitHub profile not found" };
+      return { success: false, code: "not_found", error: "Account profile not found" };
     }
     if (profile.wallet_address === walletAddress) return { success: true };
     if (profile.wallet_address) {
@@ -187,10 +185,10 @@ export async function linkWallet(
     }
 
     const { data: owner, error: ownerError } = await supabase
-      .from("github_profiles")
-      .select("github_id")
+      .from("auth_profiles")
+      .select("identity_id")
       .eq("wallet_address", walletAddress)
-      .neq("github_id", githubId)
+      .neq("identity_id", identityId)
       .maybeSingle();
 
     if (ownerError) {
@@ -202,9 +200,9 @@ export async function linkWallet(
     }
 
     const { data, error } = await supabase
-      .from("github_profiles")
+      .from("auth_profiles")
       .update({ wallet_address: walletAddress })
-      .eq("github_id", githubId)
+      .eq("identity_id", identityId)
       .is("wallet_address", null)
       .select("id")
       .maybeSingle();

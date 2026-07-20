@@ -18,6 +18,9 @@ export async function POST(request: NextRequest) {
 
   const { session, error: authError } = await requireLinkedWallet();
   if (authError) return authError;
+  if (session.identity_provider !== "github" || !session.github_id || !session.github_username) {
+    return apiError("GitHub sign-in is required for proof missions", 403);
+  }
   const reviewerIds = getReviewerIds();
   if (reviewerIds.size < 2) return apiError("Proof submission review is not configured", 503);
   if (reviewerIds.has(session.github_id)) {

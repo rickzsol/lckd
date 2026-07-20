@@ -38,6 +38,7 @@ const storedConfigSchema = z.object({
   lockDurationDays: z.number().int().min(7).max(365),
   lockPercentage: z.number().int().min(51).max(99),
   buyAmountSol: z.number().finite().positive().max(100),
+  hasLock: z.boolean().default(true),
   githubUsername: z.string().nullable(),
   githubRepo: z.string().max(200).nullable(),
   liveUrl: nullableUrl,
@@ -63,7 +64,7 @@ const atomicIntentSchema = z.object({
   atomicTx: transactionSignature,
   lockMetadataId: solanaAddress,
   lockAmount: z.string().regex(/^\d+$/),
-  unlockTimestamp: z.number().int().positive().safe(),
+  unlockTimestamp: z.number().int().nonnegative().safe(),
   issuedAtomicTransaction: z.string().min(100).max(2_000).regex(
     /^[A-Za-z0-9+/]+={0,2}$/,
   ).nullable(),
@@ -116,7 +117,7 @@ async function recordAtomicLaunch(
   const { data: intentData, error: intentError } = await serverClient.rpc(
     "get_owned_atomic_launch_intent",
     {
-      p_github_id: session.github_id,
+      p_github_id: session.identity_id,
       p_creator_wallet: session.wallet_address,
       p_mint_address: body.mintAddress,
     },
@@ -159,6 +160,7 @@ async function recordAtomicLaunch(
         unlockTimestamp: intent.unlockTimestamp,
         lockDurationDays: config.lockDurationDays,
         lockPercentage: config.lockPercentage,
+        hasLock: config.hasLock,
         fee: launchFeeTermsFromConfig(config as Record<string, unknown>),
         issuedAtomicTransaction: intent.issuedAtomicTransaction ?? undefined,
         issuedAtomicMessageHash: intent.issuedAtomicMessageHash ?? undefined,
@@ -177,12 +179,15 @@ async function recordAtomicLaunch(
     (metadata.twitter ?? null) !== config.twitterUrl ||
     (metadata.telegram ?? null) !== config.telegramUrl ||
     (metadata.website ?? null) !== config.websiteUrl ||
-    config.githubUsername !== session.github_username
+    config.githubUsername !== (session.identity_provider === "github" ? session.github_username : null)
   ) {
     return apiError("Finalized atomic metadata does not match the reviewed intent", 422);
   }
 
   const verifiedAt = new Date().toISOString();
+  if (Boolean(verified.lock) !== config.hasLock) {
+    return apiError("Finalized lock state does not match the reviewed intent", 422);
+  }
   const feeTerms = launchFeeTermsFromConfig(config as Record<string, unknown>);
   const burnedLckdAmount = feeTerms.feeMode === "buybackBurn"
     ? verified.burnedLckdRawAmount && formatRawLckdAmount(verified.burnedLckdRawAmount)
@@ -190,10 +195,11 @@ async function recordAtomicLaunch(
   if (feeTerms.feeMode === "buybackBurn" && !burnedLckdAmount) {
     return apiError("Finalized buyback burn amount is unavailable", 422);
   }
+  const lock = verified.lock;
   const { data: wasUpdated, error } = await serverClient.rpc(
-    "record_verified_atomic_launch",
+    "record_verified_atomic_launch_v2",
     {
-      p_github_id: session.github_id,
+      p_github_id: session.identity_id,
       p_creator_wallet: session.wallet_address,
       p_mint_address: body.mintAddress,
       p_metadata_uri: verified.metadataUri,
@@ -203,14 +209,17 @@ async function recordAtomicLaunch(
       p_ticker: verified.symbol,
       p_description: metadata.description,
       p_image_uri: metadata.image,
-      p_lock_duration_days: verified.lock.durationDays,
-      p_lock_percentage: verified.lock.percentage,
-      p_lock_unlock_at: verified.lock.unlockAt,
-      p_lock_amount: verified.lock.amount,
-      p_lock_debited_amount: verified.lock.debitedAmount,
+      p_has_lock: config.hasLock,
+      p_lock_duration_days: lock?.durationDays ?? 0,
+      p_lock_percentage: lock?.percentage ?? 0,
+      p_lock_unlock_at: lock?.unlockAt ?? null,
+      p_lock_amount: lock?.amount ?? "0",
+      p_lock_debited_amount: lock?.debitedAmount ?? "0",
       p_purchased_amount: verified.purchasedAmount.toString(),
       p_buy_amount_sol: Number(verified.buyAmountLamports) / 1_000_000_000,
-      p_github_username: session.github_username,
+      p_github_username: session.identity_provider === "github" ? session.github_username : null,
+      p_identity_provider: session.identity_provider,
+      p_identity_username: session.identity_username,
       p_github_repo: config.githubRepo,
       p_live_url: config.liveUrl,
       p_twitter_url: metadata.twitter ?? null,

@@ -77,6 +77,8 @@ const ATOMIC_OUTER_INSTRUCTION_COUNT = 7;
 const PUMP_EXACT_TOKEN_BUY_DISCRIMINATOR = "66063d1201daebea";
 const LOCK_COVERAGE_TOLERANCE = BigInt(10);
 const BUYBACK_BURN_FEE_INSTRUCTION_INDEX = 6;
+const NO_LOCK_MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+const NO_LOCK_MEMO = Buffer.from("lckd:no-lock:v1", "utf8");
 const PUMP_BUY_EXACT_QUOTE_IN_WRITABLE_INDEXES = new Set([0, 1, 5, 6, 7, 8, 10, 17, 20, 25]);
 const PUMP_BUY_EVENT_CPI_PREFIX = Buffer.from(
   "e445a52e51cb9a1d67f4521f2cf57777",
@@ -136,6 +138,7 @@ export interface VerifiedBuybackBurnReceipt {
 }
 
 export interface AtomicLaunchExpectation {
+  hasLock?: boolean;
   name: string;
   symbol: string;
   metadataUri: string;
@@ -162,7 +165,7 @@ export interface VerifiedAtomicLaunch extends VerifiedLaunch {
   walletFinalBalance: string;
   escrowBalance: string;
   burnedLckdRawAmount: string | null;
-  lock: VerifiedLock;
+  lock: VerifiedLock | null;
 }
 
 export class OnChainVerificationError extends Error {
@@ -622,6 +625,7 @@ export async function verifyFinalizedLockTransaction(
 }
 
 function assertAtomicExpectation(expectation: AtomicLaunchExpectation): void {
+  const hasLock = expectation.hasLock !== false;
   if (
     !expectation.name ||
     Buffer.byteLength(expectation.name, "utf8") > 64 ||
@@ -645,14 +649,18 @@ function assertAtomicExpectation(expectation: AtomicLaunchExpectation): void {
     }) ||
     expectation.lockAmount.length > 20 ||
     !/^\d+$/.test(expectation.lockAmount) ||
-    BigInt(expectation.lockAmount) < BigInt(1) ||
+    (hasLock
+      ? BigInt(expectation.lockAmount) < BigInt(1)
+      : BigInt(expectation.lockAmount) !== BigInt(0)) ||
     BigInt(expectation.lockAmount) > BigInt("18446744073709551615") ||
     !Number.isSafeInteger(expectation.unlockTimestamp) ||
-    !Number.isInteger(expectation.lockDurationDays) ||
-    expectation.lockDurationDays < 1 ||
-    !Number.isInteger(expectation.lockPercentage) ||
-    expectation.lockPercentage < 51 ||
-    expectation.lockPercentage > 99
+    (hasLock
+      ? !Number.isInteger(expectation.lockDurationDays) ||
+        expectation.lockDurationDays < 1 ||
+        !Number.isInteger(expectation.lockPercentage) ||
+        expectation.lockPercentage < 51 ||
+        expectation.lockPercentage > 99
+      : expectation.unlockTimestamp !== 0)
   ) {
     throw new OnChainVerificationError("Atomic launch expectation is invalid", 422);
   }
@@ -1376,6 +1384,7 @@ export async function verifyFinalizedAtomicLaunchTransaction(
   expectation: AtomicLaunchExpectation,
 ): Promise<VerifiedAtomicLaunch> {
   assertAtomicExpectation(expectation);
+  const hasLock = expectation.hasLock !== false;
   const transaction = await getFinalizedTransaction(signature, walletAddress, mintAddress);
   const wallet = new PublicKey(walletAddress);
   const mint = new PublicKey(mintAddress);
@@ -1481,19 +1490,32 @@ export async function verifyFinalizedAtomicLaunchTransaction(
     );
   }
 
-  const lockInstruction = instructions[5];
-  const escrow = assertAtomicStreamflowAccounts(lockInstruction, wallet, mint, metadata);
-  const parsedLock = parseVerifiedStreamflowLock(lockInstruction, transaction.blockTime);
-  const expectedLockName = Buffer.alloc(64);
-  Buffer.from(expectation.name, "utf8").copy(expectedLockName);
-  const lockData = decodeBase58(lockInstruction.data ?? "");
-  if (
-    !lockData.subarray(62, 126).equals(expectedLockName) ||
-    parsedLock.amount !== expectation.lockAmount ||
-    parsedLock.unlockAt !== new Date(expectation.unlockTimestamp * 1_000).toISOString() ||
-    parsedLock.durationDays !== expectation.lockDurationDays
+  const launchMarkerInstruction = instructions[5];
+  const escrow = hasLock
+    ? assertAtomicStreamflowAccounts(launchMarkerInstruction, wallet, mint, metadata)
+    : null;
+  const parsedLock = hasLock
+    ? parseVerifiedStreamflowLock(launchMarkerInstruction, transaction.blockTime)
+    : null;
+  if (parsedLock) {
+    const expectedLockName = Buffer.alloc(64);
+    Buffer.from(expectation.name, "utf8").copy(expectedLockName);
+    const lockData = decodeBase58(launchMarkerInstruction.data ?? "");
+    if (
+      !lockData.subarray(62, 126).equals(expectedLockName) ||
+      parsedLock.amount !== expectation.lockAmount ||
+      parsedLock.unlockAt !== new Date(expectation.unlockTimestamp * 1_000).toISOString() ||
+      parsedLock.durationDays !== expectation.lockDurationDays
+    ) {
+      throw new OnChainVerificationError("Atomic Streamflow schedule does not match the intent", 422);
+    }
+  } else if (
+    !launchMarkerInstruction.programId.equals(NO_LOCK_MEMO_PROGRAM_ID) ||
+    !instructionHasData(launchMarkerInstruction, NO_LOCK_MEMO) ||
+    launchMarkerInstruction.accounts?.length !== 1 ||
+    !launchMarkerInstruction.accounts[0].equals(metadata)
   ) {
-    throw new OnChainVerificationError("Atomic Streamflow schedule does not match the intent", 422);
+    throw new OnChainVerificationError("Atomic no-lock marker does not match the intent", 422);
   }
   let verifiedBuyback: VerifiedBuybackBurnReceipt | null = null;
   if (isBuybackBurn) {
@@ -1568,24 +1590,18 @@ export async function verifyFinalizedAtomicLaunchTransaction(
     walletAddress,
     mintAddress,
   );
-  const preEscrowBalance = mintAccountBalance(
-    meta.preTokenBalances,
-    accountKeys,
-    escrow,
-    mint,
-  );
-  const postEscrowBalance = mintAccountBalance(
-    meta.postTokenBalances,
-    accountKeys,
-    escrow,
-    mint,
-  );
-  const depositedAmount = BigInt(parsedLock.amount);
+  const preEscrowBalance = escrow
+    ? mintAccountBalance(meta.preTokenBalances, accountKeys, escrow, mint)
+    : BigInt(0);
+  const postEscrowBalance = escrow
+    ? mintAccountBalance(meta.postTokenBalances, accountKeys, escrow, mint)
+    : BigInt(0);
+  const depositedAmount = parsedLock ? BigInt(parsedLock.amount) : BigInt(0);
   const walletDelta = postWalletBalance - preWalletBalance;
   const debitedAmount = tradeEvent.tokenAmount - postWalletBalance;
   const reviewedDebit =
     (tradeEvent.tokenAmount * BigInt(expectation.lockPercentage)) / BigInt(100);
-  if (
+  if (hasLock && (
     preWalletBalance !== BigInt(0) ||
     preEscrowBalance !== BigInt(0) ||
     postWalletBalance < BigInt(0) ||
@@ -1595,18 +1611,29 @@ export async function verifyFinalizedAtomicLaunchTransaction(
     depositedAmount > debitedAmount ||
     debitedAmount + LOCK_COVERAGE_TOLERANCE < reviewedDebit ||
     debitedAmount > reviewedDebit + LOCK_COVERAGE_TOLERANCE
-  ) {
+  )) {
     throw new OnChainVerificationError("Atomic Streamflow deposit does not cover the purchase", 422);
   }
-  const percentage = Number(
-    (depositedAmount * BigInt(1_000_000)) / tradeEvent.tokenAmount,
-  ) / 10_000;
-  if (percentage <= 0 || percentage > 100) {
+  if (!hasLock && (
+    preWalletBalance !== BigInt(0) ||
+    postWalletBalance !== tradeEvent.tokenAmount ||
+    walletDelta !== tradeEvent.tokenAmount ||
+    debitedAmount !== BigInt(0)
+  )) {
+    throw new OnChainVerificationError(
+      "Atomic unlocked purchase does not remain in the launch wallet",
+      422,
+    );
+  }
+  const percentage = hasLock
+    ? Number((depositedAmount * BigInt(1_000_000)) / tradeEvent.tokenAmount) / 10_000
+    : 0;
+  if (hasLock && (percentage <= 0 || percentage > 100)) {
     throw new OnChainVerificationError("Atomic lock percentage is invalid", 422);
   }
 
   await Promise.all([
-    assertFinalizedAtomicAccounts(
+    ...(hasLock && escrow ? [assertFinalizedAtomicAccounts(
       connection,
       wallet,
       mint,
@@ -1614,7 +1641,7 @@ export async function verifyFinalizedAtomicLaunchTransaction(
       escrow,
       depositedAmount,
       expectation.unlockTimestamp,
-    ),
+    )] : []),
     assertFinalizedAtomicLookupTable(
       connection,
       lookupTable,
@@ -1637,10 +1664,8 @@ export async function verifyFinalizedAtomicLaunchTransaction(
     symbol: createData.symbol,
     metadataUri: createData.metadataUri,
     buyAmountLamports: tradeEvent.totalSolAmount,
-    lock: {
-      ...parsedLock,
-      percentage,
-      debitedAmount: debitedAmount.toString(),
-    },
+    lock: parsedLock
+      ? { ...parsedLock, percentage, debitedAmount: debitedAmount.toString() }
+      : null,
   };
 }

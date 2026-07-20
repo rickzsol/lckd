@@ -100,6 +100,7 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "**.pump.fun" },
       { protocol: "https", hostname: "arweave.net" },
       { protocol: "https", hostname: "avatars.githubusercontent.com" },
+      { protocol: "https", hostname: "pbs.twimg.com" },
       { protocol: "https", hostname: "i.imgur.com" },
     ],
   },

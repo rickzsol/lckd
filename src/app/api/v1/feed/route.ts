@@ -15,7 +15,7 @@ const TIER_MAP: Record<string, TrustTier> = {
 };
 
 const MAX_LIMIT = 100;
-const TOKEN_COLUMNS = "id, mint_address, name, ticker, description, image_uri, trust_tier, creator_wallet, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, launch_verified_at, lock_verified_at, lock_unlock_at, twitter_url, telegram_url, website_url";
+const TOKEN_COLUMNS = "id, mint_address, name, ticker, description, image_uri, trust_tier, creator_wallet, has_lock, creator_provider, creator_username, github_username, lock_amount, lock_duration_days, lock_percentage, buy_amount_sol, created_at, live_url, github_repo, lock_tx, launch_tx, launch_verified_at, lock_verified_at, lock_unlock_at, twitter_url, telegram_url, website_url";
 
 export async function GET(request: NextRequest) {
   try {
@@ -43,15 +43,13 @@ export async function GET(request: NextRequest) {
     let countQuery = supabase
       .from("tokens")
       .select("id", { count: "exact", head: true })
-      .not("launch_verified_at", "is", null)
-      .not("lock_verified_at", "is", null);
+      .not("launch_verified_at", "is", null);
     if (tierParam) countQuery = countQuery.eq("trust_tier", TIER_MAP[tierParam]);
 
     let query = supabase
       .from("tokens")
       .select(TOKEN_COLUMNS)
-      .not("launch_verified_at", "is", null)
-      .not("lock_verified_at", "is", null);
+      .not("launch_verified_at", "is", null);
     if (tierParam) query = query.eq("trust_tier", TIER_MAP[tierParam]);
 
     query = query

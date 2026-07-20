@@ -77,6 +77,16 @@ export default function TokenDetailClient({
                   @{t.dev.github}
                 </a>
               )}
+              {!t.dev.github && t.dev.provider === "twitter" && t.dev.username && (
+                <a
+                  href={`https://x.com/${t.dev.username}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block font-mono text-[11px] text-accent-400 hover:underline"
+                >
+                  @{t.dev.username} on X
+                </a>
+              )}
             </div>
           </div>
 
@@ -140,12 +150,12 @@ export default function TokenDetailClient({
           { label: "Liquidity", value: t.liquidity ?? "--", isLocked: false },
           {
             label: "Recorded lock",
-            value: hasLockRecord ? t.lock.amount : "Unverified",
+            value: hasLockRecord ? t.lock.amount : t.metadata.hasLock ? "Unverified" : "No lock",
             isLocked: hasLockRecord,
           },
           {
             label: "Lock duration",
-            value: hasLockRecord ? t.lock.duration : "Unverified",
+            value: hasLockRecord ? t.lock.duration : t.metadata.hasLock ? "Unverified" : "None",
             isLocked: hasLockRecord,
           },
         ].map((stat) => (

@@ -42,9 +42,9 @@ export async function POST(req: Request) {
   }
 
   // Validate exact message format:
-  // "LCKD Wallet Verification\nUsername: <username>\nTimestamp: <ts>"
+  // Bind the ownership proof to the exact OAuth provider and account.
   const expectedPattern = new RegExp(
-    `^${EXPECTED_PREFIX}\\nUsername: ${escapeRegex(session.github_username)}\\nTimestamp: (\\d+)$`,
+    `^${EXPECTED_PREFIX}\\nProvider: ${session.identity_provider}\\nUsername: ${escapeRegex(session.identity_username)}\\nTimestamp: (\\d+)$`,
   );
   const match = message.match(expectedPattern);
   if (!match) {
@@ -94,7 +94,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const result = await linkWallet(session.github_id, walletAddress);
+  const result = await linkWallet(session.identity_id, walletAddress);
   if (!result.success) {
     const status = result.code === "conflict" ? 409 : result.code === "not_found" ? 404 : 503;
     return NextResponse.json(

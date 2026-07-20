@@ -8,7 +8,7 @@ Token launch workflows with explicit wallet approvals and verified on-chain rece
 
 [Website](https://lckd.tech) · [Product docs](https://lckd.tech/docs) · [API reference](https://lckd.tech/api-docs) · [Risk disclosure](https://lckd.tech/risk)
 
-LCKD is a launch interface and public receipt index. On Solana, it creates and buys a token through pump.fun, places the selected creator tokens into a Streamflow time lock, and uses the fixed 0.1 SOL launch fee to buy and burn LCKD in the same atomic transaction. An experimental Robinhood Chain path uses Pons to create a fixed-supply token and permanently transfer its Uniswap v3 LP position to the Pons locker in one transaction.
+LCKD is a launch interface and public receipt index. On Solana, it creates and buys a token through pump.fun, optionally places the selected creator tokens into a Streamflow time lock, and uses the fixed 0.1 SOL launch fee to buy and burn LCKD in the same atomic transaction. An experimental Robinhood Chain path uses Pons to create a fixed-supply token and permanently transfer its Uniswap v3 LP position to the Pons locker in one transaction.
 
 > [!CAUTION]
 > This project is pre-release. Robinhood mainnet sending is disabled by default, and Robinhood launches are not yet written to public profiles. Do not use meaningful funds without reviewing the transactions, contracts, deployment configuration, and current release state yourself.
@@ -17,14 +17,14 @@ LCKD is a launch interface and public receipt index. On Solana, it creates and b
 
 ### Solana launch
 
-1. Sign in with GitHub and link a Solana wallet by signing an ownership message.
+1. Sign in with X or GitHub and link a Solana wallet by signing an ownership message.
 2. Upload token metadata and its image to IPFS through Pinata.
-3. Review the quoted buy, lock amount, unlock time, and any launch fee.
+3. Choose whether to create a token lock, then review the quoted buy, any lock terms, and the launch fee.
 4. Approve a setup transaction that creates and extends a dedicated address lookup table, then wait for it to finalize.
-5. Validate and approve the issued atomic transaction. It creates the token, performs the initial buy, creates the Streamflow lock, buys LCKD with exactly 0.1 SOL, and burns the purchased LCKD together.
-6. Simulate the signed transaction, submit it, and verify the finalized launch and lock receipt before recording the launch.
+5. Validate and approve the issued atomic transaction. It creates the token, performs the initial buy, optionally creates the Streamflow lock, buys LCKD with exactly 0.1 SOL, and burns the purchased LCKD together.
+6. Simulate the signed transaction, submit it, and verify the finalized launch receipt and selected lock state before recording the launch.
 
-The setup transaction cannot create the token. The token creation, initial buy, lock, LCKD buyback, and exact burn either finalize together or do not execute. Recovery checkpoints reconcile ambiguous submissions. Fee-enabled launches deactivate and close their dedicated lookup table through the wallet-authorized cleanup path so its rent can be reclaimed.
+The setup transaction cannot create the token. The token creation, initial buy, optional lock, LCKD buyback, and exact burn either finalize together or do not execute. Recovery checkpoints reconcile ambiguous submissions. Fee-enabled launches deactivate and close their dedicated lookup table through the wallet-authorized cleanup path so its rent can be reclaimed.
 
 ### Robinhood Chain launch
 
@@ -52,7 +52,7 @@ These checks reduce transaction mismatch and receipt spoofing risk. They do not 
 - Solana Wallet Adapter, `@solana/web3.js`, and the pump.fun SDK
 - Streamflow JavaScript SDK 13
 - wagmi, viem, Hardhat 3, Pons, and Uniswap v3
-- Supabase Postgres, NextAuth with GitHub OAuth, and Pinata
+- Supabase Postgres, NextAuth with X and GitHub OAuth, and Pinata
 
 ## Local setup
 
@@ -73,6 +73,7 @@ PowerShell users can replace the copy command with `Copy-Item .env.example .env.
 | Supabase | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public reads |
 | Supabase | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Server-only verified writes and recovery state |
 | Authentication | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub OAuth |
+| Authentication | `X_CLIENT_ID`, `X_CLIENT_SECRET` | X OAuth 2.0 |
 | Authentication | `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `ALLOWED_ORIGIN` | Session signing, canonical URL, and accepted state-changing origin |
 | Launch access | `PUBLIC_LAUNCHES_ENABLED`, `LAUNCH_TEST_GITHUB_IDS` | Public launch gate and preview allowlist |
 | Solana RPC | `HELIUS_RPC_URL`, `NEXT_PUBLIC_HELIUS_RPC_URL`, `HELIUS_API_KEY` | Server RPC, browser RPC, and launch-monitor access |
@@ -106,9 +107,10 @@ supabase/migrations/20260717210158_match_applications.sql
 supabase/migrations/20260717214000_fee_inclusive_atomic_lock_coverage.sql
 supabase/migrations/20260718020000_burn_ledger.sql
 supabase/migrations/20260718160439_buyback_completed_alt_cleanup.sql
+supabase/migrations/20260720162158_x_auth_optional_locks.sql
 ```
 
-The migrations create the public directory, recovery state, shared throttling, atomic issuance, launch-fee coverage, match applications, burn ledger, and completed-launch lookup cleanup. Review every migration against the target database before applying it. Do not enable Robinhood mainnet sending until `20260717210156_robinhood_launch_recovery.sql` is applied and its concurrent recovery transitions pass in a disposable environment.
+The migrations create the public directory, provider-neutral profiles, recovery state, shared throttling, atomic issuance, optional lock receipts, launch-fee coverage, match applications, burn ledger, and completed-launch lookup cleanup. Review every migration against the target database before applying it. Do not enable Robinhood mainnet sending until `20260717210156_robinhood_launch_recovery.sql` is applied and its concurrent recovery transitions pass in a disposable environment.
 
 ## Commands
 

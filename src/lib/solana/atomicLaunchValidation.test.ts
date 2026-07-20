@@ -26,7 +26,7 @@ import {
 const keypair = (value: number) =>
   Keypair.fromSeed(Uint8Array.from({ length: 32 }, () => value));
 
-async function fixture() {
+async function fixture(hasLock = true) {
   const wallet = keypair(1).publicKey;
   const mint = keypair(2).publicKey;
   const metadata = keypair(3).publicKey;
@@ -35,6 +35,7 @@ async function fixture() {
     name: "Atomic",
     ticker: "ATM",
     buyAmountSol: 0.1,
+    hasLock,
     lockDurationDays: 30,
     lockPercentage: 99,
   });
@@ -43,8 +44,8 @@ async function fixture() {
     {
       quotedTokenAmount: new BN("250000000000000"),
       maxQuoteAmount: new BN("110000000"),
-      streamflowFeePercent: 0.19,
-      unlockTimestamp: 1_900_000_000,
+      streamflowFeePercent: hasLock ? 0.19 : 0,
+      unlockTimestamp: hasLock ? 1_900_000_000 : 0,
     },
   );
   const lookupAddresses = canonicalLookupAddresses(plan.instructions, [wallet, mint, metadata]);
@@ -67,6 +68,7 @@ async function fixture() {
   ];
   const blockhash = keypair(5).publicKey.toBase58();
   const expectation = {
+    hasLock,
     wallet,
     mint,
     metadata,
@@ -110,6 +112,17 @@ test("client accepts the exact resolved atomic transaction", async () => {
     transactionBase64(value.wallet, value.blockhash, value.instructions, value.lookupTable),
     value.expectation,
   );
+  assert.equal(transaction.message.compiledInstructions.length, 7);
+});
+
+test("client accepts the exact signed no-lock marker", async () => {
+  const value = await fixture(false);
+  const transaction = await validateAtomicLaunchTransactionClient(
+    transactionBase64(value.wallet, value.blockhash, value.instructions, value.lookupTable),
+    value.expectation,
+  );
+  assert.equal(value.expectation.lockAmount, "0");
+  assert.equal(value.expectation.unlockTimestamp, 0);
   assert.equal(transaction.message.compiledInstructions.length, 7);
 });
 

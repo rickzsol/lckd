@@ -18,10 +18,10 @@ export default function LaunchPageClient({ callbackUrl }: { callbackUrl: "/launc
   } | null>(null);
 
   useEffect(() => {
-    if (status !== "authenticated" || !session.github_username) return;
+    if (status !== "authenticated" || !session.identity_username) return;
 
     let isActive = true;
-    const username = session.github_username;
+    const username = session.identity_username;
     fetch("/api/profile/link-wallet")
       .then(async (response) => {
         if (response.status === 403) return null;
@@ -39,11 +39,11 @@ export default function LaunchPageClient({ callbackUrl }: { callbackUrl: "/launc
     return () => {
       isActive = false;
     };
-  }, [session?.github_username, status]);
+  }, [session?.identity_username, status]);
 
   const isWalletLinkLoading =
     status === "authenticated" &&
-    walletCheck?.username !== session?.github_username;
+    walletCheck?.username !== session?.identity_username;
   const linkedWallet = isWalletLinkLoading ? null : walletCheck?.walletAddress ?? null;
 
   if (status === "loading") {
@@ -62,28 +62,29 @@ export default function LaunchPageClient({ callbackUrl }: { callbackUrl: "/launc
           Sign in before you build the launch
         </h1>
         <p className="mt-4 max-w-xl text-base leading-7 text-text-2">
-          LCKD uses GitHub authentication for metadata uploads and transaction building.
+          Sign in with X or GitHub for metadata uploads and transaction building.
           You will connect a Solana wallet separately when it is time to sign.
         </p>
         <div className="warning-box mt-6">
           <span className="callout-title">two approvals</span>
           The first approval creates the address lookup table. The second atomically creates,
-          buys, and locks the token in one transaction.
+          buys, and completes the launch in one transaction.
         </div>
         {isInAppBrowser() && (
           <div className="warning-box mt-6">
             <span className="callout-title">in-app browser detected</span>
-            GitHub sign-in fails inside the X, Discord, and Instagram browsers. Open
+            OAuth sign-in can fail inside the X, Discord, and Instagram browsers. Open
             lckd.tech in Safari or Chrome to continue.
           </div>
         )}
-        <button
-          type="button"
-          onClick={() => signIn("github", { callbackUrl })}
-          className="btn-primary mt-6 px-6"
-        >
-          sign in with github
-        </button>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button type="button" onClick={() => signIn("twitter", { callbackUrl })} className="btn-primary px-6">
+            sign in with X
+          </button>
+          <button type="button" onClick={() => signIn("github", { callbackUrl })} className="btn-secondary px-6">
+            sign in with GitHub
+          </button>
+        </div>
       </div>
     );
   }
@@ -108,10 +109,10 @@ export default function LaunchPageClient({ callbackUrl }: { callbackUrl: "/launc
           transaction is built or signed.
         </p>
         <Link
-          href={`/dev/${session?.github_username ?? ""}`}
+          href="/account"
           className="btn-primary mt-6 inline-flex px-6"
         >
-          open developer profile
+          open account
         </Link>
       </div>
     );

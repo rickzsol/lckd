@@ -9,7 +9,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
   return (
     <div>
       <h2 className="mb-5 font-mono text-[13px] font-bold text-accent">
-        02 / Lock configuration
+        02 / Launch configuration
       </h2>
 
       <div className="flex flex-col gap-5">
@@ -34,12 +34,32 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
             </div>
           ) : (
             <div className="mt-1 font-mono text-[10px] text-text-4">
-              This SOL buys your initial supply, which must be locked.
+              This SOL buys your initial supply.
             </div>
           )}
         </div>
 
-        <div>
+        <div className="rounded-card border border-line-default bg-surface-2 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="font-mono text-xs font-bold text-text-1">Create a token lock</div>
+              <p className="mt-1 font-mono text-[10px] leading-5 text-text-3">
+                Optional for a limited time. An unlocked launch leaves the purchased tokens in your wallet.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={w.config.hasLock}
+              onClick={() => w.updateConfig("hasLock", !w.config.hasLock)}
+              className={`min-h-11 rounded-control border px-3 font-mono text-[10px] font-bold ${w.config.hasLock ? "border-accent/40 bg-accent-dim text-accent" : "border-line-default text-text-2"}`}
+            >
+              {w.config.hasLock ? "lock on" : "no lock"}
+            </button>
+          </div>
+        </div>
+
+        {w.config.hasLock && <div>
           <div className="mb-1.5 flex items-center justify-between">
             <label htmlFor="lock-duration" className="form-label mb-0">
               Lock Duration
@@ -75,9 +95,9 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
               </button>
             ))}
           </div>
-        </div>
+        </div>}
 
-        <div>
+        {w.config.hasLock && <div>
           <div className="mb-1.5 flex items-center justify-between">
             <label htmlFor="lock-pct" className="form-label mb-0">
               Tokens to Lock
@@ -113,7 +133,7 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
               </button>
             ))}
           </div>
-        </div>
+        </div>}
 
         <div className="lock-preview">
           <div className="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-accent">
@@ -122,20 +142,22 @@ export default function StepLockConfig({ w }: { w: WizardContext }) {
           <div className="font-mono text-xs text-text-1">
             You will buy <span className="font-bold tabular-nums text-accent">{w.config.buyAmountSol} SOL</span>{" "}
             worth of <span className="font-bold">${w.config.ticker || "???"}</span>{" "}
-            and lock <span className="font-bold tabular-nums text-accent">{w.config.lockPercentage}%</span>{" "}
-            for <span className="font-bold tabular-nums text-accent">{w.config.lockDurationDays} days</span>.
+            {w.config.hasLock ? <>
+              and lock <span className="font-bold tabular-nums text-accent">{w.config.lockPercentage}%</span>{" "}
+              for <span className="font-bold tabular-nums text-accent">{w.config.lockDurationDays} days</span>.
+            </> : <>with no token lock.</>}
           </div>
           <div className="mt-2 font-mono text-[10px] text-text-3">
-            Non-cancelable, Streamflow token lock
+            {w.config.hasLock ? "Non-cancelable, Streamflow token lock" : "No Streamflow lock will be created"}
           </div>
         </div>
 
-        <div className="warning-box flex items-start gap-2 leading-relaxed">
+        {w.config.hasLock && <div className="warning-box flex items-start gap-2 leading-relaxed">
           <span aria-hidden="true">!</span>
           <span>
             The lock cannot be canceled, topped up, paused, or transferred. Tokens unlock in full at the selected date.
           </span>
-        </div>
+        </div>}
       </div>
 
       <div className="mt-6 flex gap-2.5">

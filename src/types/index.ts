@@ -13,6 +13,9 @@ export interface Token {
   description: string;
   image_uri: string;
   creator_wallet: string;
+  has_lock: boolean;
+  creator_provider: "github" | "twitter" | null;
+  creator_username: string | null;
   lock_tx: string;
   lock_duration_days: number;
   lock_percentage: number;
@@ -73,6 +76,7 @@ export interface LaunchConfig {
   image: File | null;
   imageUri: string | null;
   buyAmountSol: number;
+  hasLock: boolean;
   lockDurationDays: number;
   lockPercentage: number;
   githubUsername: string | null;

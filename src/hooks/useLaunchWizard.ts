@@ -9,8 +9,8 @@ export { LAUNCH_PHASES_WITH_LOCK } from "./useTokenLaunch";
 
 export const STEP_LABELS = [
   "Token Details",
-  "Lock Config",
-  "GitHub",
+  "Launch Config",
+  "Project Links",
   "Review & Launch",
 ] as const;
 
@@ -33,6 +33,7 @@ const INITIAL_CONFIG: LaunchConfig = {
   image: null,
   imageUri: null,
   buyAmountSol: 1,
+  hasLock: true,
   lockDurationDays: 90,
   lockPercentage: 99,
   githubUsername: null,
@@ -236,13 +237,15 @@ export function useLaunchWizard() {
 
   // --- Trust tier ---
   const computedTier = useMemo((): TrustTier => {
+    if (!config.hasLock) return TrustTier.LOCKED;
     if (!config.githubUsername) return TrustTier.LOCKED;
     if (config.githubRepo && config.liveUrl) return TrustTier.SHIPPED;
     if (config.githubRepo) return TrustTier.BUILDER;
     return TrustTier.VERIFIED;
-  }, [config.githubUsername, config.githubRepo, config.liveUrl]);
+  }, [config.hasLock, config.githubUsername, config.githubRepo, config.liveUrl]);
 
   const tierLabel = useMemo(() => {
+    if (!config.hasLock) return "UNLOCKED";
     const map: Record<TrustTier, string> = {
       [TrustTier.LOCKED]: "LOCKED",
       [TrustTier.VERIFIED]: "VERIFIED",
@@ -250,7 +253,7 @@ export function useLaunchWizard() {
       [TrustTier.SHIPPED]: "SHIPPED",
     };
     return map[computedTier];
-  }, [computedTier]);
+  }, [computedTier, config.hasLock]);
 
   const reset = useCallback(() => {
     setStep(1);
