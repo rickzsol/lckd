@@ -14,10 +14,11 @@ const publicStatsRowSchema = z.object({
 });
 
 export const unavailablePublicStats = {
-  launched: null,
+  launched: 0,
+  totalLocked: 0,
   totalLockedTokens: null,
-  devsVerified: null,
-  buildingNow: null,
+  devsVerified: 0,
+  buildingNow: 0,
   asOf: null,
   available: false as const,
 };
@@ -27,6 +28,7 @@ export function parsePublicStats(value: unknown) {
 
   return {
     launched: row.launched,
+    totalLocked: row.total_locked_tokens,
     totalLockedTokens: row.total_locked_tokens,
     devsVerified: row.devs_verified,
     buildingNow: row.building_now,

@@ -2,16 +2,10 @@ import Link from "next/link";
 import DitherWave from "./DitherWave";
 import HeroStats from "./HeroStats";
 import MatchPromoBanner from "./MatchPromoBanner";
-import type { OfficialLaunchEvent } from "@/lib/launchMonitor";
 
 const RISE = "rise 600ms cubic-bezier(0.16,1,0.3,1) both";
 
-interface Props {
-  launchMonitorUrl: string | null;
-  officialLaunch: OfficialLaunchEvent | null;
-}
-
-export default function Hero({ launchMonitorUrl, officialLaunch }: Props) {
+export default function Hero() {
   return (
     <section className="relative flex min-h-screen flex-col items-center px-[clamp(16px,5vw,32px)] pb-12 pt-[94px] text-center">
       {/* Background: dither canvas + vignette overlays (behind the fixed navbar) */}
@@ -77,10 +71,7 @@ export default function Hero({ launchMonitorUrl, officialLaunch }: Props) {
         className="flex w-full justify-center"
         style={{ animation: RISE, animationDelay: "320ms" }}
       >
-        <HeroStats
-          initialLaunch={officialLaunch}
-          monitorUrl={launchMonitorUrl}
-        />
+        <HeroStats />
       </div>
       </div>
 

@@ -13,6 +13,7 @@ test("maps the aggregate database response to the public contract", () => {
     }),
     {
       launched: 12,
+      totalLocked: 3456789.25,
       totalLockedTokens: 3456789.25,
       devsVerified: 7,
       buildingNow: 3,
@@ -38,12 +39,13 @@ test("rejects negative, malformed, or unsafe aggregate values", () => {
   assert.throws(() => parsePublicStats({ ...valid, as_of: "not-a-date" }));
 });
 
-test("unavailable response cannot be mistaken for real zero counts", () => {
+test("unavailable response preserves the v1 numeric contract and flags it unavailable", () => {
   assert.deepEqual(unavailablePublicStats, {
-    launched: null,
+    launched: 0,
+    totalLocked: 0,
     totalLockedTokens: null,
-    devsVerified: null,
-    buildingNow: null,
+    devsVerified: 0,
+    buildingNow: 0,
     asOf: null,
     available: false,
   });

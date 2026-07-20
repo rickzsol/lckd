@@ -12,7 +12,7 @@
 - [x] Restore the token market chart, expose copyable CA and recorded metadata, and optimize token images through Next Image.
 - [x] Pin the official feed launch, replace false lock percentages with timestamp-derived progress, polish feed and developer cards on mobile, and add the matched-launch banner.
 - [x] Verify the pull-request quality workflow in hosted CI.
-- [ ] Verify the full workflow, including the secret-backed Robinhood fork job, in hosted CI.
+- [x] Verify the full workflow, including the secret-backed Robinhood fork job, in hosted CI.
 - [ ] Normalize mixed CRLF/LF endings in a separate mechanical commit.
 
 ## Repository controls
@@ -22,6 +22,13 @@
 - [ ] Protect the Production environment and move Vercel deployment secrets to environment scope.
 - [ ] Enable Dependabot alerts and security updates, secret scanning and push protection, CodeQL, and private vulnerability reporting.
 - [ ] Choose and add an explicit repository license.
+
+## Truthful public data
+
+- [x] Stage the vetted stats RPC as the sole aggregate, fail-closed unavailable counters, and provisional allocation and historical-lock presentation from current remote `main`.
+- [x] Pass lint, typecheck, 184 tests, production build, a direct read-only Supabase RPC check, and eight desktop/mobile Playwright route checks.
+- [ ] Merge and deploy `codex/release-truthfulness`, then verify the live stats response and an allocation-bearing token page.
+- [ ] Add persisted allocation finality, confidence, evidence, and a finalized reconciliation sweep before showing settled movement classifications.
 
 ## Launch fees
 

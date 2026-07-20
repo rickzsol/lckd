@@ -14,6 +14,7 @@ export interface AllocationPageData {
   summary: AllocationSummary;
   creatorWallet: string;
   lockedAmountRaw: string | null;
+  isLockUnlockPending: boolean;
 }
 
 export async function loadAllocationData(
@@ -24,7 +25,7 @@ export async function loadAllocationData(
   const supabase = getSupabase();
   const { data: token, error: tokenError } = await supabase
     .from("tokens")
-    .select("id, creator_wallet, lock_amount")
+    .select("id, creator_wallet, lock_amount, lock_unlock_at")
     .eq("mint_address", mintAddress)
     .not("launch_verified_at", "is", null)
     .not("lock_verified_at", "is", null)
@@ -67,5 +68,8 @@ export async function loadAllocationData(
     ),
     creatorWallet: token.creator_wallet,
     lockedAmountRaw: /^\d+$/.test(token.lock_amount ?? "") ? token.lock_amount : null,
+    isLockUnlockPending:
+      typeof token.lock_unlock_at === "string" &&
+      new Date(token.lock_unlock_at).getTime() > Date.now(),
   };
 }
