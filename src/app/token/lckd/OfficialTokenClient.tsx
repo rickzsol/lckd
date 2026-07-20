@@ -5,6 +5,9 @@ import Link from "next/link";
 import DitherWave from "@/components/landing/DitherWave";
 import MarketChart from "@/components/token/MarketChart";
 import JupiterSwap from "@/components/token/JupiterSwap";
+import TradeReadinessCard from "@/components/token/TradeReadinessCard";
+import ProofMissionCard from "@/components/token/ProofMissionCard";
+import { PROOF_MISSION_MINT } from "@/lib/proof-missions/mission";
 import TokenImage from "@/components/ui/TokenImage";
 import { useDexMarketData } from "@/hooks/useDexMarketData";
 import { useOfficialLaunchMonitor } from "@/hooks/useOfficialLaunchMonitor";
@@ -24,7 +27,7 @@ function formatTokenAmount(raw: string, decimals: number): string {
 
 export default function OfficialTokenClient({ initialLaunch, monitorUrl }: Props) {
   const { isLive, launch } = useOfficialLaunchMonitor(initialLaunch, monitorUrl);
-  const mintAddress = launch?.mintAddress ?? null;
+  const mintAddress = launch?.mintAddress ?? PROOF_MISSION_MINT;
   const market = useDexMarketData(mintAddress);
   const [isCopied, setIsCopied] = useState(false);
   const symbol = launch?.symbol || "LCKD";
@@ -138,6 +141,9 @@ export default function OfficialTokenClient({ initialLaunch, monitorUrl }: Props
           </div>
         ))}
       </section>
+
+      <TradeReadinessCard mintAddress={mintAddress} ticker={`$${symbol}`} />
+      <ProofMissionCard mintAddress={mintAddress} />
 
       <section className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div>

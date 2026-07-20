@@ -27,6 +27,10 @@ const PRESETS = {
   github: { limit: 30, windowMs: 60_000 },
   record: { limit: 15, windowMs: 60_000 },
   match: { limit: 5, windowMs: 60_000 },
+  proof: { limit: 12, windowMs: 60_000 },
+  quote: { limit: 5, windowMs: 60_000 },
+  tradeEvidenceGlobal: { limit: 60, windowMs: 60_000 },
+  tradeQuoteGlobal: { limit: 6, windowMs: 60_000 },
   default: { limit: 60, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitConfig>;
 
@@ -129,6 +133,25 @@ export async function checkRateLimit(
   } catch (error) {
     console.error(
       "[rate-limit] Shared limiter unavailable:",
+      error instanceof Error ? error.message : "Unknown error",
+    );
+    return isProduction ? apiError("Request rate limiting is unavailable", 503) : null;
+  }
+}
+
+export async function checkGlobalRateLimit(
+  preset: "tradeEvidenceGlobal" | "tradeQuoteGlobal",
+): Promise<NextResponse | null> {
+  const key = createHash("sha256").update(`global:${preset}`).digest("hex");
+  const isProduction = process.env.NODE_ENV === "production";
+  try {
+    const result = isProduction
+      ? await checkDistributedRateLimit(key, PRESETS[preset])
+      : checkLocalRateLimit(key, PRESETS[preset]);
+    return result.isAllowed ? null : rateLimitError(result.retryAfterSeconds);
+  } catch (error) {
+    console.error(
+      "[rate-limit] Global limiter unavailable:",
       error instanceof Error ? error.message : "Unknown error",
     );
     return isProduction ? apiError("Request rate limiting is unavailable", 503) : null;

@@ -52,7 +52,7 @@ export async function requireLinkedWallet(): Promise<
       return { session: null, error: apiError("Unable to verify linked wallet", 503) };
     }
     if (!data?.wallet_address) {
-      return { session: null, error: apiError("Link a wallet before recording tokens", 403) };
+      return { session: null, error: apiError("Link a wallet to continue", 403) };
     }
 
     return {
