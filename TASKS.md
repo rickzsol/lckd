@@ -27,7 +27,7 @@
 
 - [x] Stage the vetted stats RPC as the sole aggregate, fail-closed unavailable counters, and provisional allocation and historical-lock presentation from current remote `main`.
 - [x] Pass lint, typecheck, 184 tests, production build, a direct read-only Supabase RPC check, and eight desktop/mobile Playwright route checks.
-- [ ] Merge and deploy `codex/release-truthfulness`, then verify the live stats response and an allocation-bearing token page.
+- [x] Merge PR #13, deploy merge commit `caa8b94`, and verify the live stats response plus the allocation-bearing LCKD token page on desktop and mobile.
 - [ ] Add persisted allocation finality, confidence, evidence, and a finalized reconciliation sweep before showing settled movement classifications.
 
 ## Launch fees
